@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name('slackcli')
   .description('A fast, developer-friendly CLI tool for interacting with Slack workspaces')
-  .version('0.0.2');
+  .version('0.1.1');
 
 // Add commands
 program.addCommand(createAuthCommand());

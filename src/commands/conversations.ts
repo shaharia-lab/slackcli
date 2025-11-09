@@ -68,6 +68,7 @@ export function createConversationsCommand(): Command {
     .option('--oldest <timestamp>', 'Start of time range')
     .option('--latest <timestamp>', 'End of time range')
     .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format (includes timestamps for replies)', false)
     .action(async (channelId, options) => {
       const spinner = ora('Fetching messages...').start();
 
@@ -124,7 +125,31 @@ export function createConversationsCommand(): Command {
 
         spinner.succeed(`Found ${messages.length} messages`);
 
-        console.log('\n' + formatConversationHistory(channelId, messages, users));
+        // Output in JSON format if requested
+        if (options.json) {
+          console.log(JSON.stringify({
+            channel_id: channelId,
+            message_count: messages.length,
+            messages: messages.map(msg => ({
+              ts: msg.ts,
+              thread_ts: msg.thread_ts,
+              user: msg.user,
+              text: msg.text,
+              type: msg.type,
+              reply_count: msg.reply_count,
+              reactions: msg.reactions,
+              bot_id: msg.bot_id,
+            })),
+            users: Array.from(users.values()).map(u => ({
+              id: u.id,
+              name: u.name,
+              real_name: u.real_name,
+              email: u.profile?.email,
+            })),
+          }, null, 2));
+        } else {
+          console.log('\n' + formatConversationHistory(channelId, messages, users));
+        }
       } catch (err: any) {
         spinner.fail('Failed to fetch messages');
         error(err.message);

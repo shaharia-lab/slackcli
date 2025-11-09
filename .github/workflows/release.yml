@@ -62,15 +62,20 @@ jobs:
         with:
           path: dist
 
+      - name: List downloaded artifacts
+        run: |
+          ls -la dist/
+          
       - name: Move artifacts to dist root
         run: |
-          mv dist/*/* dist/ || true
+          find dist -type f -name 'slackcli*' -exec mv {} dist/ \; || true
           rm -rf dist/slackcli-*/ || true
 
       - name: Generate SHA256 checksums
         run: |
           cd dist
-          sha256sum * > checksums.txt
+          ls -la
+          sha256sum slackcli* > checksums.txt || echo "No files to checksum"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

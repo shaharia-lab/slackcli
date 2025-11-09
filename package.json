@@ -1,0 +1,42 @@
+{
+  "name": "slackcli",
+  "version": "0.1.0",
+  "description": "A fast, developer-friendly CLI tool for interacting with Slack workspaces",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build --compile --minify --sourcemap src/index.ts --outfile dist/slackcli",
+    "build:all": "bun run build:linux && bun run build:macos && bun run build:windows",
+    "build:linux": "bun build --compile --minify --target=bun-linux-x64 src/index.ts --outfile dist/slackcli-linux",
+    "build:macos": "bun build --compile --minify --target=bun-darwin-x64 src/index.ts --outfile dist/slackcli-macos",
+    "build:windows": "bun build --compile --minify --target=bun-windows-x64 src/index.ts --outfile dist/slackcli-windows.exe",
+    "test": "bun test",
+    "type-check": "bunx tsc --noEmit"
+  },
+  "keywords": [
+    "slack",
+    "cli",
+    "automation",
+    "api",
+    "typescript",
+    "bun"
+  ],
+  "author": "Shaharia Lab",
+  "license": "MIT",
+  "dependencies": {
+    "@slack/web-api": "^7.11.0",
+    "commander": "^12.1.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "bun-types": "^1.1.38"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
+

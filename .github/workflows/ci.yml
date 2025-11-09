@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: TypeScript type check
+        run: bun run type-check
+
+      - name: Build binary
+        run: bun run build
+
+      - name: Verify binary (--version)
+        run: ./dist/slackcli --version
+
+      - name: Verify binary (--help)
+        run: ./dist/slackcli --help
+
+      - name: Check binary size
+        run: |
+          SIZE=$(stat -c%s dist/slackcli)
+          echo "Binary size: $(($SIZE / 1024 / 1024)) MB"
+          if [ $SIZE -gt 52428800 ]; then
+            echo "Binary size exceeds 50MB limit"
+            exit 1
+          fi
+

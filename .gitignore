@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment & Credentials
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Configuration (may contain credentials)
+.config/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+.temp/
+
+# Internal documents (not for public)
+prd.md
+PRD.md
+*SUMMARY.md
+*REPORT.md
+*.draft.md
+internal/
+docs/internal/
+
+# Security
+secrets/
+credentials/
+*.secret

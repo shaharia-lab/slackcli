@@ -106,6 +106,15 @@ export function formatMessage(
     output += `${indentStr}  ${line}\n`;
   });
   
+  // Show timestamps for threading
+  if (msg.ts) {
+    output += `${indentStr}  ${chalk.dim(`ts: ${msg.ts}`)}`;
+    if (msg.thread_ts && msg.thread_ts !== msg.ts) {
+      output += chalk.dim(` | thread_ts: ${msg.thread_ts}`);
+    }
+    output += '\n';
+  }
+  
   // Reactions
   if (msg.reactions && msg.reactions.length > 0) {
     const reactionsStr = msg.reactions

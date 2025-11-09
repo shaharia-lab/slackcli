@@ -129,6 +129,9 @@ slackcli conversations read C1234567890 --thread-ts=1234567890.123456
 
 # Read with custom limit
 slackcli conversations read C1234567890 --limit=50
+
+# Get JSON output (includes ts and thread_ts for replies)
+slackcli conversations read C1234567890 --json
 ```
 
 ### Message Commands

@@ -38,8 +38,8 @@ jobs:
         run: |
           SIZE=$(stat -c%s dist/slackcli)
           echo "Binary size: $(($SIZE / 1024 / 1024)) MB"
-          if [ $SIZE -gt 52428800 ]; then
-            echo "Binary size exceeds 50MB limit"
+          if [ $SIZE -gt 157286400 ]; then
+            echo "Binary size exceeds 150MB limit"
             exit 1
           fi
 

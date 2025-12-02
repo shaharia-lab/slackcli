@@ -46,6 +46,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 1
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
 

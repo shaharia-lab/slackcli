@@ -53,4 +53,3 @@ docs/internal/
 secrets/
 credentials/
 *.secret
-test-curl.txt

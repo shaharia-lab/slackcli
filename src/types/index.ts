@@ -79,8 +79,10 @@ export interface SlackFile {
   filetype?: string;
   subtype?: string;
   pretty_type?: string;
+  mode?: string; // 'hosted', 'tombstone' (deleted), etc.
   url_private?: string;
   url_private_download?: string;
+  mp4?: string; // Direct mp4 URL for videos
   vtt?: string;
   transcription?: SlackTranscription;
 }

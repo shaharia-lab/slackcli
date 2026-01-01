@@ -172,29 +172,30 @@ export class SlackClient {
     return this.request('conversations.open', { users });
   }
 
-  // Fetch file content (for VTT transcripts, etc.)
+  // Get headers for file requests (shared by fetchFileContent and fetchFileBinary)
+  private getFileHeaders(): Record<string, string> {
+    if (this.config.auth_type === 'standard') {
+      return {
+        'Authorization': `Bearer ${this.config.token}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
+      };
+    } else {
+      const encodedXoxdToken = encodeURIComponent(
+        (this.config as any).xoxd_token
+      );
+      return {
+        'Cookie': `d=${encodedXoxdToken}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
+      };
+    }
+  }
+
+  // Fetch file content as text (for VTT transcripts, etc.)
   async fetchFileContent(url: string): Promise<string> {
     try {
-      let headers: Record<string, string>;
-
-      if (this.config.auth_type === 'standard') {
-        // Standard auth: use Bearer token
-        headers = {
-          'Authorization': `Bearer ${this.config.token}`,
-          'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
-        };
-      } else {
-        // Browser auth: use Cookie header with xoxd token
-        const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-        headers = {
-          'Cookie': `d=${encodedXoxdToken}`,
-          'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
-        };
-      }
-
       const response = await fetch(url, {
         method: 'GET',
-        headers,
+        headers: this.getFileHeaders(),
       });
 
       if (!response.ok) {
@@ -202,6 +203,24 @@ export class SlackClient {
       }
 
       return await response.text();
+    } catch (error: any) {
+      throw new Error(`Failed to fetch file: ${error.message}`);
+    }
+  }
+
+  // Fetch file content as binary (for images, documents, etc.)
+  async fetchFileBinary(url: string): Promise<ArrayBuffer> {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getFileHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.arrayBuffer();
     } catch (error: any) {
       throw new Error(`Failed to fetch file: ${error.message}`);
     }

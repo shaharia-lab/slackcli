@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { createAuthCommand } from './commands/auth.ts';
 import { createConversationsCommand } from './commands/conversations.ts';
+import { createFilesCommand } from './commands/files.ts';
 import { createMessagesCommand } from './commands/messages.ts';
 import { createUpdateCommand } from './commands/update.ts';
 import { checkForUpdates } from './lib/updater.ts';
@@ -13,11 +14,12 @@ const program = new Command();
 program
   .name('slackcli')
   .description('A fast, developer-friendly CLI tool for interacting with Slack workspaces')
-  .version('0.1.1');
+  .version('0.1.2');
 
 // Add commands
 program.addCommand(createAuthCommand());
 program.addCommand(createConversationsCommand());
+program.addCommand(createFilesCommand());
 program.addCommand(createMessagesCommand());
 program.addCommand(createUpdateCommand());
 

@@ -1,6 +1,20 @@
 import chalk from 'chalk';
 import type { SlackChannel, SlackMessage, SlackUser, WorkspaceConfig } from '../types/index.ts';
 
+// Get icon for file type
+function getFileIcon(filetype?: string): string {
+  const icons: Record<string, string> = {
+    'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️', 'gif': '🖼️', 'webp': '🖼️',
+    'pdf': '📄', 'docx': '📝', 'doc': '📝',
+    'xlsx': '📊', 'xls': '📊', 'csv': '📊',
+    'pptx': '📽️', 'ppt': '📽️',
+    'mp4': '🎬', 'mov': '🎬', 'webm': '🎬',
+    'mp3': '🎵', 'wav': '🎵',
+    'zip': '📦', 'json': '📋', 'txt': '📄',
+  };
+  return icons[filetype || ''] || '📎';
+}
+
 // Format timestamp to human-readable date
 export function formatTimestamp(ts: string): string {
   const timestamp = parseFloat(ts) * 1000;
@@ -131,7 +145,31 @@ export function formatMessage(
       .join('  ');
     output += `${indentStr}  ${chalk.dim(reactionsStr)}\n`;
   }
-  
+
+  // File attachments
+  if (msg.files && msg.files.length > 0) {
+    msg.files.forEach(file => {
+      if (file.mode === 'tombstone') return; // Skip deleted files
+
+      const icon = getFileIcon(file.filetype);
+      const name = file.name || file.title || 'Untitled';
+      output += `${indentStr}  ${icon} ${chalk.blue(name)}\n`;
+      output += `${indentStr}     ${chalk.dim(`Type: ${file.pretty_type || file.filetype || 'unknown'}`)}\n`;
+
+      const downloadUrl = file.url_private_download || file.url_private;
+      if (downloadUrl) {
+        output += `${indentStr}     ${chalk.dim(`URL: ${downloadUrl}`)}\n`;
+      }
+
+      // Show transcript status for videos
+      if (file.transcription) {
+        const status = file.transcription.status;
+        const statusIcon = status === 'complete' ? '✅' : status === 'processing' ? '⏳' : '❌';
+        output += `${indentStr}     ${chalk.dim(`Transcript: ${statusIcon} ${status}`)}\n`;
+      }
+    });
+  }
+
   // Thread indicator
   if (msg.reply_count && !isThread) {
     output += `${indentStr}  ${chalk.cyan(`💬 ${msg.reply_count} replies`)}\n`;

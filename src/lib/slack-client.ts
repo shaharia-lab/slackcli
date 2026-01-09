@@ -190,6 +190,38 @@ export class SlackClient {
     return this.request('files.list', params);
   }
 
+  // Search messages
+  async searchMessages(query: string, options: {
+    count?: number;
+    page?: number;
+    sort?: 'score' | 'timestamp';
+    sort_dir?: 'asc' | 'desc';
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { query };
+    if (options.count) params.count = options.count;
+    if (options.page) params.page = options.page;
+    if (options.sort) params.sort = options.sort;
+    if (options.sort_dir) params.sort_dir = options.sort_dir;
+
+    return this.request('search.messages', params);
+  }
+
+  // Search files
+  async searchFiles(query: string, options: {
+    count?: number;
+    page?: number;
+    sort?: 'score' | 'timestamp';
+    sort_dir?: 'asc' | 'desc';
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { query };
+    if (options.count) params.count = options.count;
+    if (options.page) params.page = options.page;
+    if (options.sort) params.sort = options.sort;
+    if (options.sort_dir) params.sort_dir = options.sort_dir;
+
+    return this.request('search.files', params);
+  }
+
   // Get headers for file requests (shared by fetchFileContent and fetchFileBinary)
   private getFileHeaders(): Record<string, string> {
     if (this.config.auth_type === 'standard') {

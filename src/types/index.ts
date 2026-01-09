@@ -164,3 +164,41 @@ export interface AuthLoginBrowserOptions {
   workspaceName?: string;
 }
 
+// Search result types
+export interface SlackSearchMatch {
+  iid: string;
+  team: string;
+  channel: {
+    id: string;
+    name: string;
+    is_private?: boolean;
+    is_mpim?: boolean;
+    is_im?: boolean;
+  };
+  type: string;
+  user?: string;
+  username?: string;
+  ts: string;
+  text: string;
+  permalink: string;
+}
+
+export interface SlackSearchResult {
+  total: number;
+  pagination: {
+    total_count: number;
+    page: number;
+    per_page: number;
+    page_count: number;
+    first: number;
+    last: number;
+  };
+  paging: {
+    count: number;
+    total: number;
+    page: number;
+    pages: number;
+  };
+  matches: SlackSearchMatch[];
+}
+

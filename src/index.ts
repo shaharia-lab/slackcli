@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { createAuthCommand } from './commands/auth.ts';
 import { createConversationsCommand } from './commands/conversations.ts';
+import { createDraftsCommand } from './commands/drafts.ts';
 import { createFilesCommand } from './commands/files.ts';
 import { createMessagesCommand } from './commands/messages.ts';
 import { createSearchCommand } from './commands/search.ts';
@@ -20,6 +21,7 @@ program
 // Add commands
 program.addCommand(createAuthCommand());
 program.addCommand(createConversationsCommand());
+program.addCommand(createDraftsCommand());
 program.addCommand(createFilesCommand());
 program.addCommand(createMessagesCommand());
 program.addCommand(createSearchCommand());

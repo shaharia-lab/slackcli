@@ -275,5 +275,59 @@ export class SlackClient {
       throw new Error(`Failed to fetch file: ${error.message}`);
     }
   }
+
+  // List drafts (browser auth only)
+  async listDrafts(): Promise<any> {
+    if (this.config.auth_type !== 'browser') {
+      throw new Error('Drafts API requires browser authentication (xoxc/xoxd tokens)');
+    }
+    return this.request('drafts.list', {});
+  }
+
+  // Create a draft (browser auth only)
+  async createDraft(options: {
+    channelId: string;
+    text: string;
+  }): Promise<any> {
+    if (this.config.auth_type !== 'browser') {
+      throw new Error('Drafts API requires browser authentication (xoxc/xoxd tokens)');
+    }
+
+    // Convert plain text to Slack Block Kit format
+    const blocks = JSON.stringify([{
+      type: 'rich_text',
+      elements: [{
+        type: 'rich_text_section',
+        elements: [{
+          type: 'text',
+          text: options.text,
+        }],
+      }],
+    }]);
+
+    const destinations = JSON.stringify([{ channel_id: options.channelId }]);
+    const clientMsgId = crypto.randomUUID();
+
+    return this.request('drafts.create', {
+      blocks,
+      client_msg_id: clientMsgId,
+      attachments: '',
+      destinations,
+      file_ids: '[]',
+      is_from_composer: 'false',
+    });
+  }
+
+  // Delete a draft (browser auth only)
+  async deleteDraft(draftId: string): Promise<any> {
+    if (this.config.auth_type !== 'browser') {
+      throw new Error('Drafts API requires browser authentication (xoxc/xoxd tokens)');
+    }
+
+    return this.request('drafts.delete', {
+      draft_id: draftId,
+      skip_file_deletion: 'false',
+    });
+  }
 }
 

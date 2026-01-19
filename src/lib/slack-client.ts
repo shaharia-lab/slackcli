@@ -324,8 +324,12 @@ export class SlackClient {
       throw new Error('Drafts API requires browser authentication (xoxc/xoxd tokens)');
     }
 
+    // client_last_updated_ts is required - use current timestamp
+    const clientLastUpdatedTs = `${Date.now()}.${Math.floor(Math.random() * 10000)}`;
+
     return this.request('drafts.delete', {
       draft_id: draftId,
+      client_last_updated_ts: clientLastUpdatedTs,
       skip_file_deletion: 'false',
     });
   }

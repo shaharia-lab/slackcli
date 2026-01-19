@@ -11,7 +11,8 @@ export function createDraftsCommand(): Command {
   // List drafts
   drafts
     .command('list')
-    .description('List all drafts')
+    .description('List drafts (by default shows only active/unsent drafts)')
+    .option('--all', 'Show all drafts including sent and deleted')
     .option('--workspace <id|name>', 'Workspace to use')
     .action(async (options) => {
       const spinner = ora('Fetching drafts...').start();
@@ -27,9 +28,24 @@ export function createDraftsCommand(): Command {
           return;
         }
 
-        console.log(chalk.bold(`\n📝 Drafts (${response.drafts.length})\n`));
+        // Filter drafts based on --all flag
+        let draftsToShow = response.drafts;
+        if (!options.all) {
+          // Only show active drafts (not deleted and not sent)
+          draftsToShow = response.drafts.filter(
+            (d: any) => !d.is_deleted && !d.is_sent
+          );
+        }
 
-        response.drafts.forEach((draft: any, idx: number) => {
+        if (draftsToShow.length === 0) {
+          success('No active drafts found (use --all to see sent/deleted drafts)');
+          return;
+        }
+
+        const label = options.all ? 'All Drafts' : 'Active Drafts';
+        console.log(chalk.bold(`\n📝 ${label} (${draftsToShow.length})\n`));
+
+        draftsToShow.forEach((draft: any, idx: number) => {
           // Extract text from blocks if present
           let text = '';
           if (draft.blocks && draft.blocks.length > 0) {
@@ -46,13 +62,25 @@ export function createDraftsCommand(): Command {
           // Get destination channel
           const channel = draft.destinations?.[0]?.channel_id || 'Unknown';
 
-          console.log(`${chalk.dim(`${idx + 1}.`)} ${chalk.bold(draft.id)}`);
+          // Status indicator
+          let status = '';
+          if (options.all) {
+            if (draft.is_deleted) {
+              status = chalk.red(' [deleted]');
+            } else if (draft.is_sent) {
+              status = chalk.blue(' [sent]');
+            } else {
+              status = chalk.green(' [active]');
+            }
+          }
+
+          console.log(`${chalk.dim(`${idx + 1}.`)} ${chalk.bold(draft.id)}${status}`);
           console.log(`   ${chalk.dim('Channel:')} ${channel}`);
           console.log(`   ${chalk.dim('Preview:')} ${preview || '(empty)'}`);
           console.log();
         });
 
-        success(`Found ${response.drafts.length} draft(s)`);
+        success(`Found ${draftsToShow.length} draft(s)`);
       } catch (err: any) {
         spinner.fail('Failed to fetch drafts');
         error(err.message);

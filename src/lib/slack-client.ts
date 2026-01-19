@@ -281,7 +281,7 @@ export class SlackClient {
     if (this.config.auth_type !== 'browser') {
       throw new Error('Drafts API requires browser authentication (xoxc/xoxd tokens)');
     }
-    return this.request('drafts.list', {});
+    return this.request('drafts.list', { limit: '100' });
   }
 
   // Create a draft (browser auth only)

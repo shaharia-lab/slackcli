@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 bun.lockb
+package-lock.json
 
 # Build output
 dist/

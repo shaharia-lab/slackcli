@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { createAuthCommand } from './commands/auth.ts';
+import { createCanvasesCommand } from './commands/canvases.ts';
 import { createConversationsCommand } from './commands/conversations.ts';
 import { createMessagesCommand } from './commands/messages.ts';
 import { createUpdateCommand } from './commands/update.ts';
@@ -17,6 +18,7 @@ program
 
 // Add commands
 program.addCommand(createAuthCommand());
+program.addCommand(createCanvasesCommand());
 program.addCommand(createConversationsCommand());
 program.addCommand(createMessagesCommand());
 program.addCommand(createUpdateCommand());

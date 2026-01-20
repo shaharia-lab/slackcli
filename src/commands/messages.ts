@@ -11,7 +11,7 @@ export function createMessagesCommand(): Command {
   messages
     .command('send')
     .description('Send a message to a channel or user')
-    .requiredOption('--recipient-id <id>', 'Channel ID or User ID')
+    .requiredOption('--recipient-id <id>', 'Channel ID/name (C024BE91L, general, #general) or User ID (U...)')
     .requiredOption('--message <text>', 'Message text content')
     .option('--thread-ts <timestamp>', 'Send as reply to thread')
     .option('--workspace <id|name>', 'Workspace to use')
@@ -21,12 +21,17 @@ export function createMessagesCommand(): Command {
       try {
         const client = await getAuthenticatedClient(options.workspace);
 
-        // Check if recipient is a user ID (starts with U) and needs DM opened
         let channelId = options.recipientId;
+
+        // Check if recipient is a user ID (starts with U) and needs DM opened
         if (options.recipientId.startsWith('U')) {
           spinner.text = 'Opening direct message...';
           const dmResponse = await client.openConversation(options.recipientId);
           channelId = dmResponse.channel.id;
+        } else {
+          // Resolve channel name to ID if needed
+          spinner.text = 'Resolving channel...';
+          channelId = await client.resolveChannel(options.recipientId);
         }
 
         spinner.text = 'Sending message...';

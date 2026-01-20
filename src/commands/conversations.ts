@@ -61,7 +61,7 @@ export function createConversationsCommand(): Command {
   conversations
     .command('read')
     .description('Read conversation history or specific thread')
-    .argument('<channel-id>', 'Channel ID to read from')
+    .argument('<channel>', 'Channel ID or name (e.g., C024BE91L, general, or #general)')
     .option('--thread-ts <timestamp>', 'Thread timestamp to read specific thread')
     .option('--exclude-replies', 'Exclude threaded replies (only top-level messages)', false)
     .option('--limit <number>', 'Number of messages to return', '100')
@@ -69,11 +69,15 @@ export function createConversationsCommand(): Command {
     .option('--latest <timestamp>', 'End of time range')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format (includes timestamps for replies)', false)
-    .action(async (channelId, options) => {
+    .action(async (channel, options) => {
       const spinner = ora('Fetching messages...').start();
 
       try {
         const client = await getAuthenticatedClient(options.workspace);
+
+        // Resolve channel name to ID if needed
+        spinner.text = 'Resolving channel...';
+        const channelId = await client.resolveChannel(channel);
 
         let response: any;
         let messages: SlackMessage[];

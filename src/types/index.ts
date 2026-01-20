@@ -87,6 +87,42 @@ export interface SlackAuthTestResponse {
   is_enterprise_install?: boolean;
 }
 
+export interface SlackFileShare {
+  ts: string;
+  thread_ts?: string;
+  reply_count?: number;
+  channel_name?: string;
+  team_id?: string;
+  share_user_id?: string;
+}
+
+export interface SlackFile {
+  id: string;
+  name?: string;
+  title?: string;
+  mimetype?: string;
+  filetype?: string;
+  pretty_type?: string;
+  user?: string;
+  created?: number;
+  timestamp?: number;
+  size?: number;
+  url_private?: string;
+  url_private_download?: string;
+  permalink?: string;
+  shares?: {
+    public?: Record<string, SlackFileShare[]>;
+    private?: Record<string, SlackFileShare[]>;
+  };
+  comments_count?: number;
+  initial_comment?: {
+    id: string;
+    comment: string;
+    user: string;
+    timestamp: number;
+  };
+}
+
 // CLI options interfaces
 export interface ConversationListOptions {
   types?: string;

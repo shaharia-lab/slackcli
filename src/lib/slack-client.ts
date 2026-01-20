@@ -1,5 +1,5 @@
 import { WebClient } from '@slack/web-api';
-import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
+import type { WorkspaceConfig, SlackAuthTestResponse, SlackChannel } from '../types/index.ts';
 
 export class SlackClient {
   private config: WorkspaceConfig;
@@ -170,6 +170,88 @@ export class SlackClient {
   // Open a conversation (DM)
   async openConversation(users: string): Promise<any> {
     return this.request('conversations.open', { users });
+  }
+
+  // Resolve channel name to ID (accepts either ID or name like "general" or "#general")
+  async resolveChannel(channelOrName: string): Promise<string> {
+    // If it looks like a channel ID (starts with C, G, or D followed by alphanumeric), return as-is
+    if (/^[CGD][A-Z0-9]+$/i.test(channelOrName)) {
+      return channelOrName;
+    }
+
+    // Strip leading # if present
+    const channelName = channelOrName.replace(/^#/, '');
+
+    let cursor: string | undefined;
+    do {
+      const response = await this.listConversations({
+        types: 'public_channel,private_channel',
+        limit: 200,
+        cursor,
+      });
+
+      const match = response.channels?.find(
+        (ch: SlackChannel) => ch.name === channelName
+      );
+      if (match) return match.id;
+
+      cursor = response.response_metadata?.next_cursor;
+    } while (cursor);
+
+    throw new Error(`Channel not found: ${channelOrName}`);
+  }
+
+  // List files (canvases are files with types=canvas)
+  async listFiles(options: {
+    types?: string;
+    channel?: string;
+    user?: string;
+    count?: number;
+    page?: number;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.types) params.types = options.types;
+    if (options.channel) params.channel = options.channel;
+    if (options.user) params.user = options.user;
+    if (options.count) params.count = options.count;
+    if (options.page) params.page = options.page;
+
+    return this.request('files.list', params);
+  }
+
+  // Get file info (includes url_private_download for canvases)
+  async getFileInfo(fileId: string): Promise<any> {
+    return this.request('files.info', { file: fileId });
+  }
+
+  // Download file content with authentication
+  async downloadFile(url: string): Promise<string> {
+    const token = this.config.auth_type === 'standard'
+      ? this.config.token
+      : this.config.xoxc_token;
+
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${token}`,
+    };
+
+    // For browser auth, also add the cookie
+    if (this.config.auth_type === 'browser') {
+      const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
+      headers['Cookie'] = `d=${encodedXoxdToken}`;
+    }
+
+    const response = await fetch(url, { headers });
+
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+    }
+
+    return response.text();
+  }
+
+  // Get conversation info (includes channel canvas info in properties.canvas)
+  async getConversationInfo(channel: string): Promise<any> {
+    return this.request('conversations.info', { channel });
   }
 }
 

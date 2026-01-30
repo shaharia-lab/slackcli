@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-30
+
+### Added
+- **Parse cURL Command** (`auth parse-curl`): Automatically extract browser tokens from cURL commands
+  - Supports both stdin pipe and command argument input
+  - Includes `--login` flag for automatic authentication after parsing
+  - Parses workspace URL, name, xoxd and xoxc tokens from cURL commands
+  - Significantly simplifies browser token extraction process
+- **Message Reactions** (`messages react`): Add emoji reactions to Slack messages programmatically
+  - Works with both standard and browser authentication methods
+  - Supports all standard Slack emoji names
+  - Useful for workflow automation and acknowledgment systems
+- `addReaction` and `removeReaction` methods to SlackClient library
+
+### Changed
+- Enhanced authentication workflow with easier browser token extraction
+- Improved user experience for initial setup and authentication
+
+### Technical Details
+- Token extraction uses regex patterns to parse various cURL formats
+- Handles URL-encoded tokens correctly with decodeURIComponent
+- Supports multiple cURL formats (--data-raw, --data, -b, --cookie, -H)
+
 ## [0.1.1] - 2025-11-09
 
 ### Added
@@ -74,14 +97,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Future Releases
 
-### Planned for v0.2.0
+### Planned for v0.3.0
 - File upload/download support
-- Reaction management
 - User and channel search
 - Message editing and deletion
 - Thread management
 
-### Planned for v0.3.0
+### Planned for v0.4.0
 - Interactive REPL mode
 - Message block formatting
 - Bulk operations
@@ -90,5 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[0.2.0]: https://github.com/shaharia-lab/slackcli/releases/tag/v0.2.0
+[0.1.1]: https://github.com/shaharia-lab/slackcli/releases/tag/v0.1.1
 [0.1.0]: https://github.com/shaharia-lab/slackcli/releases/tag/v0.1.0
 

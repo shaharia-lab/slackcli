@@ -171,5 +171,23 @@ export class SlackClient {
   async openConversation(users: string): Promise<any> {
     return this.request('conversations.open', { users });
   }
+
+  // Add reaction to message
+  async addReaction(channel: string, timestamp: string, name: string): Promise<any> {
+    return this.request('reactions.add', {
+      channel,
+      timestamp,
+      name
+    });
+  }
+
+  // Remove reaction from message
+  async removeReaction(channel: string, timestamp: string, name: string): Promise<any> {
+    return this.request('reactions.remove', {
+      channel,
+      timestamp,
+      name
+    });
+  }
 }
 

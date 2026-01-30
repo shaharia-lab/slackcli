@@ -5,8 +5,10 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 ## Features
 
 - 🔐 **Dual Authentication Support**: Standard Slack tokens (xoxb/xoxp) or browser tokens (xoxd/xoxc)
+- 🎯 **Easy Token Extraction**: Automatically parse tokens from browser cURL commands
 - 🏢 **Multi-Workspace Management**: Manage multiple Slack workspaces with ease
 - 💬 **Conversation Management**: List channels, read messages, send messages
+- 🎉 **Message Reactions**: Add emoji reactions to messages programmatically
 - 🚀 **Fast & Lightweight**: Built with Bun for blazing fast performance
 - 🔄 **Auto-Update**: Built-in self-update mechanism
 - 🎨 **Beautiful Output**: Colorful, user-friendly terminal output
@@ -91,6 +93,30 @@ slackcli auth login-browser \
    - `xoxd` token from Cookie header (d=xoxd-...)
    - `xoxc` token from request payload ("token":"xoxc-...")
 
+### 3. Easy Method: Parse cURL Command (Recommended for Browser Tokens)
+
+The easiest way to extract browser tokens is to copy a Slack API request as cURL and let SlackCLI parse it automatically!
+
+```bash
+# Step 1: In browser DevTools, right-click any Slack API request
+#         → Copy → Copy as cURL
+
+# Step 2: Parse the cURL command (shows tokens without logging in)
+slackcli auth parse-curl "paste-your-curl-command-here"
+
+# Step 3: Or parse and login automatically with --login flag
+slackcli auth parse-curl --login "paste-your-curl-command-here"
+
+# Alternative: Pipe from clipboard or file
+pbpaste | slackcli auth parse-curl --login
+cat curl-command.txt | slackcli auth parse-curl --login
+```
+
+This automatically extracts:
+- Workspace URL and name
+- xoxd token from cookies
+- xoxc token from request data
+
 ## Usage
 
 ### Authentication Commands
@@ -145,7 +171,23 @@ slackcli messages send --recipient-id=U9876543210 --message="Hey there!"
 
 # Reply to a thread
 slackcli messages send --recipient-id=C1234567890 --thread-ts=1234567890.123456 --message="Great idea!"
+
+# Add emoji reaction to a message
+slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=+1
+
+# More reaction examples
+slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=heart
+slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=fire
+slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=eyes
 ```
+
+**Common emoji names:**
+- `+1` or `thumbsup` - 👍
+- `heart` - ❤️
+- `fire` - 🔥
+- `eyes` - 👀
+- `tada` - 🎉
+- `rocket` - 🚀
 
 ### Update Commands
 

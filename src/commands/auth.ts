@@ -165,6 +165,108 @@ export function createAuthCommand(): Command {
       console.log('     --xoxd=xoxd-... \\');
       console.log('     --xoxc=xoxc-... \\');
       console.log('     --workspace-url=https://yourteam.slack.com\n');
+      console.log('\n💡 Or use the easy way:');
+      console.log('   Right-click on any Slack API request → Copy → Copy as cURL');
+      console.log('   Then run: slackcli auth parse-curl "paste-your-curl-command"\n');
+    });
+
+  // Parse cURL command to extract tokens
+  auth
+    .command('parse-curl')
+    .description('Extract xoxd and xoxc tokens from a cURL command')
+    .argument('[curl-command]', 'cURL command (or pipe via stdin)')
+    .option('--login', 'Automatically login with extracted tokens')
+    .action(async (curlCommand, options) => {
+      try {
+        let curlInput = curlCommand;
+
+        // If no argument provided, try to read from stdin
+        if (!curlInput) {
+          const stdinChunks: Buffer[] = [];
+          for await (const chunk of process.stdin) {
+            stdinChunks.push(chunk);
+          }
+          if (stdinChunks.length > 0) {
+            curlInput = Buffer.concat(stdinChunks).toString('utf-8');
+          }
+        }
+
+        if (!curlInput || curlInput.trim() === '') {
+          error('No cURL command provided. Usage:');
+          console.log('  slackcli auth parse-curl "curl \'https://...\'"');
+          console.log('  or: echo "curl ..." | slackcli auth parse-curl');
+          process.exit(1);
+        }
+
+        console.log(chalk.bold('\n🔍 Parsing cURL command...\n'));
+
+        // Extract workspace URL
+        const urlMatch = curlInput.match(/curl\s+'?(https?:\/\/([^.]+)\.slack\.com[^'"\s]*)/);
+        if (!urlMatch) {
+          throw new Error('Could not find Slack workspace URL in cURL command');
+        }
+        const workspaceUrl = `https://${urlMatch[2]}.slack.com`;
+        const workspaceName = urlMatch[2];
+
+        // Extract xoxd token from cookie header
+        const cookieMatch = curlInput.match(/-b\s+'([^']+)'|--cookie\s+'([^']+)'|-H\s+'[Cc]ookie:\s*([^']+)'/);
+        const cookieHeader = cookieMatch ? (cookieMatch[1] || cookieMatch[2] || cookieMatch[3]) : '';
+
+        const xoxdMatch = cookieHeader.match(/(?:^|;\s*)d=(xoxd-[^;]+)/);
+        if (!xoxdMatch) {
+          throw new Error('Could not find xoxd token in cookie header (d=xoxd-...)');
+        }
+        const xoxdEncoded = xoxdMatch[1];
+        const xoxd = decodeURIComponent(xoxdEncoded);
+
+        // Extract xoxc token from data
+        const dataMatch = curlInput.match(/--data-raw\s+\$?'([^']+)'|--data-raw\s+\$?"([^"]+)"|--data\s+\$?'([^']+)'|--data\s+\$?"([^"]+)"/);
+        const dataContent = dataMatch ? (dataMatch[1] || dataMatch[2] || dataMatch[3] || dataMatch[4]) : '';
+
+        const xoxcMatch = dataContent.match(/name="token".*?(xoxc-[a-zA-Z0-9-]+)/);
+        if (!xoxcMatch) {
+          throw new Error('Could not find xoxc token in request data');
+        }
+        const xoxc = xoxcMatch[1];
+
+        // Display extracted tokens
+        success('✅ Successfully extracted tokens!\n');
+        console.log(chalk.bold('Workspace:'));
+        console.log(`  Name: ${chalk.cyan(workspaceName)}`);
+        console.log(`  URL:  ${chalk.cyan(workspaceUrl)}\n`);
+
+        console.log(chalk.bold('Tokens:'));
+        console.log(`  xoxd: ${chalk.green(xoxd.substring(0, 20))}...${chalk.gray(`(${xoxd.length} chars)`)}`);
+        console.log(`  xoxc: ${chalk.green(xoxc.substring(0, 20))}...${chalk.gray(`(${xoxc.length} chars)`)}\n`);
+
+        // If --login flag is set, authenticate directly
+        if (options.login) {
+          const spinner = ora('Authenticating with extracted tokens...').start();
+          try {
+            const config = await authenticateBrowser(xoxd, xoxc, workspaceUrl, workspaceName);
+            spinner.succeed('Authentication successful!');
+            success(`Authenticated as workspace: ${config.workspace_name}`);
+            info(`Workspace ID: ${config.workspace_id}`);
+          } catch (err: any) {
+            spinner.fail('Authentication failed');
+            error(err.message);
+            process.exit(1);
+          }
+        } else {
+          console.log(chalk.bold('To login with these tokens, run:\n'));
+          console.log(chalk.cyan('  slackcli auth parse-curl --login "your-curl-command"'));
+          console.log(chalk.gray('\nOr manually:\n'));
+          console.log(`  slackcli auth login-browser \\`);
+          console.log(`    --xoxd="${xoxd}" \\`);
+          console.log(`    --xoxc="${xoxc}" \\`);
+          console.log(`    --workspace-url="${workspaceUrl}"\n`);
+        }
+      } catch (err: any) {
+        error('Failed to parse cURL command', err.message);
+        console.log(chalk.yellow('\n💡 Tip: Right-click on a Slack API request in browser DevTools'));
+        console.log(chalk.yellow('   → Copy → Copy as cURL, then paste here\n'));
+        process.exit(1);
+      }
     });
 
   return auth;

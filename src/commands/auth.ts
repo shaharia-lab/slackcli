@@ -10,6 +10,9 @@ import {
 } from '../lib/workspaces.ts';
 import { success, error, info, formatWorkspace } from '../lib/formatter.ts';
 import chalk from 'chalk';
+import { parseCurlCommand, CurlParseError, looksLikeCurlCommand } from '../lib/curl-parser.ts';
+import { readClipboard } from '../lib/clipboard.ts';
+import { readInteractiveInput, isInteractiveTerminal, hasPipedInput } from '../lib/interactive-input.ts';
 
 export function createAuthCommand(): Command {
   const auth = new Command('auth')
@@ -167,21 +170,46 @@ export function createAuthCommand(): Command {
       console.log('     --workspace-url=https://yourteam.slack.com\n');
       console.log('\n💡 Or use the easy way:');
       console.log('   Right-click on any Slack API request → Copy → Copy as cURL');
-      console.log('   Then run: slackcli auth parse-curl "paste-your-curl-command"\n');
+      console.log('   Then run: slackcli auth parse-curl --login');
+      console.log('   (Interactive mode - just paste and press Enter twice)\n');
+      console.log('   Or: slackcli auth parse-curl --from-clipboard --login');
+      console.log('   (Reads directly from your clipboard)\n');
     });
 
   // Parse cURL command to extract tokens
   auth
     .command('parse-curl')
     .description('Extract xoxd and xoxc tokens from a cURL command')
-    .argument('[curl-command]', 'cURL command (or pipe via stdin)')
+    .argument('[curl-command]', 'cURL command (or use --from-clipboard / interactive mode)')
     .option('--login', 'Automatically login with extracted tokens')
+    .option('--from-clipboard', 'Read cURL command from system clipboard')
     .action(async (curlCommand, options) => {
       try {
         let curlInput = curlCommand;
 
-        // If no argument provided, try to read from stdin
-        if (!curlInput) {
+        // Get input from various sources (in priority order)
+        if (!curlInput && options.fromClipboard) {
+          const spinner = ora('Reading from clipboard...').start();
+          const clipboardResult = await readClipboard();
+
+          if (!clipboardResult.success) {
+            spinner.fail('Failed to read clipboard');
+            error(clipboardResult.error || 'Unknown clipboard error');
+            console.log(chalk.yellow('\n💡 Tip: Try the interactive mode instead:'));
+            console.log(chalk.cyan('   slackcli auth parse-curl --login\n'));
+            process.exit(1);
+          }
+
+          curlInput = clipboardResult.content || '';
+          spinner.succeed('Read from clipboard');
+
+          if (!looksLikeCurlCommand(curlInput)) {
+            error('Clipboard content does not appear to be a cURL command');
+            console.log(chalk.yellow('\n💡 Tip: Make sure you copied the cURL command from browser DevTools'));
+            console.log(chalk.yellow('   Right-click on request → Copy → Copy as cURL\n'));
+            process.exit(1);
+          }
+        } else if (!curlInput && hasPipedInput()) {
           const stdinChunks: Buffer[] = [];
           for await (const chunk of process.stdin) {
             stdinChunks.push(chunk);
@@ -189,61 +217,44 @@ export function createAuthCommand(): Command {
           if (stdinChunks.length > 0) {
             curlInput = Buffer.concat(stdinChunks).toString('utf-8');
           }
+        } else if (!curlInput && isInteractiveTerminal()) {
+          curlInput = await readInteractiveInput({
+            prompt: 'Paste your cURL command (press Enter twice when done):',
+            hint: 'Copy the cURL command from browser DevTools (Right-click → Copy → Copy as cURL)',
+          });
         }
 
         if (!curlInput || curlInput.trim() === '') {
           error('No cURL command provided. Usage:');
-          console.log('  slackcli auth parse-curl "curl \'https://...\'"');
-          console.log('  or: echo "curl ..." | slackcli auth parse-curl');
+          console.log('\n  Interactive mode (recommended):');
+          console.log(chalk.cyan('    slackcli auth parse-curl --login'));
+          console.log('\n  From clipboard:');
+          console.log(chalk.cyan('    slackcli auth parse-curl --from-clipboard --login'));
+          console.log('\n  Piped input:');
+          console.log(chalk.cyan('    pbpaste | slackcli auth parse-curl --login'));
           process.exit(1);
         }
 
         console.log(chalk.bold('\n🔍 Parsing cURL command...\n'));
 
-        // Extract workspace URL
-        const urlMatch = curlInput.match(/curl\s+'?(https?:\/\/([^.]+)\.slack\.com[^'"\s]*)/);
-        if (!urlMatch) {
-          throw new Error('Could not find Slack workspace URL in cURL command');
-        }
-        const workspaceUrl = `https://${urlMatch[2]}.slack.com`;
-        const workspaceName = urlMatch[2];
-
-        // Extract xoxd token from cookie header
-        const cookieMatch = curlInput.match(/-b\s+'([^']+)'|--cookie\s+'([^']+)'|-H\s+'[Cc]ookie:\s*([^']+)'/);
-        const cookieHeader = cookieMatch ? (cookieMatch[1] || cookieMatch[2] || cookieMatch[3]) : '';
-
-        const xoxdMatch = cookieHeader.match(/(?:^|;\s*)d=(xoxd-[^;]+)/);
-        if (!xoxdMatch) {
-          throw new Error('Could not find xoxd token in cookie header (d=xoxd-...)');
-        }
-        const xoxdEncoded = xoxdMatch[1];
-        const xoxd = decodeURIComponent(xoxdEncoded);
-
-        // Extract xoxc token from data
-        const dataMatch = curlInput.match(/--data-raw\s+\$?'([^']+)'|--data-raw\s+\$?"([^"]+)"|--data\s+\$?'([^']+)'|--data\s+\$?"([^"]+)"/);
-        const dataContent = dataMatch ? (dataMatch[1] || dataMatch[2] || dataMatch[3] || dataMatch[4]) : '';
-
-        const xoxcMatch = dataContent.match(/name="token".*?(xoxc-[a-zA-Z0-9-]+)/);
-        if (!xoxcMatch) {
-          throw new Error('Could not find xoxc token in request data');
-        }
-        const xoxc = xoxcMatch[1];
+        // Parse the cURL command
+        const parsed = parseCurlCommand(curlInput);
 
         // Display extracted tokens
         success('✅ Successfully extracted tokens!\n');
         console.log(chalk.bold('Workspace:'));
-        console.log(`  Name: ${chalk.cyan(workspaceName)}`);
-        console.log(`  URL:  ${chalk.cyan(workspaceUrl)}\n`);
+        console.log(`  Name: ${chalk.cyan(parsed.workspaceName)}`);
+        console.log(`  URL:  ${chalk.cyan(parsed.workspaceUrl)}\n`);
 
         console.log(chalk.bold('Tokens:'));
-        console.log(`  xoxd: ${chalk.green(xoxd.substring(0, 20))}...${chalk.gray(`(${xoxd.length} chars)`)}`);
-        console.log(`  xoxc: ${chalk.green(xoxc.substring(0, 20))}...${chalk.gray(`(${xoxc.length} chars)`)}\n`);
+        console.log(`  xoxd: ${chalk.green(parsed.xoxd.substring(0, 20))}...${chalk.gray(`(${parsed.xoxd.length} chars)`)}`);
+        console.log(`  xoxc: ${chalk.green(parsed.xoxc.substring(0, 20))}...${chalk.gray(`(${parsed.xoxc.length} chars)`)}\n`);
 
         // If --login flag is set, authenticate directly
         if (options.login) {
           const spinner = ora('Authenticating with extracted tokens...').start();
           try {
-            const config = await authenticateBrowser(xoxd, xoxc, workspaceUrl, workspaceName);
+            const config = await authenticateBrowser(parsed.xoxd, parsed.xoxc, parsed.workspaceUrl, parsed.workspaceName);
             spinner.succeed('Authentication successful!');
             success(`Authenticated as workspace: ${config.workspace_name}`);
             info(`Workspace ID: ${config.workspace_id}`);
@@ -254,12 +265,12 @@ export function createAuthCommand(): Command {
           }
         } else {
           console.log(chalk.bold('To login with these tokens, run:\n'));
-          console.log(chalk.cyan('  slackcli auth parse-curl --login "your-curl-command"'));
+          console.log(chalk.cyan('  slackcli auth parse-curl --login'));
           console.log(chalk.gray('\nOr manually:\n'));
           console.log(`  slackcli auth login-browser \\`);
-          console.log(`    --xoxd="${xoxd}" \\`);
-          console.log(`    --xoxc="${xoxc}" \\`);
-          console.log(`    --workspace-url="${workspaceUrl}"\n`);
+          console.log(`    --xoxd="${parsed.xoxd}" \\`);
+          console.log(`    --xoxc="${parsed.xoxc}" \\`);
+          console.log(`    --workspace-url="${parsed.workspaceUrl}"\n`);
         }
       } catch (err: any) {
         error('Failed to parse cURL command', err.message);

@@ -91,5 +91,6 @@ jobs:
     uses: shaharia-lab/actions-library/.github/workflows/update-homebrew-formula.yml@main
     with:
       formula-name: slackcli
+      tag-name: ${{ github.ref_name }}
     secrets:
       tap-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}

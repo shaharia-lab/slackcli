@@ -98,12 +98,14 @@ jobs:
           VERSION_NUM="${VERSION#v}"
           VERSION_CLASS=$(echo "$VERSION_NUM" | tr -d '.')
 
-          # Calculate SHA256 for macOS binaries
+          # Calculate SHA256 for all binaries
           echo "Calculating SHA256 checksums..."
-          SHA_X86=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos" | sha256sum | cut -d' ' -f1)
-          SHA_ARM=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64" | sha256sum | cut -d' ' -f1)
-          echo "SHA256 x86_64: ${SHA_X86}"
-          echo "SHA256 arm64: ${SHA_ARM}"
+          SHA_MACOS_X86=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos" | sha256sum | cut -d' ' -f1)
+          SHA_MACOS_ARM=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64" | sha256sum | cut -d' ' -f1)
+          SHA_LINUX=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-linux" | sha256sum | cut -d' ' -f1)
+          echo "SHA256 macOS x86_64: ${SHA_MACOS_X86}"
+          echo "SHA256 macOS arm64: ${SHA_MACOS_ARM}"
+          echo "SHA256 Linux: ${SHA_LINUX}"
 
           # Main formula content
           MAIN_FORMULA="# typed: false
@@ -118,7 +120,7 @@ jobs:
             on_macos do
               if Hardware::CPU.intel?
                 url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos\"
-                sha256 \"${SHA_X86}\"
+                sha256 \"${SHA_MACOS_X86}\"
 
                 def install
                   bin.install \"slackcli-macos\" => \"slackcli\"
@@ -126,11 +128,20 @@ jobs:
               end
               if Hardware::CPU.arm?
                 url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64\"
-                sha256 \"${SHA_ARM}\"
+                sha256 \"${SHA_MACOS_ARM}\"
 
                 def install
                   bin.install \"slackcli-macos-arm64\" => \"slackcli\"
                 end
+              end
+            end
+
+            on_linux do
+              url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-linux\"
+              sha256 \"${SHA_LINUX}\"
+
+              def install
+                bin.install \"slackcli-linux\" => \"slackcli\"
               end
             end
 
@@ -154,7 +165,7 @@ jobs:
             on_macos do
               if Hardware::CPU.intel?
                 url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos\"
-                sha256 \"${SHA_X86}\"
+                sha256 \"${SHA_MACOS_X86}\"
 
                 def install
                   bin.install \"slackcli-macos\" => \"slackcli\"
@@ -162,11 +173,20 @@ jobs:
               end
               if Hardware::CPU.arm?
                 url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64\"
-                sha256 \"${SHA_ARM}\"
+                sha256 \"${SHA_MACOS_ARM}\"
 
                 def install
                   bin.install \"slackcli-macos-arm64\" => \"slackcli\"
                 end
+              end
+            end
+
+            on_linux do
+              url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-linux\"
+              sha256 \"${SHA_LINUX}\"
+
+              def install
+                bin.install \"slackcli-linux\" => \"slackcli\"
               end
             end
 

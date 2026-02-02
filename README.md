@@ -101,11 +101,11 @@ The easiest way to extract browser tokens is to copy a Slack API request as cURL
 # Step 1: In browser DevTools, right-click any Slack API request
 #         → Copy → Copy as cURL
 
-# Step 2: Parse the cURL command (shows tokens without logging in)
-slackcli auth parse-curl "paste-your-curl-command-here"
+# Step 2: Interactive mode (recommended) - just paste and press Enter twice
+slackcli auth parse-curl --login
 
-# Step 3: Or parse and login automatically with --login flag
-slackcli auth parse-curl --login "paste-your-curl-command-here"
+# Alternative: Read directly from clipboard
+slackcli auth parse-curl --from-clipboard --login
 
 # Alternative: Pipe from clipboard or file
 pbpaste | slackcli auth parse-curl --login

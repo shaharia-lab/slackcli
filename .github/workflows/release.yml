@@ -88,9 +88,12 @@ jobs:
   update-homebrew:
     name: Update Homebrew Formula
     needs: release
-    uses: shaharia-lab/actions-library/.github/workflows/update-homebrew-formula.yml@main
-    with:
-      formula-name: slackcli
-      tag-name: ${{ github.ref_name }}
-    secrets:
-      tap-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          formula-name: slackcli
+          tag-name: ${{ github.ref_name }}
+          homebrew-tap: shaharia-lab/homebrew-tap
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

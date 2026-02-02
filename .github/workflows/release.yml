@@ -90,10 +90,116 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - uses: mislav/bump-homebrew-formula-action@v3
-        with:
-          formula-name: slackcli
-          tag-name: ${{ github.ref_name }}
-          homebrew-tap: shaharia-lab/homebrew-tap
+      - name: Update Homebrew formulas
         env:
-          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION_NUM="${VERSION#v}"
+          VERSION_CLASS=$(echo "$VERSION_NUM" | tr -d '.')
+
+          # Calculate SHA256 for macOS binaries
+          echo "Calculating SHA256 checksums..."
+          SHA_X86=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos" | sha256sum | cut -d' ' -f1)
+          SHA_ARM=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64" | sha256sum | cut -d' ' -f1)
+          echo "SHA256 x86_64: ${SHA_X86}"
+          echo "SHA256 arm64: ${SHA_ARM}"
+
+          # Main formula content
+          MAIN_FORMULA="# typed: false
+          # frozen_string_literal: true
+
+          class Slackcli < Formula
+            desc \"Slack CLI - Interact with Slack from command line\"
+            homepage \"https://github.com/shaharia-lab/slackcli\"
+            version \"${VERSION_NUM}\"
+            license \"MIT\"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos\"
+                sha256 \"${SHA_X86}\"
+
+                def install
+                  bin.install \"slackcli-macos\" => \"slackcli\"
+                end
+              end
+              if Hardware::CPU.arm?
+                url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64\"
+                sha256 \"${SHA_ARM}\"
+
+                def install
+                  bin.install \"slackcli-macos-arm64\" => \"slackcli\"
+                end
+              end
+            end
+
+            test do
+              system \"\#{bin}/slackcli\", \"--version\"
+            end
+          end"
+
+          # Versioned formula content
+          VERSIONED_FORMULA="# typed: false
+          # frozen_string_literal: true
+
+          class SlackcliAT${VERSION_CLASS} < Formula
+            desc \"Slack CLI - Interact with Slack from command line\"
+            homepage \"https://github.com/shaharia-lab/slackcli\"
+            version \"${VERSION_NUM}\"
+            license \"MIT\"
+
+            keg_only :versioned_formula
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos\"
+                sha256 \"${SHA_X86}\"
+
+                def install
+                  bin.install \"slackcli-macos\" => \"slackcli\"
+                end
+              end
+              if Hardware::CPU.arm?
+                url \"https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64\"
+                sha256 \"${SHA_ARM}\"
+
+                def install
+                  bin.install \"slackcli-macos-arm64\" => \"slackcli\"
+                end
+              end
+            end
+
+            test do
+              system \"\#{bin}/slackcli\", \"--version\"
+            end
+          end"
+
+          # Update main formula
+          echo "Updating main formula slackcli.rb..."
+          MAIN_SHA=$(gh api "repos/shaharia-lab/homebrew-tap/contents/Formula/slackcli.rb" --jq '.sha' 2>/dev/null || echo "")
+          if [ -n "$MAIN_SHA" ]; then
+            echo "$MAIN_FORMULA" | gh api --method PUT "repos/shaharia-lab/homebrew-tap/contents/Formula/slackcli.rb" \
+              -f message="slackcli ${VERSION_NUM}" \
+              -f content="$(echo "$MAIN_FORMULA" | base64 -w0)" \
+              -f sha="$MAIN_SHA" \
+              -f branch="main"
+          else
+            echo "$MAIN_FORMULA" | gh api --method PUT "repos/shaharia-lab/homebrew-tap/contents/Formula/slackcli.rb" \
+              -f message="slackcli ${VERSION_NUM}" \
+              -f content="$(echo "$MAIN_FORMULA" | base64 -w0)" \
+              -f branch="main"
+          fi
+
+          # Create versioned formula if it doesn't exist
+          if gh api "repos/shaharia-lab/homebrew-tap/contents/Formula/slackcli@${VERSION_NUM}.rb" --silent 2>/dev/null; then
+            echo "Versioned formula slackcli@${VERSION_NUM}.rb already exists, skipping"
+          else
+            echo "Creating versioned formula slackcli@${VERSION_NUM}.rb..."
+            echo "$VERSIONED_FORMULA" | gh api --method PUT "repos/shaharia-lab/homebrew-tap/contents/Formula/slackcli@${VERSION_NUM}.rb" \
+              -f message="Add slackcli@${VERSION_NUM} versioned formula" \
+              -f content="$(echo "$VERSIONED_FORMULA" | base64 -w0)" \
+              -f branch="main"
+          fi
+
+          echo "Homebrew formulas updated successfully!"

@@ -71,7 +71,7 @@ export function createMessagesCommand(): Command {
   // Create draft message
   messages
     .command('draft')
-    .description('Create a draft message in a channel or user')
+    .description('Create a draft message in a channel or user. Note: Only works with Browser Session Tokens. Slack apps cannot create drafts.')
     .requiredOption('--recipient-id <id>', 'Channel ID or User ID')
     .requiredOption('--message <text>', 'Message text content')
     .option('--thread-ts <timestamp>', 'Create draft as reply to thread')

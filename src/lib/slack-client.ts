@@ -139,73 +139,42 @@ export class SlackClient {
   } = {}): Promise<any> {
     const params: Record<string, any> = { channel, text };
     if (options.thread_ts) params.thread_ts = options.thread_ts;
-    
+
     return this.request('chat.postMessage', params);
   }
 
-  // Create draft message (browser auth only)
+  // Create draft message
   async createDraft(channelId: string, text: string, options: {
     thread_ts?: string;
   } = {}): Promise<any> {
     if (this.config.auth_type === 'standard') {
       throw new Error('Draft creation requires browser authentication');
     }
-
-    const url = `${this.config.workspace_url}/api/drafts.create`;
-
-    const formBody = new URLSearchParams();
-    formBody.append('token', this.config.xoxc_token);
-
-    const clientMsgId = crypto.randomUUID();
-    formBody.append('client_msg_id', clientMsgId);
-
-    const blocks = JSON.stringify([{
-      type: 'rich_text',
-      elements: [{
-        type: 'rich_text_section',
-        elements: [{
-          type: 'text',
-          text: text
-        }]
-      }]
-    }]);
-    formBody.append('blocks', blocks);
-
+    
     const destinations: any = [{ channel_id: channelId }];
     if (options.thread_ts) {
       destinations[0].thread_ts = options.thread_ts;
       destinations[0].broadcast = false;
     }
-    formBody.append('destinations', JSON.stringify(destinations));
 
-    formBody.append('attachments', '');
-    formBody.append('file_ids', '[]');
-    formBody.append('is_from_composer', 'false');
+    const params: Record<string, any> = {
+      client_msg_id: crypto.randomUUID(),
+      blocks: JSON.stringify([{
+        type: 'rich_text',
+        elements: [{
+          type: 'rich_text_section',
+          elements: [{
+            type: 'text',
+            text: text
+          }]
+        }]
+      }]),
+      destinations: JSON.stringify(destinations),
+      file_ids: '[]',
+      is_from_composer: 'false',
+    };
 
-    const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Cookie': `d=${encodedXoxdToken}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://app.slack.com',
-        'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
-      },
-      body: formBody,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data: any = await response.json();
-
-    if (!data.ok) {
-      throw new Error(data.error || 'Unknown API error');
-    }
-
-    return data;
+    return this.request('drafts.create', params);
   }
 
   // Get user info

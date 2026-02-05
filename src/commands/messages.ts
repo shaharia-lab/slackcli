@@ -68,6 +68,41 @@ export function createMessagesCommand(): Command {
       }
     });
 
+  // Create draft message
+  messages
+    .command('draft')
+    .description('Create a draft message in a channel or user')
+    .requiredOption('--recipient-id <id>', 'Channel ID or User ID')
+    .requiredOption('--message <text>', 'Message text content')
+    .option('--thread-ts <timestamp>', 'Create draft as reply to thread')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .action(async (options) => {
+      const spinner = ora('Creating draft...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+
+        let channelId = options.recipientId;
+        if (options.recipientId.startsWith('U')) {
+          spinner.text = 'Opening direct message...';
+          const dmResponse = await client.openConversation(options.recipientId);
+          channelId = dmResponse.channel.id;
+        }
+
+        spinner.text = 'Creating draft...';
+        const response = await client.createDraft(channelId, options.message, {
+          thread_ts: options.threadTs,
+        });
+
+        spinner.succeed('Draft created successfully!');
+        success(`Draft ID: ${response.draft.id}`);
+      } catch (err: any) {
+        spinner.fail('Failed to create draft');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
   return messages;
 }
 

@@ -172,6 +172,9 @@ slackcli messages send --recipient-id=U9876543210 --message="Hey there!"
 # Reply to a thread
 slackcli messages send --recipient-id=C1234567890 --thread-ts=1234567890.123456 --message="Great idea!"
 
+# Create a draft message in a channel (only works with browser session tokens)
+slackcli messages draft --recipient-id=C1234567890 --message="Hello team!"
+
 # Add emoji reaction to a message
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=+1
 

@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { createAuthCommand } from './commands/auth.ts';
 import { createConversationsCommand } from './commands/conversations.ts';
 import { createMessagesCommand } from './commands/messages.ts';
+import { createFilesCommand } from './commands/files.ts';
 import { createUpdateCommand } from './commands/update.ts';
 import { checkForUpdates } from './lib/updater.ts';
 import chalk from 'chalk';
@@ -19,6 +20,7 @@ program
 program.addCommand(createAuthCommand());
 program.addCommand(createConversationsCommand());
 program.addCommand(createMessagesCommand());
+program.addCommand(createFilesCommand());
 program.addCommand(createUpdateCommand());
 
 // Check for updates asynchronously (non-blocking)

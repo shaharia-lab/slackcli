@@ -123,3 +123,15 @@ export interface AuthLoginBrowserOptions {
   workspaceName?: string;
 }
 
+// File upload types
+export interface FileUploadUrlResponse {
+  ok: boolean;
+  upload_url: string;
+  file_id: string;
+}
+
+export interface FileUploadCompleteResponse {
+  ok: boolean;
+  files: Array<{ id: string; title?: string }>;
+}
+

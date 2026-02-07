@@ -123,3 +123,51 @@ export interface AuthLoginBrowserOptions {
   workspaceName?: string;
 }
 
+// Search types
+export interface SlackSearchPaging {
+  count: number;
+  total: number;
+  page: number;
+  pages: number;
+}
+
+export interface SlackSearchMessageMatch {
+  type: string;
+  user: string;
+  username: string;
+  ts: string;
+  text: string;
+  channel: { id: string; name: string };
+  permalink: string;
+}
+
+export interface SlackSearchFileMatch {
+  id: string;
+  name: string;
+  title: string;
+  filetype: string;
+  user: string;
+  timestamp: number;
+  channels: string[];
+  permalink: string;
+}
+
+export interface SlackSearchResponse {
+  ok: boolean;
+  query: string;
+  messages: { matches: SlackSearchMessageMatch[]; paging: SlackSearchPaging };
+  files: { matches: SlackSearchFileMatch[]; paging: SlackSearchPaging };
+}
+
+// File upload types
+export interface FileUploadUrlResponse {
+  ok: boolean;
+  upload_url: string;
+  file_id: string;
+}
+
+export interface FileUploadCompleteResponse {
+  ok: boolean;
+  files: Array<{ id: string; title?: string }>;
+}
+

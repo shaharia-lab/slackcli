@@ -1,5 +1,5 @@
 import { WebClient } from '@slack/web-api';
-import type { WorkspaceConfig, SlackAuthTestResponse, FileUploadUrlResponse, FileUploadCompleteResponse } from '../types/index.ts';
+import type { WorkspaceConfig, SlackAuthTestResponse, SlackSearchResponse, FileUploadUrlResponse, FileUploadCompleteResponse } from '../types/index.ts';
 
 export class SlackClient {
   private config: WorkspaceConfig;
@@ -188,6 +188,22 @@ export class SlackClient {
       timestamp,
       name
     });
+  }
+
+  // Search messages and files
+  async searchAll(query: string, options: {
+    sort?: string;
+    sort_dir?: string;
+    count?: number;
+    page?: number;
+  } = {}): Promise<SlackSearchResponse> {
+    const params: Record<string, any> = { query };
+    if (options.sort) params.sort = options.sort;
+    if (options.sort_dir) params.sort_dir = options.sort_dir;
+    if (options.count) params.count = String(options.count);
+    if (options.page) params.page = String(options.page);
+
+    return this.request('search.all', params);
   }
 
   // Get presigned upload URL (step 1 of 3-step upload)

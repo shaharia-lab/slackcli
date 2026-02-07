@@ -51,9 +51,10 @@ describe('SlackClient upload methods', () => {
 
       await client.getUploadUrl('file.jpg', 999999);
 
-      const callArgs = requestMock.mock.calls[0][1] as Record<string, any>;
-      expect(typeof callArgs.length).toBe('string');
-      expect(callArgs.length).toBe('999999');
+      expect(requestMock).toHaveBeenCalledWith('files.getUploadURLExternal', {
+        filename: 'file.jpg',
+        length: '999999',
+      });
     });
   });
 
@@ -132,8 +133,11 @@ describe('SlackClient upload methods', () => {
         { channel_id: 'C123', thread_ts: '1234.5678' }
       );
 
-      const callArgs = requestMock.mock.calls[0][1] as Record<string, any>;
-      expect(callArgs.thread_ts).toBe('1234.5678');
+      expect(requestMock).toHaveBeenCalledWith('files.completeUploadExternal', {
+        files: JSON.stringify([{ id: 'F01' }]),
+        channel_id: 'C123',
+        thread_ts: '1234.5678',
+      });
     });
 
     it('should include initial_comment when provided', async () => {
@@ -145,8 +149,11 @@ describe('SlackClient upload methods', () => {
         { channel_id: 'C123', initial_comment: 'Here are the diagrams' }
       );
 
-      const callArgs = requestMock.mock.calls[0][1] as Record<string, any>;
-      expect(callArgs.initial_comment).toBe('Here are the diagrams');
+      expect(requestMock).toHaveBeenCalledWith('files.completeUploadExternal', {
+        files: JSON.stringify([{ id: 'F01' }]),
+        channel_id: 'C123',
+        initial_comment: 'Here are the diagrams',
+      });
     });
 
     it('should omit optional params when not provided', async () => {
@@ -155,10 +162,9 @@ describe('SlackClient upload methods', () => {
 
       await client.completeUpload([{ id: 'F01' }]);
 
-      const callArgs = requestMock.mock.calls[0][1] as Record<string, any>;
-      expect(callArgs).not.toHaveProperty('channel_id');
-      expect(callArgs).not.toHaveProperty('thread_ts');
-      expect(callArgs).not.toHaveProperty('initial_comment');
+      expect(requestMock).toHaveBeenCalledWith('files.completeUploadExternal', {
+        files: JSON.stringify([{ id: 'F01' }]),
+      });
     });
 
     it('should handle multiple files in a single complete call', async () => {
@@ -175,8 +181,10 @@ describe('SlackClient upload methods', () => {
       ];
       const result = await client.completeUpload(files, { channel_id: 'C123' });
 
-      const callArgs = requestMock.mock.calls[0][1] as Record<string, any>;
-      expect(JSON.parse(callArgs.files)).toEqual(files);
+      expect(requestMock).toHaveBeenCalledWith('files.completeUploadExternal', {
+        files: JSON.stringify(files),
+        channel_id: 'C123',
+      });
       expect(result.files).toHaveLength(3);
     });
   });
@@ -296,6 +304,86 @@ describe('SlackClient upload methods', () => {
       await expect(
         client.uploadFiles([`${tmpDir}/error-test.txt`], { channel_id: 'C123' })
       ).rejects.toThrow('not_authed');
+    });
+  });
+});
+
+describe('SlackClient search methods', () => {
+  describe('searchAll', () => {
+    it('should call search.all with query', async () => {
+      const { client, requestMock } = createMockClient();
+      requestMock.mockResolvedValueOnce({
+        ok: true,
+        query: 'test',
+        messages: { matches: [], paging: { count: 20, total: 0, page: 1, pages: 0 } },
+        files: { matches: [], paging: { count: 20, total: 0, page: 1, pages: 0 } },
+      });
+
+      await client.searchAll('test');
+
+      expect(requestMock).toHaveBeenCalledWith('search.all', { query: 'test' });
+    });
+
+    it('should pass sort and sort_dir options', async () => {
+      const { client, requestMock } = createMockClient();
+      requestMock.mockResolvedValueOnce({ ok: true, query: 'test', messages: { matches: [], paging: {} }, files: { matches: [], paging: {} } });
+
+      await client.searchAll('test', { sort: 'timestamp', sort_dir: 'asc' });
+
+      expect(requestMock).toHaveBeenCalledWith('search.all', {
+        query: 'test',
+        sort: 'timestamp',
+        sort_dir: 'asc',
+      });
+    });
+
+    it('should convert count and page to strings', async () => {
+      const { client, requestMock } = createMockClient();
+      requestMock.mockResolvedValueOnce({ ok: true, query: 'test', messages: { matches: [], paging: {} }, files: { matches: [], paging: {} } });
+
+      await client.searchAll('test', { count: 50, page: 3 });
+
+      expect(requestMock).toHaveBeenCalledWith('search.all', {
+        query: 'test',
+        count: '50',
+        page: '3',
+      });
+    });
+
+    it('should omit undefined options', async () => {
+      const { client, requestMock } = createMockClient();
+      requestMock.mockResolvedValueOnce({ ok: true, query: 'q', messages: { matches: [], paging: {} }, files: { matches: [], paging: {} } });
+
+      await client.searchAll('q', { sort: 'score' });
+
+      expect(requestMock).toHaveBeenCalledWith('search.all', {
+        query: 'q',
+        sort: 'score',
+      });
+    });
+
+    it('should return the full search response', async () => {
+      const { client, requestMock } = createMockClient();
+      const mockResponse = {
+        ok: true,
+        query: 'from:daniel',
+        messages: {
+          matches: [{ type: 'message', user: 'U123', ts: '1234.5678', text: 'hello', channel: { id: 'C1', name: 'general' }, permalink: 'https://slack.com/msg' }],
+          paging: { count: 20, total: 1, page: 1, pages: 1 },
+        },
+        files: {
+          matches: [{ id: 'F1', name: 'doc.pdf', title: 'Document', filetype: 'pdf', user: 'U123', timestamp: 1234567890, channels: ['C1'], permalink: 'https://slack.com/file' }],
+          paging: { count: 20, total: 1, page: 1, pages: 1 },
+        },
+      };
+      requestMock.mockResolvedValueOnce(mockResponse);
+
+      const result = await client.searchAll('from:daniel');
+
+      expect(result.messages.matches).toHaveLength(1);
+      expect(result.messages.matches[0].text).toBe('hello');
+      expect(result.files.matches).toHaveLength(1);
+      expect(result.files.matches[0].name).toBe('doc.pdf');
     });
   });
 });

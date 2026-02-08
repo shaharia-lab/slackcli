@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { SlackChannel, SlackMessage, SlackUser, WorkspaceConfig } from '../types/index.ts';
+import type { SlackChannel, SlackMessage, SlackUser, SlackSearchResponse, WorkspaceConfig } from '../types/index.ts';
 
 // Format timestamp to human-readable date
 export function formatTimestamp(ts: string): string {
@@ -85,6 +85,41 @@ export function formatChannelList(channels: SlackChannel[], users: Map<string, S
   return output;
 }
 
+// Format channel list with unread counts
+export function formatChannelListWithUnreads(
+  channels: SlackChannel[],
+  users: Map<string, SlackUser>,
+  mentionCounts?: Map<string, number>,
+): string {
+  if (channels.length === 0) {
+    return chalk.dim('No unread conversations.');
+  }
+
+  let output = chalk.bold(`📬 Unread Conversations (${channels.length})\n\n`);
+
+  channels.forEach((ch, idx) => {
+    const mentions = mentionCounts?.get(ch.id) ?? 0;
+    const badge = mentions > 0 ? chalk.red(`(${mentions} mentions)`) : chalk.yellow('(unread)');
+    let name: string;
+
+    if (ch.is_im) {
+      const user = ch.user ? users.get(ch.user) : null;
+      const userName = user?.real_name || user?.name || 'Unknown User';
+      name = `@${userName}`;
+    } else if (ch.is_mpim) {
+      name = ch.name || 'Group';
+    } else if (ch.is_private) {
+      name = `🔒 ${ch.name}`;
+    } else {
+      name = `#${ch.name}`;
+    }
+
+    output += `  ${idx + 1}. ${name} ${badge} ${chalk.dim(`(${ch.id})`)}\n`;
+  });
+
+  return output;
+}
+
 // Format message with reactions
 export function formatMessage(
   msg: SlackMessage,
@@ -146,6 +181,54 @@ export function formatConversationHistory(
     }
   });
   
+  return output;
+}
+
+// Format search results
+export function formatSearchResults(response: SlackSearchResponse): string {
+  const msgMatches = response.messages?.matches || [];
+  const fileMatches = response.files?.matches || [];
+  const msgTotal = response.messages?.paging?.total || 0;
+  const fileTotal = response.files?.paging?.total || 0;
+
+  let output = chalk.bold(`🔍 Search results for "${response.query}"\n`);
+  output += chalk.dim(`   ${msgTotal} messages, ${fileTotal} files\n`);
+
+  if (msgMatches.length > 0) {
+    output += chalk.cyan('\nMessages:\n');
+    msgMatches.forEach((match, idx) => {
+      const channel = match.channel?.name ? `#${match.channel.name}` : 'unknown';
+      const timestamp = match.ts ? formatTimestamp(match.ts) : '';
+      const user = match.username || match.user || 'unknown';
+      output += `  ${idx + 1}. ${chalk.dim(`[${timestamp}]`)} ${chalk.bold(`@${user}`)} in ${chalk.cyan(channel)}\n`;
+      const text = match.text?.replace(/\n/g, ' ').slice(0, 200) || '';
+      output += `     ${text}${match.text && match.text.length > 200 ? '...' : ''}\n`;
+      if (match.permalink) {
+        output += `     ${chalk.dim(match.permalink)}\n`;
+      }
+    });
+  }
+
+  if (fileMatches.length > 0) {
+    output += chalk.yellow('\nFiles:\n');
+    fileMatches.forEach((match, idx) => {
+      const filetype = match.filetype ? chalk.dim(`[${match.filetype}]`) : '';
+      output += `  ${idx + 1}. ${match.title || match.name} ${filetype}\n`;
+      if (match.permalink) {
+        output += `     ${chalk.dim(match.permalink)}\n`;
+      }
+    });
+  }
+
+  if (msgMatches.length === 0 && fileMatches.length === 0) {
+    output += chalk.dim('\n  No results found.\n');
+  }
+
+  const paging = response.messages?.paging || response.files?.paging;
+  if (paging && paging.pages > 1) {
+    output += chalk.dim(`\n  Page ${paging.page} of ${paging.pages}`);
+  }
+
   return output;
 }
 

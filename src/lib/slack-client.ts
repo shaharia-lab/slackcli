@@ -1,5 +1,5 @@
 import { WebClient } from '@slack/web-api';
-import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
+import type { WorkspaceConfig, SlackAuthTestResponse, SlackSearchResponse, FileUploadUrlResponse, FileUploadCompleteResponse } from '../types/index.ts';
 
 export class SlackClient {
   private config: WorkspaceConfig;
@@ -96,6 +96,21 @@ export class SlackClient {
     return this.request('conversations.list', options);
   }
 
+  // Mark conversation as read
+  async markConversationRead(channel: string, ts: string): Promise<any> {
+    return this.request('conversations.mark', { channel, ts });
+  }
+
+  // Get unread counts (uses internal Slack API, works with browser auth)
+  async getClientCounts(): Promise<any> {
+    return this.request('client.counts', {});
+  }
+
+  // Get conversation info
+  async getConversationInfo(channel: string): Promise<any> {
+    return this.request('conversations.info', { channel });
+  }
+
   // Get conversation history
   async getConversationHistory(channel: string, options: {
     cursor?: string;
@@ -187,6 +202,96 @@ export class SlackClient {
       channel,
       timestamp,
       name
+    });
+  }
+
+  // Search messages and files
+  async searchAll(query: string, options: {
+    sort?: string;
+    sort_dir?: string;
+    count?: number;
+    page?: number;
+  } = {}): Promise<SlackSearchResponse> {
+    const params: Record<string, any> = { query };
+    if (options.sort) params.sort = options.sort;
+    if (options.sort_dir) params.sort_dir = options.sort_dir;
+    if (options.count) params.count = String(options.count);
+    if (options.page) params.page = String(options.page);
+
+    return this.request('search.all', params);
+  }
+
+  // Get presigned upload URL (step 1 of 3-step upload)
+  async getUploadUrl(filename: string, length: number): Promise<FileUploadUrlResponse> {
+    return this.request('files.getUploadURLExternal', {
+      filename,
+      length: String(length),
+    });
+  }
+
+  // Upload file content to presigned URL (step 2 of 3-step upload)
+  // This is a direct POST to an external URL — no Slack auth needed
+  async uploadToUrl(uploadUrl: string, fileContent: Uint8Array, filename: string): Promise<void> {
+    const formData = new FormData();
+    formData.append('file', new Blob([fileContent]), filename);
+
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`File upload failed: HTTP ${response.status}`);
+    }
+  }
+
+  // Complete upload and share to channel/thread (step 3 of 3-step upload)
+  async completeUpload(files: Array<{ id: string; title?: string }>, options: {
+    channel_id?: string;
+    thread_ts?: string;
+    initial_comment?: string;
+  } = {}): Promise<FileUploadCompleteResponse> {
+    const params: Record<string, any> = {
+      files: JSON.stringify(files),
+    };
+    if (options.channel_id) params.channel_id = options.channel_id;
+    if (options.thread_ts) params.thread_ts = options.thread_ts;
+    if (options.initial_comment) params.initial_comment = options.initial_comment;
+
+    return this.request('files.completeUploadExternal', params);
+  }
+
+  // Upload one or more files end-to-end, bundled into a single message
+  async uploadFiles(filePaths: string[], options: {
+    channel_id?: string;
+    thread_ts?: string;
+    titles?: string[];
+    initial_comment?: string;
+    onProgress?: (step: string) => void;
+  } = {}): Promise<FileUploadCompleteResponse> {
+    const fileEntries: Array<{ id: string; title?: string }> = [];
+
+    for (let i = 0; i < filePaths.length; i++) {
+      const filePath = filePaths[i];
+      const file = Bun.file(filePath);
+      const fileContent = new Uint8Array(await file.arrayBuffer());
+      const filename = filePath.split('/').pop() || 'file';
+      const length = fileContent.byteLength;
+
+      options.onProgress?.(`Uploading file ${i + 1}/${filePaths.length}: ${filename}`);
+      const { upload_url, file_id } = await this.getUploadUrl(filename, length);
+      await this.uploadToUrl(upload_url, fileContent, filename);
+
+      const entry: { id: string; title?: string } = { id: file_id };
+      if (options.titles?.[i]) entry.title = options.titles[i];
+      fileEntries.push(entry);
+    }
+
+    options.onProgress?.('Finalizing upload...');
+    return this.completeUpload(fileEntries, {
+      channel_id: options.channel_id,
+      thread_ts: options.thread_ts,
+      initial_comment: options.initial_comment,
     });
   }
 }

@@ -40,8 +40,12 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
       - name: Build binary
-        run: bun build --compile --minify --target=${{ matrix.target }} src/index.ts --outfile dist/${{ matrix.artifact }}
+        run: bun build --compile --minify --target=${{ matrix.target }} --define __APP_VERSION__='"${{ steps.version.outputs.VERSION }}"' src/index.ts --outfile dist/${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

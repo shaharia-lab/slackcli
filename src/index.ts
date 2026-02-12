@@ -10,10 +10,13 @@ import chalk from 'chalk';
 
 const program = new Command();
 
+// @ts-ignore - This will be replaced at build time
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+
 program
   .name('slackcli')
   .description('A fast, developer-friendly CLI tool for interacting with Slack workspaces')
-  .version('0.1.1');
+  .version(APP_VERSION);
 
 // Add commands
 program.addCommand(createAuthCommand());

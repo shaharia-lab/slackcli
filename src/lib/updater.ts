@@ -4,7 +4,8 @@ import { join } from 'path';
 import { info, success, error as logError } from './formatter.ts';
 
 const GITHUB_REPO = 'shaharia-lab/slackcli';
-const CURRENT_VERSION = '0.1.1';
+// @ts-ignore - This will be replaced at build time
+const CURRENT_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 
 interface GitHubRelease {
   tag_name: string;

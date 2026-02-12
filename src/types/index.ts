@@ -111,6 +111,13 @@ export interface MessageSendOptions {
   workspace?: string;
 }
 
+export interface MessageDraftOptions {
+  recipientId: string;
+  message: string;
+  threadTs?: string;
+  workspace?: string;
+}
+
 export interface AuthLoginOptions {
   token: string;
   workspaceName: string;

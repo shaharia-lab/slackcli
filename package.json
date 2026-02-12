@@ -6,11 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build --compile --minify --sourcemap src/index.ts --outfile dist/slackcli",
+    "build": "bun build --compile --minify --sourcemap --define __APP_VERSION__='\"0.2.2\"' src/index.ts --outfile dist/slackcli",
     "build:all": "bun run build:linux && bun run build:macos && bun run build:windows",
-    "build:linux": "bun build --compile --minify --target=bun-linux-x64 src/index.ts --outfile dist/slackcli-linux",
-    "build:macos": "bun build --compile --minify --target=bun-darwin-x64 src/index.ts --outfile dist/slackcli-macos",
-    "build:windows": "bun build --compile --minify --target=bun-windows-x64 src/index.ts --outfile dist/slackcli-windows.exe",
+    "build:linux": "bun build --compile --minify --target=bun-linux-x64 --define __APP_VERSION__='\"0.2.2\"' src/index.ts --outfile dist/slackcli-linux",
+    "build:macos": "bun build --compile --minify --target=bun-darwin-x64 --define __APP_VERSION__='\"0.2.2\"' src/index.ts --outfile dist/slackcli-macos",
+    "build:windows": "bun build --compile --minify --target=bun-windows-x64 --define __APP_VERSION__='\"0.2.2\"' src/index.ts --outfile dist/slackcli-windows.exe",
     "test": "bun test",
     "type-check": "bunx tsc --noEmit"
   },

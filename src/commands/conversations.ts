@@ -103,8 +103,11 @@ export function createConversationsCommand(): Command {
           }
         }
 
-        // Reverse to show oldest first
-        messages.reverse();
+        // Channel history returns newest first, so reverse to show oldest first.
+        // Thread replies already come in chronological order.
+        if (!options.threadTs) {
+          messages.reverse();
+        }
 
         // Fetch user info for messages
         const userIds = new Set<string>();

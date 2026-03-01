@@ -139,8 +139,42 @@ export class SlackClient {
   } = {}): Promise<any> {
     const params: Record<string, any> = { channel, text };
     if (options.thread_ts) params.thread_ts = options.thread_ts;
-    
+
     return this.request('chat.postMessage', params);
+  }
+
+  // Create draft message
+  async createDraft(channelId: string, text: string, options: {
+    thread_ts?: string;
+  } = {}): Promise<any> {
+    if (this.config.auth_type === 'standard') {
+      throw new Error('Draft creation requires browser authentication');
+    }
+    
+    const destinations: any = [{ channel_id: channelId }];
+    if (options.thread_ts) {
+      destinations[0].thread_ts = options.thread_ts;
+      destinations[0].broadcast = false;
+    }
+
+    const params: Record<string, any> = {
+      client_msg_id: crypto.randomUUID(),
+      blocks: JSON.stringify([{
+        type: 'rich_text',
+        elements: [{
+          type: 'rich_text_section',
+          elements: [{
+            type: 'text',
+            text: text
+          }]
+        }]
+      }]),
+      destinations: JSON.stringify(destinations),
+      file_ids: '[]',
+      is_from_composer: 'false',
+    };
+
+    return this.request('drafts.create', params);
   }
 
   // Get user info

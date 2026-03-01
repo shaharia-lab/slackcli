@@ -7,7 +7,7 @@ export class SlackClient {
 
   constructor(config: WorkspaceConfig) {
     this.config = config;
-    
+
     // Only use WebClient for standard auth
     if (config.auth_type === 'standard') {
       this.webClient = new WebClient(config.token);
@@ -44,7 +44,7 @@ export class SlackClient {
     }
 
     const url = `${this.config.workspace_url}/api/${method}`;
-    
+
     const formBody = new URLSearchParams({
       token: this.config.xoxc_token,
       ...params,
@@ -53,7 +53,7 @@ export class SlackClient {
     try {
       // URL-encode the xoxd token for the cookie
       const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-      
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -111,7 +111,7 @@ export class SlackClient {
     if (options.oldest) params.oldest = options.oldest;
     if (options.inclusive !== undefined) params.inclusive = options.inclusive;
     if (options.limit) params.limit = options.limit;
-    
+
     return this.request('conversations.history', params);
   }
 
@@ -129,7 +129,7 @@ export class SlackClient {
     if (options.oldest) params.oldest = options.oldest;
     if (options.inclusive !== undefined) params.inclusive = options.inclusive;
     if (options.limit) params.limit = options.limit;
-    
+
     return this.request('conversations.replies', params);
   }
 
@@ -150,7 +150,7 @@ export class SlackClient {
     if (this.config.auth_type === 'standard') {
       throw new Error('Draft creation requires browser authentication');
     }
-    
+
     const destinations: any = [{ channel_id: channelId }];
     if (options.thread_ts) {
       destinations[0].thread_ts = options.thread_ts;
@@ -185,7 +185,7 @@ export class SlackClient {
   // Get multiple users info
   async getUsersInfo(userIds: string[]): Promise<any> {
     const users: any[] = [];
-    
+
     for (const userId of userIds) {
       try {
         const response = await this.getUserInfo(userId);
@@ -197,7 +197,7 @@ export class SlackClient {
         console.error(`Failed to fetch user ${userId}`);
       }
     }
-    
+
     return { ok: true, users };
   }
 
@@ -224,4 +224,3 @@ export class SlackClient {
     });
   }
 }
-

@@ -162,4 +162,3 @@ export function createConversationsCommand(): Command {
 
   return conversations;
 }
-

@@ -129,4 +129,3 @@ export interface AuthLoginBrowserOptions {
   workspaceUrl: string;
   workspaceName?: string;
 }
-

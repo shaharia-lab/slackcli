@@ -1,0 +1,27 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+
+  - repo: local
+    hooks:
+      - id: bun-type-check
+        name: TypeScript type check
+        language: system
+        entry: bun run type-check
+        pass_filenames: false
+        types: [ts]
+
+      - id: bun-test
+        name: Run tests
+        language: system
+        entry: bun test
+        pass_filenames: false
+        types: [ts]

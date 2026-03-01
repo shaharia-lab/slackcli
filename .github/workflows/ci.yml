@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,4 +42,3 @@ jobs:
             echo "Binary size exceeds 150MB limit"
             exit 1
           fi
-

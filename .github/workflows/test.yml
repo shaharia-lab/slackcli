@@ -9,7 +9,7 @@ on:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
 
   integration-tests:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,4 +51,3 @@ jobs:
 
       - name: Test auth commands (help)
         run: ./dist/slackcli auth --help
-

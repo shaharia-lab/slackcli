@@ -93,4 +93,3 @@ export async function getAuthenticatedClient(workspaceIdentifier?: string): Prom
 
   return new SlackClient(workspace);
 }
-

@@ -105,4 +105,3 @@ export function createMessagesCommand(): Command {
 
   return messages;
 }
-

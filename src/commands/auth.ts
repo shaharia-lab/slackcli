@@ -282,4 +282,3 @@ export function createAuthCommand(): Command {
 
   return auth;
 }
-

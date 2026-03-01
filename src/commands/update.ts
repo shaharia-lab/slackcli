@@ -38,4 +38,3 @@ export function createUpdateCommand(): Command {
 
   return update;
 }
-

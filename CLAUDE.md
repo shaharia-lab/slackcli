@@ -6,6 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SlackCLI is an unofficial TypeScript/Bun CLI tool for interacting with Slack workspaces. It supports both standard Slack app tokens (xoxb/xoxp) and browser session tokens (xoxd/xoxc), enabling automation without creating a Slack app.
 
+## Before You Start
+
+Install pre-commit hooks after cloning the repo:
+
+```bash
+pre-commit install
+```
+
+This enforces the same checks locally that CI runs (trailing whitespace, EOF, YAML/JSON validation, no direct commits to `main`, TypeScript type-check, and tests) before every commit.
+
+If `pre-commit` is not installed on your system, install it first:
+
+```bash
+# macOS
+brew install pre-commit
+
+# Linux / pip
+pip install pre-commit
+```
+
+Then run `pre-commit install` in the repo root.
+
+## Contributing & Security
+
+- All contributions must follow [CONTRIBUTING.md](CONTRIBUTING.md) — every PR requires a linked GitHub issue, all checks must pass, and changes should stay focused.
+- For security concerns or vulnerability reports, follow [SECURITY.md](SECURITY.md).
+
 ## Commands
 
 ```bash

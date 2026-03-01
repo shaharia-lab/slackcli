@@ -18,13 +18,14 @@ export interface ParseError {
  * Parse a cURL command and extract Slack authentication tokens
  */
 export function parseCurlCommand(curlInput: string): ParsedCurlResult {
-  // Extract workspace URL
-  const urlMatch = curlInput.match(/curl\s+'?(https?:\/\/([^.]+)\.slack\.com[^'"\s]*)/);
+  // Extract workspace URL — domain can be myorg.slack.com or myorg.enterprise.slack.com
+  const urlMatch = curlInput.match(/curl\s+'?(https?:\/\/([\w.-]+)\.slack\.com[^'"\s]*)/);
   if (!urlMatch) {
     throw new CurlParseError('workspace', 'Could not find Slack workspace URL in cURL command');
   }
-  const workspaceUrl = `https://${urlMatch[2]}.slack.com`;
-  const workspaceName = urlMatch[2];
+  const fullSubdomain = urlMatch[2];
+  const workspaceUrl = `https://${fullSubdomain}.slack.com`;
+  const workspaceName = fullSubdomain.split('.')[0];
 
   // Extract xoxd token from cookie header
   // Supports: -b 'cookies', --cookie 'cookies', -H 'Cookie: cookies'

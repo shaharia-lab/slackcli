@@ -26,6 +26,11 @@ const CURL_WITH_ENCODED_TOKEN = `curl 'https://encoded.slack.com/api/test' \\
   -b 'd=xoxd-encoded%2Btoken%2Fwith%3Dspecial' \\
   --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-encoded-test\\r\\n------Boundary--\\r\\n'`;
 
+// Enterprise workspace URL format
+const CURL_ENTERPRISE = `curl 'https://myorg.enterprise.slack.com/api/conversations.suggestions?_x_id=475c2359-1772039256.240' \\
+  -b 'd=xoxd-enterprise-test-token; other=value' \\
+  --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-enterprise-test\\r\\n------Boundary--\\r\\n'`;
+
 // Single line format (no backslashes)
 const CURL_SINGLE_LINE = `curl 'https://singleline.slack.com/api/test' -b 'd=xoxd-single-line-token' --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-single-line\\r\\n------Boundary--\\r\\n'`;
 
@@ -41,6 +46,12 @@ describe('parseCurlCommand', () => {
       const result = parseCurlCommand(CURL_WITH_COOKIE_HEADER);
       expect(result.workspaceName).toBe('testteam');
       expect(result.workspaceUrl).toBe('https://testteam.slack.com');
+    });
+
+    it('should extract workspace from enterprise URLs', () => {
+      const result = parseCurlCommand(CURL_ENTERPRISE);
+      expect(result.workspaceName).toBe('myorg');
+      expect(result.workspaceUrl).toBe('https://myorg.enterprise.slack.com');
     });
 
     it('should handle single-line curl commands', () => {

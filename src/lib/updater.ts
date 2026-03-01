@@ -163,4 +163,3 @@ export async function performUpdate(): Promise<void> {
     throw error;
   }
 }
-

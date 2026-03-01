@@ -20,7 +20,7 @@ export function formatTimestamp(ts: string): string {
 export function formatWorkspace(config: WorkspaceConfig, isDefault: boolean = false): string {
   const defaultBadge = isDefault ? chalk.green('(default)') : '';
   const authType = config.auth_type === 'browser' ? '🌐 Browser' : '🔑 Standard';
-  
+
   return `${chalk.bold(config.workspace_name)} ${defaultBadge}
   ID: ${config.workspace_id}
   Auth: ${authType}`;
@@ -97,15 +97,15 @@ export function formatMessage(
   const timestamp = formatTimestamp(msg.ts);
   const isThread = msg.thread_ts && msg.thread_ts !== msg.ts;
   const threadIndicator = isThread ? chalk.dim(' (in thread)') : '';
-  
+
   let output = `${indentStr}${chalk.dim(`[${timestamp}]`)} ${chalk.bold(`@${userName}`)}${threadIndicator}\n`;
-  
+
   // Message text
   const textLines = msg.text.split('\n');
   textLines.forEach(line => {
     output += `${indentStr}  ${line}\n`;
   });
-  
+
   // Show timestamps for threading
   if (msg.ts) {
     output += `${indentStr}  ${chalk.dim(`ts: ${msg.ts}`)}`;
@@ -114,7 +114,7 @@ export function formatMessage(
     }
     output += '\n';
   }
-  
+
   // Reactions
   if (msg.reactions && msg.reactions.length > 0) {
     const reactionsStr = msg.reactions
@@ -122,12 +122,12 @@ export function formatMessage(
       .join('  ');
     output += `${indentStr}  ${chalk.dim(reactionsStr)}\n`;
   }
-  
+
   // Thread indicator
   if (msg.reply_count && !isThread) {
     output += `${indentStr}  ${chalk.cyan(`💬 ${msg.reply_count} replies`)}\n`;
   }
-  
+
   return output;
 }
 
@@ -138,14 +138,14 @@ export function formatConversationHistory(
   users: Map<string, SlackUser>
 ): string {
   let output = chalk.bold(`💬 #${channelName} (${messages.length} messages)\n\n`);
-  
+
   messages.forEach((msg, idx) => {
     output += formatMessage(msg, users);
     if (idx < messages.length - 1) {
       output += '\n';
     }
   });
-  
+
   return output;
 }
 
@@ -171,4 +171,3 @@ export function info(message: string): void {
 export function warning(message: string): void {
   console.log(chalk.yellow('⚠️'), message);
 }
-

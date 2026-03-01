@@ -15,6 +15,16 @@ export interface ParseError {
 }
 
 /**
+ * Extract the workspace name (first subdomain segment) from a Slack workspace URL.
+ * Handles both standard (myorg.slack.com) and enterprise (myorg.enterprise.slack.com) URLs.
+ * Returns 'workspace' if the URL does not match.
+ */
+export function extractSlackWorkspaceName(url: string): string {
+  const match = url.match(/https?:\/\/([\w.-]+)\.slack\.com/);
+  return match ? match[1].split('.')[0] : 'workspace';
+}
+
+/**
  * Parse a cURL command and extract Slack authentication tokens
  */
 export function parseCurlCommand(curlInput: string): ParsedCurlResult {
@@ -25,7 +35,7 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   }
   const fullSubdomain = urlMatch[2];
   const workspaceUrl = `https://${fullSubdomain}.slack.com`;
-  const workspaceName = fullSubdomain.split('.')[0];
+  const workspaceName = extractSlackWorkspaceName(workspaceUrl);
 
   // Extract xoxd token from cookie header
   // Supports: -b 'cookies', --cookie 'cookies', -H 'Cookie: cookies'

@@ -1,6 +1,7 @@
 import { SlackClient } from './slack-client.ts';
 import { addWorkspace, getWorkspace } from './workspaces.ts';
 import type { StandardAuthConfig, BrowserAuthConfig, WorkspaceConfig } from '../types/index.ts';
+import { extractSlackWorkspaceName } from './curl-parser.ts';
 
 // Authenticate with standard token
 export async function authenticateStandard(
@@ -45,9 +46,7 @@ export async function authenticateBrowser(
   workspaceName?: string
 ): Promise<WorkspaceConfig> {
   // Extract workspace name from URL if not provided
-  // Domain can be myorg.slack.com or myorg.enterprise.slack.com
-  const urlMatch = workspaceUrl.match(/https?:\/\/([\w.-]+)\.slack\.com/);
-  const defaultName = urlMatch ? urlMatch[1].split('.')[0] : 'workspace';
+  const defaultName = extractSlackWorkspaceName(workspaceUrl);
 
   // Create a temporary config to test the tokens
   const tempConfig: BrowserAuthConfig = {

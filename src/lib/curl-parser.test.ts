@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseCurlCommand, CurlParseError, looksLikeCurlCommand } from './curl-parser';
+import { parseCurlCommand, CurlParseError, looksLikeCurlCommand, extractSlackWorkspaceName } from './curl-parser';
 
 // Sample cURL command with anonymized tokens (based on real Slack API request format)
 const SAMPLE_CURL_COMMAND = `curl 'https://myworkspace.slack.com/api/conversations.view?_x_id=noversion-1770041775.173&_x_version_ts=1770035254&_x_frontend_build_type=current&_x_desktop_ia=4&_x_gantry=true&fp=66&_x_num_retries=0' \\
@@ -151,6 +151,7 @@ describe('parseCurlCommand', () => {
         CURL_WITH_COOKIE_HEADER,
         CURL_WITH_COOKIE_FLAG,
         CURL_SINGLE_LINE,
+        CURL_ENTERPRISE,
       ];
 
       for (const curl of formats) {
@@ -174,6 +175,24 @@ describe('CurlParseError', () => {
     const error = new CurlParseError('xoxd', 'Test');
     expect(error).toBeInstanceOf(Error);
     expect(error).toBeInstanceOf(CurlParseError);
+  });
+});
+
+describe('extractSlackWorkspaceName', () => {
+  it('should extract name from standard URL', () => {
+    expect(extractSlackWorkspaceName('https://myorg.slack.com')).toBe('myorg');
+  });
+
+  it('should extract first segment from enterprise URL', () => {
+    expect(extractSlackWorkspaceName('https://myorg.enterprise.slack.com')).toBe('myorg');
+  });
+
+  it('should return workspace for non-matching URL', () => {
+    expect(extractSlackWorkspaceName('https://example.com')).toBe('workspace');
+  });
+
+  it('should handle URLs with paths', () => {
+    expect(extractSlackWorkspaceName('https://myorg.slack.com/api/test')).toBe('myorg');
   });
 });
 

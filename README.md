@@ -1,5 +1,7 @@
 # SlackCLI
 
+> **Disclaimer:** This is an unofficial, open-source CLI tool for interacting with Slack. It is not affiliated with, endorsed by, or supported by Slack Technologies. Slack has an official CLI — see the [Slack CLI documentation](https://docs.slack.dev/tools/slack-cli/) for the officially supported tooling.
+
 A fast, developer-friendly command-line interface tool for interacting with Slack workspaces. Built with TypeScript and Bun, it enables AI agents, automation tools, and developers to access Slack functionality directly from the terminal.
 
 ## Features

@@ -1,6 +1,10 @@
 # SlackCLI
 
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/shaharia-lab/slackcli/total)
+[![Release](https://img.shields.io/github/v/release/shaharia-lab/slackcli)](https://github.com/shaharia-lab/slackcli/releases)
+[![Stars](https://img.shields.io/github/stars/shaharia-lab/slackcli)](https://github.com/shaharia-lab/slackcli/stargazers)
+[![License](https://img.shields.io/github/license/shaharia-lab/slackcli)](https://github.com/shaharia-lab/slackcli/blob/main/LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/shaharia-lab/slackcli)](https://github.com/shaharia-lab/slackcli/commits/main)
 
 > **Disclaimer:** This is an unofficial, open-source CLI tool for interacting with Slack. It is not affiliated with, endorsed by, or supported by Slack Technologies. Slack has an official CLI — see the [Slack CLI documentation](https://docs.slack.dev/tools/slack-cli/) for the officially supported tooling.
 
@@ -318,6 +322,14 @@ MIT License - see [LICENSE](LICENSE) file for details
 - 🐛 [Report Issues](https://github.com/shaharia-lab/slackcli/issues)
 - 💬 [Discussions](https://github.com/shaharia-lab/slackcli/discussions)
 - 📧 Email: support@shaharia.com
+
+## 🤝 Contributors
+
+A huge thanks to the amazing people who have contributed to SlackCLI!
+
+<a href="https://github.com/shaharia-lab/slackcli/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=shaharia-lab/slackcli" />
+</a>
 
 ## Acknowledgments
 

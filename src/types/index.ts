@@ -74,6 +74,7 @@ export interface SlackMessage {
     count: number;
     users: string[];
   }>;
+  blocks?: Array<Record<string, unknown>>;
 }
 
 export interface SlackAuthTestResponse {

@@ -142,6 +142,7 @@ export function createConversationsCommand(): Command {
               reply_count: msg.reply_count,
               reactions: msg.reactions,
               bot_id: msg.bot_id,
+              blocks: msg.blocks,
             })),
             users: Array.from(users.values()).map(u => ({
               id: u.id,

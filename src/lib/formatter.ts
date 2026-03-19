@@ -1,5 +1,8 @@
 import chalk from 'chalk';
-import type { SlackChannel, SlackMessage, SlackUser, WorkspaceConfig } from '../types/index.ts';
+import type {
+  SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
+  SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
+} from '../types/index.ts';
 
 // Format timestamp to human-readable date
 export function formatTimestamp(ts: string): string {
@@ -170,4 +173,140 @@ export function info(message: string): void {
 // Warning message
 export function warning(message: string): void {
   console.log(chalk.yellow('⚠️'), message);
+}
+
+// Format saved items list
+export function formatSavedItems(items: SavedItem[], users: Map<string, SlackUser>): string {
+  let output = chalk.bold(`📌 Saved Items (${items.length})\n\n`);
+
+  items.forEach((item, idx) => {
+    if (item.type === 'message' && item.message) {
+      const msg = item.message;
+      const user = msg.user ? users.get(msg.user) : null;
+      const userName = user?.real_name || user?.name || msg.bot_id || 'Unknown';
+      const timestamp = formatTimestamp(msg.ts);
+      const channel = item.channel_name || item.channel_id;
+      const text = truncateText(msg.text, 120);
+      const state = item.todo_state ? chalk.dim(` [${item.todo_state}]`) : '';
+
+      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${userName}`)} in ${chalk.cyan(`#${channel}`)} ${chalk.dim(`[${timestamp}]`)}${state}\n`;
+      output += `     ${text}\n`;
+      output += `     ${chalk.dim(`channel: ${item.channel_id}  ts: ${msg.ts}`)}\n\n`;
+    } else if (item.type === 'file' && item.file) {
+      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.yellow('File:')} ${chalk.bold(item.file.name || item.file.title || 'Untitled')}\n\n`;
+    } else {
+      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.dim(`[${item.type}]`)}\n\n`;
+    }
+  });
+
+  return output;
+}
+
+// Format search message results
+export function formatSearchMessages(
+  query: string,
+  matches: SearchMatch[],
+  total: number,
+): string {
+  let output = chalk.bold(`🔍 Search Results for "${query}" (${total} total)\n\n`);
+
+  matches.forEach((match, idx) => {
+    const userName = match.username || match.user || 'Unknown';
+    const timestamp = formatTimestamp(match.ts);
+    const channelName = match.channel?.name || match.channel?.id || 'unknown';
+    const text = truncateText(match.text, 150);
+    const permalink = match.permalink || '';
+
+    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${userName}`)} in ${chalk.cyan(`#${channelName}`)} ${chalk.dim(`[${timestamp}]`)}\n`;
+    output += `     ${text}\n`;
+    if (permalink) {
+      output += `     ${chalk.dim(permalink)}\n`;
+    }
+    output += '\n';
+  });
+
+  return output;
+}
+
+// Format channel search results
+export function formatChannelSearchResults(
+  query: string,
+  channels: ChannelSearchResult[],
+  total: number,
+): string {
+  let output = chalk.bold(`📋 Channels matching "${query}" (${total} total)\n\n`);
+
+  channels.forEach((ch, idx) => {
+    const memberCount = ch.member_count || ch.num_members;
+    const members = memberCount ? chalk.dim(`${memberCount} members`) : '';
+    const isMember = ch.is_member ? chalk.green(' [joined]') : '';
+    output += `  ${chalk.dim(`${idx + 1}.`)} #${chalk.bold(ch.name)} ${chalk.dim(`(${ch.id})`)} ${members}${isMember}\n`;
+    if (ch.purpose?.value) {
+      output += `     ${chalk.dim(ch.purpose.value)}\n`;
+    }
+    output += '\n';
+  });
+
+  return output;
+}
+
+// Format people search results
+export function formatPeopleSearchResults(
+  query: string,
+  people: PeopleSearchResult[],
+  total: number,
+): string {
+  let output = chalk.bold(`👥 People matching "${query}" (${total} total)\n\n`);
+
+  people.forEach((user, idx) => {
+    const profile = user.profile || {};
+    const displayName = profile.display_name || user.name || '';
+    const realName = profile.real_name || user.real_name || '';
+    const email = profile.email ? chalk.dim(`<${profile.email}>`) : '';
+    const title = profile.title ? chalk.dim(`- ${profile.title}`) : '';
+
+    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${displayName}`)} ${realName ? `(${realName})` : ''} ${chalk.dim(`(${user.id})`)} ${email}\n`;
+    if (title) {
+      output += `     ${title}\n`;
+    }
+    output += '\n';
+  });
+
+  return output;
+}
+
+// Format unread channels list
+export function formatUnreadChannels(channels: UnreadChannel[]): string {
+  if (channels.length === 0) {
+    return chalk.green('All caught up! No unread messages.\n');
+  }
+
+  let output = chalk.bold(`💬 Unread Channels (${channels.length})\n\n`);
+
+  channels.forEach((ch, idx) => {
+    const prefix = ch.is_im ? '👤' : ch.is_mpim ? '👥' : ch.is_private ? '🔒' : '#';
+    const name = ch.name || ch.id;
+    const mentions = ch.mention_count > 0 ? chalk.red(` @${ch.mention_count}`) : '';
+    const unreadCount = ch.unread_count ? chalk.yellow(` (${ch.unread_count} unread)`) : '';
+
+    output += `  ${chalk.dim(`${idx + 1}.`)} ${prefix} ${chalk.bold(name)} ${chalk.dim(`(${ch.id})`)}${mentions}${unreadCount}\n`;
+  });
+
+  output += '\n';
+  return output;
+}
+
+// Format pagination hint
+export function formatPaginationHint(page: number, totalPages: number): string {
+  if (page < totalPages) {
+    return chalk.dim(`  Page ${page} of ${totalPages}. Use --page ${page + 1} to see more.\n`);
+  }
+  return '';
+}
+
+// Truncate text with ellipsis
+function truncateText(text: string | undefined, maxLen: number): string {
+  if (!text) return '[no text]';
+  if (text.length <= maxLen) return text;
+  return text.substring(0, maxLen) + '...';
 }

@@ -60,7 +60,7 @@ bun run build:all          # All platforms
 
 ### Entry Point & Command Structure
 
-`src/index.ts` registers four Commander.js command groups: `auth`, `conversations`, `messages`, `update`. Each group is implemented in `src/commands/` and delegates to `src/lib/` modules.
+`src/index.ts` registers six Commander.js command groups: `auth`, `conversations`, `messages`, `saved`, `search`, `update`. Each group is implemented in `src/commands/` and delegates to `src/lib/` modules.
 
 ### Dual Authentication
 
@@ -89,11 +89,13 @@ Two auth types coexist throughout the codebase:
 | `src/lib/curl-parser.ts` | cURL command parsing for token extraction |
 | `src/lib/clipboard.ts` | Cross-platform clipboard (`pbpaste`/PowerShell/xclip/xsel) |
 | `src/lib/interactive-input.ts` | Multi-line terminal input (double-Enter or Ctrl+D to submit) |
+| `src/lib/saved.ts` | Enriches saved-for-later items (resolves messages & channels) |
+| `src/lib/unread.ts` | Fetches and resolves unread channel data |
 | `src/lib/updater.ts` | Self-update via GitHub releases |
 
 ### Type Definitions
 
-All shared TypeScript interfaces are in `src/types/index.ts`, including `AuthType`, `StandardAuthConfig`, `BrowserAuthConfig`, `SlackChannel`, `SlackUser`, and `SlackMessage`.
+All shared TypeScript interfaces are in `src/types/index.ts`, including `AuthType`, `StandardAuthConfig`, `BrowserAuthConfig`, `SlackChannel`, `SlackUser`, `SlackMessage`, `SavedItem`, `SearchMatch`, `ChannelSearchResult`, `PeopleSearchResult`, and `UnreadChannel`.
 
 ## Testing
 

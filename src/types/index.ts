@@ -196,5 +196,4 @@ export interface UnreadChannel {
   is_im?: boolean;
   is_mpim?: boolean;
   is_private?: boolean;
-  recent_messages?: SlackMessage[];
 }

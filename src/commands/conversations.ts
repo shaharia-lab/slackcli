@@ -166,7 +166,7 @@ export function createConversationsCommand(): Command {
   conversations
     .command('unread')
     .description('List conversations with unread messages')
-    .option('--types <types>', 'Filter by type (comma-separated: channels,dms,groups)', '')
+    .option('--types <types>', 'Filter by type (comma-separated: channels,dms,groups)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {

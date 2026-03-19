@@ -269,9 +269,9 @@ export class SlackClient {
       return this.request('search.modules', params);
     }
 
-    // Standard auth: no search.modules available
+    // Standard auth: no search.modules available — fall back to
+    // listing + client-side filtering (may be slow on large workspaces)
     if (module === 'channels') {
-      // Fall back to listing + client-side filtering
       return this.listConversations({
         types: 'public_channel,private_channel',
         limit: 1000,

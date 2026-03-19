@@ -24,6 +24,7 @@ export async function enrichSavedItems(
     options.onProgress?.('Fetching message details...');
 
     // Fetch all messages in parallel
+    // NOTE: may hit Slack rate limits with many saved items
     const messagePromises = rawItems.map(async (item: any) => {
       if (item.item_type !== 'message') {
         return { type: item.item_type, channel_id: item.item_id, date_saved: item.date_created } as SavedItem;

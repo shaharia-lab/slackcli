@@ -1,5 +1,5 @@
 import type { SlackClient } from './slack-client.ts';
-import type { UnreadChannel, SlackUser } from '../types/index.ts';
+import type { UnreadChannel } from '../types/index.ts';
 
 export async function fetchUnreadChannels(
   client: SlackClient,
@@ -27,6 +27,7 @@ export async function fetchUnreadChannels(
       }));
 
     // Resolve channel names in parallel
+    // NOTE: may hit Slack rate limits with many unread channels
     options.onProgress?.('Fetching channel details...');
     await Promise.all(channels.map(async (ch) => {
       try {

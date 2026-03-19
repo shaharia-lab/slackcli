@@ -223,4 +223,94 @@ export class SlackClient {
       name
     });
   }
+
+  // List saved items (browser: saved.list, standard: stars.list)
+  async listSavedItems(options: {
+    count?: number;
+    cursor?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.count) params.count = options.count;
+    if (options.cursor) params.cursor = options.cursor;
+
+    if (this.config.auth_type === 'browser') {
+      return this.request('saved.list', params);
+    }
+    return this.request('stars.list', params);
+  }
+
+  // Search messages
+  async searchMessages(query: string, options: {
+    count?: number;
+    page?: number;
+    sort?: string;
+    sort_dir?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { query };
+    if (options.count) params.count = options.count;
+    if (options.page) params.page = options.page;
+    if (options.sort) params.sort = options.sort;
+    if (options.sort_dir) params.sort_dir = options.sort_dir;
+    return this.request('search.messages', params);
+  }
+
+  // Search by module (browser: search.modules, standard: falls back to search.all)
+  async searchModules(query: string, module: 'channels' | 'people', options: {
+    count?: number;
+    cursor?: string;
+  } = {}): Promise<any> {
+    if (this.config.auth_type === 'browser') {
+      const params: Record<string, any> = {
+        query,
+        module,
+        count: options.count || 20,
+      };
+      if (options.cursor) params.cursor = options.cursor;
+      return this.request('search.modules', params);
+    }
+
+    // Standard auth: no search.modules available
+    if (module === 'channels') {
+      // Fall back to listing + client-side filtering
+      return this.listConversations({
+        types: 'public_channel,private_channel',
+        limit: 1000,
+        exclude_archived: true,
+      });
+    } else {
+      return this.listUsers({ limit: 1000 });
+    }
+  }
+
+  // List users
+  async listUsers(options: {
+    cursor?: string;
+    limit?: number;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.cursor) params.cursor = options.cursor;
+    if (options.limit) params.limit = options.limit;
+    return this.request('users.list', params);
+  }
+
+  // Get conversation info
+  async getConversationInfo(channel: string): Promise<any> {
+    return this.request('conversations.info', { channel });
+  }
+
+  // Get unread counts (browser: client.counts, standard: conversations.list with unread data)
+  async getUnreadCounts(): Promise<any> {
+    if (this.config.auth_type === 'browser') {
+      return this.request('client.counts', {});
+    }
+    return this.listConversations({
+      types: 'public_channel,private_channel,mpim,im',
+      limit: 1000,
+    });
+  }
+
+  // Check auth type
+  get authType(): string {
+    return this.config.auth_type;
+  }
 }

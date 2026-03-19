@@ -130,3 +130,71 @@ export interface AuthLoginBrowserOptions {
   workspaceUrl: string;
   workspaceName?: string;
 }
+
+// Saved items
+export interface SavedItem {
+  type: 'message' | 'file' | string;
+  channel_id: string;
+  channel_name?: string;
+  message?: SlackMessage;
+  date_saved?: number;
+  todo_state?: string;
+  file?: {
+    name?: string;
+    title?: string;
+    url_private?: string;
+  };
+}
+
+// Search results
+export interface SearchMatch {
+  ts: string;
+  text: string;
+  username?: string;
+  user?: string;
+  permalink?: string;
+  channel?: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface ChannelSearchResult {
+  id: string;
+  name: string;
+  is_member?: boolean;
+  is_private?: boolean;
+  member_count?: number;
+  num_members?: number;
+  purpose?: {
+    value: string;
+  };
+  topic?: {
+    value: string;
+  };
+}
+
+export interface PeopleSearchResult {
+  id: string;
+  name?: string;
+  real_name?: string;
+  profile?: {
+    display_name?: string;
+    real_name?: string;
+    email?: string;
+    title?: string;
+  };
+}
+
+// Unread channel info
+export interface UnreadChannel {
+  id: string;
+  name?: string;
+  mention_count: number;
+  unread_count?: number;
+  has_unreads: boolean;
+  is_im?: boolean;
+  is_mpim?: boolean;
+  is_private?: boolean;
+  recent_messages?: SlackMessage[];
+}

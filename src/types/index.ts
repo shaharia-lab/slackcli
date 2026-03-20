@@ -130,3 +130,12 @@ export interface AuthLoginBrowserOptions {
   workspaceUrl: string;
   workspaceName?: string;
 }
+
+export interface SearchMessagesOptions {
+  query: string;
+  count?: number;
+  page?: number;
+  sort?: 'score' | 'timestamp';
+  sortDir?: 'asc' | 'desc';
+  workspace?: string;
+}

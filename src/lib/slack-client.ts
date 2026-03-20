@@ -223,4 +223,20 @@ export class SlackClient {
       name
     });
   }
+
+  // Search messages
+  async searchMessages(options: {
+    query: string;
+    count?: number;
+    page?: number;
+    sort?: string;
+    sort_dir?: string;
+  }): Promise<any> {
+    const params: Record<string, any> = { query: options.query };
+    if (options.count) params.count = options.count;
+    if (options.page) params.page = options.page;
+    if (options.sort) params.sort = options.sort;
+    if (options.sort_dir) params.sort_dir = options.sort_dir;
+    return this.request('search.messages', params);
+  }
 }

@@ -1,6 +1,29 @@
 import chalk from 'chalk';
 import type { SlackChannel, SlackMessage, SlackUser, WorkspaceConfig } from '../types/index.ts';
 
+export interface SearchMessageMatch {
+  type: string;
+  user: string;
+  username: string;
+  text: string;
+  ts: string;
+  channel: {
+    id: string;
+    name: string;
+  };
+  permalink: string;
+  team: string;
+}
+
+export interface SearchMessagesPagination {
+  page: number;
+  page_count: number;
+  total_count: number;
+  per_page: number;
+  first: number;
+  last: number;
+}
+
 // Format timestamp to human-readable date
 export function formatTimestamp(ts: string): string {
   const timestamp = parseFloat(ts) * 1000;
@@ -142,6 +165,46 @@ export function formatConversationHistory(
   messages.forEach((msg, idx) => {
     output += formatMessage(msg, users);
     if (idx < messages.length - 1) {
+      output += '\n';
+    }
+  });
+
+  return output;
+}
+
+// Format a single search result match
+export function formatSearchMatch(
+  match: SearchMessageMatch,
+  index: number
+): string {
+  const timestamp = formatTimestamp(match.ts);
+  const channelName = match.channel?.name || 'unknown';
+  const userName = match.username || match.user || 'Unknown';
+
+  let output = `${chalk.dim(`${index + 1}.`)} ${chalk.dim(`[${timestamp}]`)} ${chalk.bold(`@${userName}`)} in ${chalk.cyan(`#${channelName}`)}\n`;
+
+  const textLines = match.text.split('\n');
+  textLines.forEach(line => {
+    output += `   ${line}\n`;
+  });
+
+  output += `   ${chalk.dim(match.permalink)}\n`;
+
+  return output;
+}
+
+// Format search results with pagination info
+export function formatSearchResults(
+  query: string,
+  matches: SearchMessageMatch[],
+  pagination: SearchMessagesPagination
+): string {
+  let output = chalk.bold(`Search results for "${query}" (${pagination.total_count} total)\n`);
+  output += chalk.dim(`Page ${pagination.page} of ${pagination.page_count}\n\n`);
+
+  matches.forEach((match, idx) => {
+    output += formatSearchMatch(match, idx);
+    if (idx < matches.length - 1) {
       output += '\n';
     }
   });

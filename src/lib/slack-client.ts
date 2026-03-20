@@ -224,6 +224,17 @@ export class SlackClient {
     });
   }
 
+  // List users
+  async listUsers(options: {
+    cursor?: string;
+    limit?: number;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.cursor) params.cursor = options.cursor;
+    if (options.limit) params.limit = options.limit;
+    return this.request('users.list', params);
+  }
+
   // Search messages
   async searchMessages(options: {
     query: string;

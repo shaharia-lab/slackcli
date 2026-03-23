@@ -1,5 +1,6 @@
 import { WebClient } from '@slack/web-api';
 import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
+import { parseMrkdwn } from './mrkdwn.ts';
 
 export class SlackClient {
   private config: WorkspaceConfig;
@@ -159,16 +160,7 @@ export class SlackClient {
 
     const params: Record<string, any> = {
       client_msg_id: crypto.randomUUID(),
-      blocks: JSON.stringify([{
-        type: 'rich_text',
-        elements: [{
-          type: 'rich_text_section',
-          elements: [{
-            type: 'text',
-            text: text
-          }]
-        }]
-      }]),
+      blocks: JSON.stringify(parseMrkdwn(text)),
       destinations: JSON.stringify(destinations),
       file_ids: '[]',
       is_from_composer: 'false',

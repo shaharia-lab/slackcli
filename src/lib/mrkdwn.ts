@@ -95,14 +95,14 @@ function parseInline(text: string): RichTextElement[] {
 }
 
 export function parseMrkdwn(text: string): RichTextBlock[] {
-  const elements = parseInline(text);
+  const lines = text.split('\n');
+  const sections: RichTextSection[] = lines.map(line => ({
+    type: 'rich_text_section',
+    elements: line.length > 0 ? parseInline(line) : [{ type: 'text', text: '\n' }],
+  }));
 
-  // If parsing produced nothing different from plain text, return as-is
   return [{
     type: 'rich_text',
-    elements: [{
-      type: 'rich_text_section',
-      elements: elements.length > 0 ? elements : [{ type: 'text', text }],
-    }],
+    elements: sections,
   }];
 }

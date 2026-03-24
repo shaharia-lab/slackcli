@@ -97,4 +97,44 @@ describe('parseMrkdwn', () => {
       }],
     }]);
   });
+
+  it('splits newlines into separate sections', () => {
+    const result = parseMrkdwn('line one\nline two');
+    expect(result).toEqual([{
+      type: 'rich_text',
+      elements: [
+        {
+          type: 'rich_text_section',
+          elements: [{ type: 'text', text: 'line one' }],
+        },
+        {
+          type: 'rich_text_section',
+          elements: [{ type: 'text', text: 'line two' }],
+        },
+      ],
+    }]);
+  });
+
+  it('handles formatting across multiple lines', () => {
+    const result = parseMrkdwn('*bold line*\n_italic line_');
+    expect(result).toEqual([{
+      type: 'rich_text',
+      elements: [
+        {
+          type: 'rich_text_section',
+          elements: [{ type: 'text', text: 'bold line', style: { bold: true } }],
+        },
+        {
+          type: 'rich_text_section',
+          elements: [{ type: 'text', text: 'italic line', style: { italic: true } }],
+        },
+      ],
+    }]);
+  });
+
+  it('handles empty lines between content', () => {
+    const result = parseMrkdwn('above\n\nbelow');
+    expect(result[0].elements).toHaveLength(3);
+    expect(result[0].elements[1].elements).toEqual([{ type: 'text', text: '\n' }]);
+  });
 });

@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
@@ -16,6 +17,7 @@ export function createConversationsCommand(): Command {
     .option('--types <types>', 'Conversation types (comma-separated: public_channel,private_channel,mpim,im)', 'public_channel,private_channel,mpim,im')
     .option('--limit <number>', 'Number of conversations to return', '100')
     .option('--exclude-archived', 'Exclude archived conversations', false)
+    .option('--cursor <cursor>', 'Pagination cursor for next page of results')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .action(async (options) => {
       const spinner = ora('Fetching conversations...').start();
@@ -27,9 +29,11 @@ export function createConversationsCommand(): Command {
           types: options.types,
           limit: parseInt(options.limit),
           exclude_archived: options.excludeArchived,
+          ...(options.cursor ? { cursor: options.cursor } : {}),
         });
 
         const channels: SlackChannel[] = response.channels || [];
+        const nextCursor = response.response_metadata?.next_cursor;
 
         // Fetch user info for DMs
         const userIds = new Set<string>();
@@ -51,6 +55,11 @@ export function createConversationsCommand(): Command {
         spinner.succeed(`Found ${channels.length} conversations`);
 
         console.log('\n' + formatChannelList(channels, users));
+
+        if (nextCursor) {
+          console.log(chalk.dim('\nMore results available. Next page:'));
+          console.log(chalk.cyan(`  slackcli conversations list --cursor "${nextCursor}"\n`));
+        }
       } catch (err: any) {
         spinner.fail('Failed to fetch conversations');
         error(err.message, 'Run "slackcli auth list" to check your authentication.');

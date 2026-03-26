@@ -2,7 +2,8 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatChannelList, formatConversationHistory } from '../lib/formatter.ts';
+import { error, formatChannelList, formatConversationHistory, formatUnreadChannels } from '../lib/formatter.ts';
+import { fetchUnreadChannels } from '../lib/unread.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 
 export function createConversationsCommand(): Command {
@@ -165,6 +166,54 @@ export function createConversationsCommand(): Command {
         }
       } catch (err: any) {
         spinner.fail('Failed to fetch messages');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // List unread conversations
+  conversations
+    .command('unread')
+    .description('List conversations with unread messages')
+    .option('--types <types>', 'Filter by type (comma-separated: channels,dms,groups)')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (options) => {
+      const spinner = ora('Fetching unread counts...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+
+        let channels = await fetchUnreadChannels(client, {
+          onProgress: (msg) => { spinner.text = msg; },
+        });
+
+        // Apply type filter if specified
+        if (options.types) {
+          const types = options.types.split(',').map((t: string) => t.trim());
+          channels = channels.filter(ch => {
+            if (types.includes('channels') && !ch.is_im && !ch.is_mpim) return true;
+            if (types.includes('dms') && ch.is_im) return true;
+            if (types.includes('groups') && ch.is_mpim) return true;
+            return false;
+          });
+        }
+
+        if (channels.length === 0) {
+          spinner.succeed('All caught up! No unread messages.');
+          return;
+        }
+
+        spinner.succeed(`${channels.length} conversations with unread messages`);
+
+        if (options.json) {
+          console.log(JSON.stringify({ unread_channels: channels }, null, 2));
+          return;
+        }
+
+        console.log('\n' + formatUnreadChannels(channels));
+      } catch (err: any) {
+        spinner.fail('Failed to fetch unread conversations');
         error(err.message);
         process.exit(1);
       }

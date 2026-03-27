@@ -34,6 +34,12 @@ const CURL_ENTERPRISE = `curl 'https://myorg.enterprise.slack.com/api/conversati
 // Single line format (no backslashes)
 const CURL_SINGLE_LINE = `curl 'https://singleline.slack.com/api/test' -b 'd=xoxd-single-line-token' --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-single-line\\r\\n------Boundary--\\r\\n'`;
 
+// JSON body format (used by some Slack API endpoints)
+const CURL_JSON_BODY = `curl 'https://jsonworkspace.slack.com/api/some.method' \\
+  -H 'content-type: application/json' \\
+  -b 'd=xoxd-json-test-token' \\
+  --data-raw '{"token":"xoxc-json-test-111-222","as_admin":false}'`;
+
 describe('parseCurlCommand', () => {
   describe('workspace extraction', () => {
     it('should extract workspace name and URL from standard curl command', () => {
@@ -116,6 +122,11 @@ describe('parseCurlCommand', () => {
     it('should handle different token formats', () => {
       const result = parseCurlCommand(CURL_WITH_COOKIE_HEADER);
       expect(result.xoxc).toBe('xoxc-111222333-444555666-abcdefghij');
+    });
+
+    it('should extract xoxc token from JSON body format', () => {
+      const result = parseCurlCommand(CURL_JSON_BODY);
+      expect(result.xoxc).toBe('xoxc-json-test-111-222');
     });
 
     it('should throw CurlParseError for missing xoxc token', () => {

@@ -60,7 +60,9 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
     ? (dataMatch[1] || dataMatch[2] || dataMatch[3] || dataMatch[4])
     : '';
 
-  const xoxcMatch = dataContent.match(/name="token".*?(xoxc-[a-zA-Z0-9-]+)/);
+  const xoxcMatch =
+    dataContent.match(/name="token".*?(xoxc-[a-zA-Z0-9-]+)/) ||
+    dataContent.match(/"token"\s*:\s*"(xoxc-[a-zA-Z0-9-]+)"/);
   if (!xoxcMatch) {
     throw new CurlParseError('xoxc', 'Could not find xoxc token in request data');
   }

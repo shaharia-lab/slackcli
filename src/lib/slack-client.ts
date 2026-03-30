@@ -345,10 +345,23 @@ export class SlackClient {
     return response.text();
   }
 
-  // Get canvas file ID associated with a channel
+  // Get canvas file ID associated with a channel or DM
   async getChannelCanvasId(channelId: string): Promise<string | null> {
     const response = await this.getConversationInfo(channelId);
-    return response?.channel?.properties?.canvas?.file_id ?? null;
+    const props = response?.channel?.properties;
+    if (!props) return null;
+
+    // Standard channel canvas
+    if (props.canvas?.file_id) return props.canvas.file_id;
+
+    // DM / private conversation (stored as meeting_notes)
+    if (props.meeting_notes?.file_id) return props.meeting_notes.file_id;
+
+    // Fallback: check tabs for a canvas entry
+    const canvasTab = props.tabs?.find((t: any) => t.type === 'canvas');
+    if (canvasTab?.data?.file_id) return canvasTab.data.file_id;
+
+    return null;
   }
 
   // Check auth type

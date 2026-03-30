@@ -204,7 +204,10 @@ export interface SlackCanvas {
   title?: string;
   name?: string;
   created?: number;
+  updated?: number;
+  edit_timestamp?: number;
   user?: string;
+  editors?: string[];
   size?: number;
   filetype?: string;
   url_private?: string;

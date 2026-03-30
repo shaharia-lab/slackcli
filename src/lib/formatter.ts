@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import type {
-  SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
+  SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
 } from '../types/index.ts';
 
@@ -302,6 +302,41 @@ export function formatPaginationHint(page: number, totalPages: number): string {
     return chalk.dim(`  Page ${page} of ${totalPages}. Use --page ${page + 1} to see more.\n`);
   }
   return '';
+}
+
+// Format canvas list
+export function formatCanvasList(canvases: SlackCanvas[]): string {
+  let output = chalk.bold(`📄 Canvases (${canvases.length})\n\n`);
+
+  canvases.forEach((canvas, idx) => {
+    const title = canvas.title || canvas.name || 'Untitled';
+    const created = canvas.created ? formatTimestamp(String(canvas.created)) : '';
+    const size = canvas.size ? chalk.dim(`${Math.round(canvas.size / 1024)}KB`) : '';
+
+    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(title)} ${chalk.dim(`(${canvas.id})`)} ${size}\n`;
+    if (created) {
+      output += `     ${chalk.dim(created)}\n`;
+    }
+    if (canvas.permalink) {
+      output += `     ${chalk.dim(canvas.permalink)}\n`;
+    }
+    output += '\n';
+  });
+
+  return output;
+}
+
+// Format canvas content for display
+export function formatCanvasContent(canvas: SlackCanvas, markdown: string): string {
+  const title = canvas.title || canvas.name || 'Untitled';
+  const created = canvas.created ? formatTimestamp(String(canvas.created)) : '';
+
+  let header = chalk.bold(`📄 ${title}`) + chalk.dim(` (${canvas.id})`);
+  if (created) {
+    header += chalk.dim(` | ${created}`);
+  }
+
+  return `${header}\n${chalk.dim('─'.repeat(60))}\n\n${markdown}`;
 }
 
 // Truncate text with ellipsis

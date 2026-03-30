@@ -197,3 +197,29 @@ export interface UnreadChannel {
   is_mpim?: boolean;
   is_private?: boolean;
 }
+
+// Canvas types
+export interface SlackCanvas {
+  id: string;
+  title?: string;
+  name?: string;
+  created?: number;
+  user?: string;
+  size?: number;
+  filetype?: string;
+  url_private?: string;
+  url_private_download?: string;
+  permalink?: string;
+}
+
+export interface CanvasListOptions {
+  channel?: string;
+  limit?: number;
+  workspace?: string;
+}
+
+export interface CanvasReadOptions {
+  channel?: string;
+  raw?: boolean;
+  workspace?: string;
+}

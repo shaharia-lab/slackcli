@@ -335,14 +335,41 @@ export class SlackClient {
       throw new Error(`Download failed: HTTP ${response.status}`);
     }
 
-    // Size guard
+    // Early exit when Content-Length is known and exceeds limit
     const contentLength = response.headers.get('content-length');
     if (contentLength && parseInt(contentLength, 10) > maxBytes) {
       await response.body?.cancel();
       throw new Error(`File too large: ${contentLength} bytes (max ${maxBytes})`);
     }
 
-    return response.text();
+    // Stream-based size guard (handles chunked transfer / missing Content-Length)
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return '';
+    }
+
+    const chunks: Uint8Array[] = [];
+    let bytesRead = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        await reader.cancel();
+        throw new Error(`File too large: exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+
+    const merged = new Uint8Array(bytesRead);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    return new TextDecoder().decode(merged);
   }
 
   // Get canvas file ID associated with a channel or DM

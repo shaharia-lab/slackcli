@@ -301,6 +301,96 @@ export class SlackClient {
     });
   }
 
+  // List canvas files
+  async listCanvases(options: {
+    limit?: number;
+    channel?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { types: 'canvas' };
+    if (options.limit) params.count = options.limit;
+    if (options.channel) params.channel = options.channel;
+    return this.request('files.list', params);
+  }
+
+  // Get file info (used to get canvas download URL)
+  async getFileInfo(fileId: string): Promise<any> {
+    return this.request('files.info', { file: fileId });
+  }
+
+  // Download file content with auth, size guard, and auth page detection
+  async downloadFile(url: string, maxBytes: number = 10 * 1024 * 1024): Promise<string> {
+    const headers: Record<string, string> = {};
+
+    if (this.config.auth_type === 'standard') {
+      headers['Authorization'] = `Bearer ${this.config.token}`;
+    } else if (this.config.auth_type === 'browser') {
+      const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
+      headers['Cookie'] = `d=${encodedXoxdToken}`;
+      headers['Origin'] = 'https://app.slack.com';
+    }
+
+    const response = await fetch(url, { headers });
+
+    if (!response.ok) {
+      throw new Error(`Download failed: HTTP ${response.status}`);
+    }
+
+    // Early exit when Content-Length is known and exceeds limit
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+      await response.body?.cancel();
+      throw new Error(`File too large: ${contentLength} bytes (max ${maxBytes})`);
+    }
+
+    // Stream-based size guard (handles chunked transfer / missing Content-Length)
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return '';
+    }
+
+    const chunks: Uint8Array[] = [];
+    let bytesRead = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        await reader.cancel();
+        throw new Error(`File too large: exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+
+    const merged = new Uint8Array(bytesRead);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    return new TextDecoder().decode(merged);
+  }
+
+  // Get canvas file ID associated with a channel or DM
+  async getChannelCanvasId(channelId: string): Promise<string | null> {
+    const response = await this.getConversationInfo(channelId);
+    const props = response?.channel?.properties;
+    if (!props) return null;
+
+    // Standard channel canvas
+    if (props.canvas?.file_id) return props.canvas.file_id;
+
+    // DM / private conversation (stored as meeting_notes)
+    if (props.meeting_notes?.file_id) return props.meeting_notes.file_id;
+
+    // Fallback: check tabs for a canvas entry
+    const canvasTab = props.tabs?.find((t: any) => t.type === 'canvas');
+    if (canvasTab?.data?.file_id) return canvasTab.data.file_id;
+
+    return null;
+  }
+
   // Check auth type
   get authType(): string {
     return this.config.auth_type;

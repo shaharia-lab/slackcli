@@ -17,6 +17,7 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 - 🏢 **Multi-Workspace Management**: Manage multiple Slack workspaces with ease
 - 💬 **Conversation Management**: List channels, read messages, send messages
 - 🎉 **Message Reactions**: Add emoji reactions to messages programmatically
+- 📄 **Canvas Support**: List and read Slack canvas documents as markdown
 - 🚀 **Fast & Lightweight**: Built with Bun for blazing fast performance
 - 🔄 **Auto-Update**: Built-in self-update mechanism
 - 🎨 **Beautiful Output**: Colorful, user-friendly terminal output
@@ -199,6 +200,27 @@ slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 -
 - `eyes` - 👀
 - `tada` - 🎉
 - `rocket` - 🚀
+
+### Canvas Commands
+
+```bash
+# List canvases in the workspace
+slackcli canvas list
+slackcli canvas list --limit=50
+slackcli canvas list --channel=C1234567890
+
+# Read canvas content as markdown
+slackcli canvas read F1234567890
+
+# Read canvas in JSON format (includes markdown field)
+slackcli canvas read F1234567890 --json
+
+# Read raw HTML (no conversion)
+slackcli canvas read F1234567890 --raw
+
+# Read the canvas associated with a channel
+slackcli canvas read --channel=C1234567890
+```
 
 ### Update Commands
 

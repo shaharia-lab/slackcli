@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import type {
-  SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
+  SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
 } from '../types/index.ts';
 
@@ -116,6 +116,29 @@ export function formatMessage(
       output += chalk.dim(` | thread_ts: ${msg.thread_ts}`);
     }
     output += '\n';
+  }
+
+  // Files
+  if (msg.files && msg.files.length > 0) {
+    msg.files.forEach(file => {
+      if (file.mode === 'tombstone') {
+        output += `${indentStr}  ${chalk.yellow('📎')} ${chalk.dim('(deleted file)')}\n`;
+        return;
+      }
+
+      const name = file.name || '(unnamed file)';
+      const parts: string[] = [];
+      if (file.size !== undefined) parts.push(formatFileSize(file.size));
+      if (file.mimetype) parts.push(file.mimetype);
+      const meta = parts.length > 0 ? ` ${chalk.dim(`(${parts.join(', ')})`)}` : '';
+
+      output += `${indentStr}  ${chalk.yellow('📎')} ${chalk.yellow(name)}${meta}\n`;
+
+      const url = file.url_private || file.permalink;
+      if (url) {
+        output += `${indentStr}     ${chalk.dim(url)}\n`;
+      }
+    });
   }
 
   // Reactions

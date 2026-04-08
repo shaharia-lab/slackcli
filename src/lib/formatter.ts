@@ -341,6 +341,7 @@ export function formatCanvasContent(canvas: SlackCanvas, markdown: string): stri
 
 // Format file size to human-readable string
 export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
   const k = 1024;

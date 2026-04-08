@@ -245,4 +245,20 @@ describe('formatFileSize', () => {
   it('formats exact 1 GB', () => {
     expect(formatFileSize(1073741824)).toBe('1.0 GB');
   });
+
+  it('handles negative values', () => {
+    expect(formatFileSize(-1)).toBe('0 B');
+  });
+
+  it('handles NaN', () => {
+    expect(formatFileSize(NaN)).toBe('0 B');
+  });
+
+  it('handles Infinity', () => {
+    expect(formatFileSize(Infinity)).toBe('0 B');
+  });
+
+  it('formats 1023 bytes (boundary before KB)', () => {
+    expect(formatFileSize(1023)).toBe('1023 B');
+  });
 });

@@ -339,6 +339,17 @@ export function formatCanvasContent(canvas: SlackCanvas, markdown: string): stri
   return `${header}\n${chalk.dim('─'.repeat(60))}\n\n${markdown}`;
 }
 
+// Format file size to human-readable string
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const k = 1024;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const index = Math.min(i, units.length - 1);
+  if (index === 0) return `${bytes} B`;
+  return `${(bytes / Math.pow(k, index)).toFixed(1)} ${units[index]}`;
+}
+
 // Truncate text with ellipsis
 function truncateText(text: string | undefined, maxLen: number): string {
   if (!text) return '[no text]';

@@ -6,6 +6,7 @@ import {
   formatPeopleSearchResults,
   formatUnreadChannels,
   formatPaginationHint,
+  formatFileSize,
 } from './formatter.ts';
 import type {
   SavedItem,
@@ -213,5 +214,35 @@ describe('formatPaginationHint', () => {
   it('returns empty string on last page', () => {
     const output = formatPaginationHint(3, 3);
     expect(output).toBe('');
+  });
+});
+
+describe('formatFileSize', () => {
+  it('formats 0 bytes', () => {
+    expect(formatFileSize(0)).toBe('0 B');
+  });
+
+  it('formats bytes under 1 KB', () => {
+    expect(formatFileSize(500)).toBe('500 B');
+  });
+
+  it('formats exact 1 KB', () => {
+    expect(formatFileSize(1024)).toBe('1.0 KB');
+  });
+
+  it('formats fractional KB', () => {
+    expect(formatFileSize(1536)).toBe('1.5 KB');
+  });
+
+  it('formats exact 1 MB', () => {
+    expect(formatFileSize(1048576)).toBe('1.0 MB');
+  });
+
+  it('formats fractional MB', () => {
+    expect(formatFileSize(1258291)).toBe('1.2 MB');
+  });
+
+  it('formats exact 1 GB', () => {
+    expect(formatFileSize(1073741824)).toBe('1.0 GB');
   });
 });

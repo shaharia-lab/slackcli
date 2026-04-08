@@ -78,4 +78,59 @@ describe('SlackMessage', () => {
     expect(parsed.blocks[0].type).toBe('section');
     expect(parsed.blocks[1].type).toBe('context');
   });
+
+  it('includes files in JSON serialization when present', () => {
+    const msg: SlackMessage = {
+      type: 'message',
+      user: 'U123',
+      text: 'Here is the document',
+      ts: '1234567890.000400',
+      files: [
+        {
+          id: 'F001',
+          name: 'design.pdf',
+          title: 'Design Doc',
+          mimetype: 'application/pdf',
+          filetype: 'pdf',
+          size: 1258291,
+          url_private: 'https://files.slack.com/files-pri/T0123/design.pdf',
+          permalink: 'https://team.slack.com/files/U123/F001/design.pdf',
+          mode: 'hosted',
+        },
+      ],
+    };
+
+    const output = JSON.stringify({
+      ts: msg.ts,
+      user: msg.user,
+      text: msg.text,
+      files: msg.files,
+    });
+
+    const parsed = JSON.parse(output);
+    expect(parsed.files).toBeDefined();
+    expect(parsed.files).toHaveLength(1);
+    expect(parsed.files[0].id).toBe('F001');
+    expect(parsed.files[0].name).toBe('design.pdf');
+    expect(parsed.files[0].size).toBe(1258291);
+    expect(parsed.files[0].mimetype).toBe('application/pdf');
+  });
+
+  it('omits files from JSON output when not present', () => {
+    const msg: SlackMessage = {
+      type: 'message',
+      user: 'U456',
+      text: 'No files here',
+      ts: '1234567890.000500',
+    };
+
+    const output = JSON.stringify({
+      ts: msg.ts,
+      text: msg.text,
+      files: msg.files,
+    });
+
+    const parsed = JSON.parse(output);
+    expect(parsed.files).toBeUndefined();
+  });
 });

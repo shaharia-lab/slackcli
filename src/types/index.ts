@@ -61,6 +61,19 @@ export interface SlackUser {
   };
 }
 
+export interface SlackFile {
+  id: string;
+  name?: string;
+  title?: string;
+  mimetype?: string;
+  filetype?: string;
+  size?: number;
+  url_private?: string;
+  url_private_download?: string;
+  permalink?: string;
+  mode?: string;
+}
+
 export interface SlackMessage {
   type: string;
   user?: string;
@@ -75,6 +88,7 @@ export interface SlackMessage {
     users: string[];
   }>;
   blocks?: Array<Record<string, unknown>>;
+  files?: SlackFile[];
 }
 
 export interface SlackAuthTestResponse {

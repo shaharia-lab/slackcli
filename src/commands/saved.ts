@@ -11,8 +11,8 @@ export function createSavedCommand(): Command {
   saved
     .command('list')
     .description('List saved for later items')
-    .option('--limit <number>', 'Number of items to return', '20')
-    .option('--state <state>', 'Filter by state: saved or completed')
+    .option('--limit <number>', 'Maximum number of items to return')
+    .option('--state <state>', 'Filter by state: saved, to_do, or completed')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
@@ -22,7 +22,7 @@ export function createSavedCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
 
         let { items, users } = await enrichSavedItems(client, {
-          count: parseInt(options.limit),
+          limit: options.limit ? parseInt(options.limit) : undefined,
           onProgress: (msg) => { spinner.text = msg; },
         });
 

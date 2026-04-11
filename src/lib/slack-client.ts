@@ -231,6 +231,15 @@ export class SlackClient {
     return this.request('stars.list', params);
   }
 
+  // Batch-fetch messages by channel + timestamp (browser auth only).
+  // Groups are {channel, timestamps[]} — Slack returns full message objects
+  // regardless of whether they're top-level or thread replies.
+  async listMessages(messageIds: Array<{ channel: string; timestamps: string[] }>): Promise<any> {
+    return this.request('messages.list', {
+      message_ids: JSON.stringify(messageIds),
+    });
+  }
+
   // Search messages
   async searchMessages(query: string, options: {
     count?: number;

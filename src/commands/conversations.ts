@@ -182,6 +182,110 @@ export function createConversationsCommand(): Command {
       }
     });
 
+  // Get a single message by channel + timestamp
+  conversations
+    .command('get')
+    .description('Get a specific message by channel ID and timestamp')
+    .argument('<channel-id>', 'Channel ID')
+    .argument('<timestamp>', 'Message timestamp')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (channelId, timestamp, options) => {
+      const spinner = ora('Fetching message...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+
+        let msg: SlackMessage | undefined;
+
+        if (client.authType === 'browser') {
+          // Single batch call that handles top-level messages and thread replies
+          const response = await client.listMessages([{ channel: channelId, timestamps: [timestamp] }]);
+          const msgs = response.messages?.[channelId] || [];
+          msg = msgs[0];
+        } else {
+          // Standard auth: try channel history first, then thread replies
+          const history = await client.getConversationHistory(channelId, {
+            latest: timestamp,
+            oldest: timestamp,
+            inclusive: true,
+            limit: 1,
+          });
+          msg = history.messages?.[0];
+
+          if (!msg) {
+            // May be a thread reply — try conversations.replies
+            const replies = await client.getConversationReplies(channelId, timestamp, {
+              inclusive: true,
+              limit: 1,
+            });
+            msg = replies.messages?.[0];
+          }
+        }
+
+        if (!msg) {
+          spinner.fail('Message not found');
+          process.exit(1);
+        }
+
+        // Fetch user info
+        const users = new Map<string, SlackUser>();
+        if (msg.user) {
+          spinner.text = 'Fetching user information...';
+          try {
+            const userResponse = await client.getUserInfo(msg.user);
+            if (userResponse.user) {
+              users.set(userResponse.user.id, userResponse.user);
+            }
+          } catch {
+            // Continue without user info
+          }
+        }
+
+        spinner.succeed('Message found');
+
+        if (options.json) {
+          console.log(JSON.stringify({
+            channel_id: channelId,
+            message: {
+              ts: msg.ts,
+              thread_ts: msg.thread_ts,
+              user: msg.user,
+              text: msg.text,
+              type: msg.type,
+              reply_count: msg.reply_count,
+              reactions: msg.reactions,
+              bot_id: msg.bot_id,
+              blocks: msg.blocks,
+              ...(msg.files?.length ? { files: msg.files.map(f => ({
+                id: f.id,
+                name: f.name,
+                title: f.title,
+                mimetype: f.mimetype,
+                filetype: f.filetype,
+                size: f.size,
+                url_private: f.url_private,
+                permalink: f.permalink,
+                mode: f.mode,
+              })) } : {}),
+            },
+            users: Array.from(users.values()).map(u => ({
+              id: u.id,
+              name: u.name,
+              real_name: u.real_name,
+              email: u.profile?.email,
+            })),
+          }, null, 2));
+        } else {
+          console.log('\n' + formatConversationHistory(channelId, [msg], users));
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to fetch message');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
   // List unread conversations
   conversations
     .command('unread')

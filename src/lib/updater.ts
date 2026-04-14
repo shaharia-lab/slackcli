@@ -63,7 +63,7 @@ function getBinaryName(): string {
   const platform = process.platform;
   const arch = process.arch;
 
-  if (platform === 'linux') return 'slackcli-linux';
+  if (platform === 'linux') return arch === 'arm64' ? 'slackcli-linux-arm64' : 'slackcli-linux';
   if (platform === 'darwin') return arch === 'arm64' ? 'slackcli-macos-arm64' : 'slackcli-macos';
   if (platform === 'win32') return 'slackcli-windows.exe';
 

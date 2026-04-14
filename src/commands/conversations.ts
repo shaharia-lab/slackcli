@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatChannelList, formatConversationHistory, formatUnreadChannels } from '../lib/formatter.ts';
+import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 
@@ -178,6 +179,85 @@ export function createConversationsCommand(): Command {
         }
       } catch (err: any) {
         spinner.fail('Failed to fetch messages');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // Get a single message by channel + timestamp
+  conversations
+    .command('get')
+    .description('Get a specific message by channel ID and timestamp')
+    .argument('<channel-id>', 'Channel ID')
+    .argument('<timestamp>', 'Message timestamp')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (channelId, timestamp, options) => {
+      const spinner = ora('Fetching message...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+
+        const msg = await fetchMessage(client, channelId, timestamp);
+
+        if (!msg) {
+          spinner.fail('Message not found');
+          process.exit(1);
+        }
+
+        // Fetch user info
+        const users = new Map<string, SlackUser>();
+        if (msg.user) {
+          spinner.text = 'Fetching user information...';
+          try {
+            const userResponse = await client.getUserInfo(msg.user);
+            if (userResponse.user) {
+              users.set(userResponse.user.id, userResponse.user);
+            }
+          } catch {
+            // Continue without user info
+          }
+        }
+
+        spinner.succeed('Message found');
+
+        if (options.json) {
+          console.log(JSON.stringify({
+            channel_id: channelId,
+            message: {
+              ts: msg.ts,
+              thread_ts: msg.thread_ts,
+              user: msg.user,
+              text: msg.text,
+              type: msg.type,
+              reply_count: msg.reply_count,
+              reactions: msg.reactions,
+              bot_id: msg.bot_id,
+              blocks: msg.blocks,
+              ...(msg.files?.length ? { files: msg.files.map(f => ({
+                id: f.id,
+                name: f.name,
+                title: f.title,
+                mimetype: f.mimetype,
+                filetype: f.filetype,
+                size: f.size,
+                url_private: f.url_private,
+                permalink: f.permalink,
+                mode: f.mode,
+              })) } : {}),
+            },
+            users: Array.from(users.values()).map(u => ({
+              id: u.id,
+              name: u.name,
+              real_name: u.real_name,
+              email: u.profile?.email,
+            })),
+          }, null, 2));
+        } else {
+          console.log('\n' + formatConversationHistory(channelId, [msg], users));
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to fetch message');
         error(err.message);
         process.exit(1);
       }

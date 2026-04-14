@@ -1,7 +1,18 @@
 import { writeFile, chmod, rename, unlink } from 'fs/promises';
-import { tmpdir } from 'os';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { tmpdir, homedir } from 'os';
 import { join } from 'path';
+import chalk from 'chalk';
 import { info, success, error as logError } from './formatter.ts';
+
+const CONFIG_DIR = join(homedir(), '.config', 'slackcli');
+const UPDATE_CACHE_FILE = join(CONFIG_DIR, 'update-check.json');
+const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface UpdateCache {
+  checkedAt: number;
+  latestVersion: string;
+}
 
 const GITHUB_REPO = 'shaharia-lab/slackcli';
 // @ts-ignore - This will be replaced at build time
@@ -163,4 +174,72 @@ export async function performUpdate(): Promise<void> {
     logError(`Update failed: ${error.message}`);
     throw error;
   }
+}
+
+// Read cached update check result synchronously
+function readUpdateCache(): UpdateCache | null {
+  try {
+    const data = readFileSync(UPDATE_CACHE_FILE, 'utf-8');
+    return JSON.parse(data) as UpdateCache;
+  } catch {
+    return null;
+  }
+}
+
+// Write update check result to cache
+function writeUpdateCache(cache: UpdateCache): void {
+  try {
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    }
+    writeFileSync(UPDATE_CACHE_FILE, JSON.stringify(cache, null, 2));
+  } catch {
+    // Silently fail — cache is best-effort
+  }
+}
+
+// Detect if the binary was installed via Homebrew
+export function isInstalledViaHomebrew(): boolean {
+  const execPath = process.execPath;
+  return execPath.includes('homebrew') || execPath.includes('Cellar') || execPath.includes('linuxbrew');
+}
+
+// Return the appropriate update command for this installation
+export function getUpdateCommand(): string {
+  return isInstalledViaHomebrew() ? 'brew upgrade slackcli' : 'slackcli update';
+}
+
+// Show a one-line update notification after the command finishes (via beforeExit),
+// and refresh the cache in the background if it is stale.
+export function notifyIfUpdateAvailable(): void {
+  const cache = readUpdateCache();
+  const now = Date.now();
+
+  // Trigger a background cache refresh if missing or older than 24h
+  if (!cache || (now - cache.checkedAt) > CHECK_INTERVAL_MS) {
+    fetchLatestRelease()
+      .then(release => {
+        if (release) {
+          writeUpdateCache({ checkedAt: now, latestVersion: release.tag_name });
+        }
+      })
+      .catch(() => {});
+  }
+
+  // Nothing to show if cache is empty or already on latest
+  if (!cache || !isNewerVersion(cache.latestVersion, CURRENT_VERSION)) {
+    return;
+  }
+
+  const updateCmd = getUpdateCommand();
+  let printed = false;
+
+  process.on('beforeExit', () => {
+    if (printed) return;
+    printed = true;
+    process.stderr.write(
+      chalk.yellow(`\n  Update available: v${CURRENT_VERSION} → ${cache.latestVersion}\n`) +
+      chalk.dim(`  Run: ${updateCmd}\n`),
+    );
+  });
 }

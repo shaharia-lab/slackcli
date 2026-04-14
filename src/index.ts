@@ -8,7 +8,7 @@ import { createCanvasCommand } from './commands/canvas.ts';
 import { createUpdateCommand } from './commands/update.ts';
 import { createSavedCommand } from './commands/saved.ts';
 import { createSearchCommand } from './commands/search.ts';
-import { checkForUpdates } from './lib/updater.ts';
+import { notifyIfUpdateAvailable } from './lib/updater.ts';
 import chalk from 'chalk';
 
 const program = new Command();
@@ -30,10 +30,8 @@ program.addCommand(createSavedCommand());
 program.addCommand(createSearchCommand());
 program.addCommand(createUpdateCommand());
 
-// Check for updates asynchronously (non-blocking)
-checkForUpdates(true).catch(() => {
-  // Silently fail update check
-});
+// Show update notification after command output if a newer version is cached
+notifyIfUpdateAvailable();
 
 // Parse arguments
 program.parse(process.argv);

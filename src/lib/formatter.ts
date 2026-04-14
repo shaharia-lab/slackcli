@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import type {
-  SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
+  SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
 } from '../types/index.ts';
 
@@ -116,6 +116,29 @@ export function formatMessage(
       output += chalk.dim(` | thread_ts: ${msg.thread_ts}`);
     }
     output += '\n';
+  }
+
+  // Files
+  if (msg.files && msg.files.length > 0) {
+    msg.files.forEach(file => {
+      if (file.mode === 'tombstone') {
+        output += `${indentStr}  ${chalk.yellow('📎')} ${chalk.dim('(deleted file)')}\n`;
+        return;
+      }
+
+      const name = file.name || '(unnamed file)';
+      const parts: string[] = [];
+      if (file.size !== undefined) parts.push(formatFileSize(file.size));
+      if (file.mimetype) parts.push(file.mimetype);
+      const meta = parts.length > 0 ? ` ${chalk.dim(`(${parts.join(', ')})`)}` : '';
+
+      output += `${indentStr}  ${chalk.yellow('📎')} ${chalk.yellow(name)}${meta}\n`;
+
+      const url = file.url_private || file.permalink;
+      if (url) {
+        output += `${indentStr}     ${chalk.dim(url)}\n`;
+      }
+    });
   }
 
   // Reactions
@@ -337,6 +360,18 @@ export function formatCanvasContent(canvas: SlackCanvas, markdown: string): stri
   }
 
   return `${header}\n${chalk.dim('─'.repeat(60))}\n\n${markdown}`;
+}
+
+// Format file size to human-readable string
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const k = 1024;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const index = Math.min(i, units.length - 1);
+  if (index === 0) return `${bytes} B`;
+  return `${(bytes / Math.pow(k, index)).toFixed(1)} ${units[index]}`;
 }
 
 // Truncate text with ellipsis

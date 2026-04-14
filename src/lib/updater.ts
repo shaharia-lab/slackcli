@@ -61,9 +61,10 @@ export function isNewerVersion(latest: string, current: string): boolean {
 // Get platform-specific binary name
 function getBinaryName(): string {
   const platform = process.platform;
+  const arch = process.arch;
 
   if (platform === 'linux') return 'slackcli-linux';
-  if (platform === 'darwin') return 'slackcli-macos';
+  if (platform === 'darwin') return arch === 'arm64' ? 'slackcli-macos-arm64' : 'slackcli-macos';
   if (platform === 'win32') return 'slackcli-windows.exe';
 
   throw new Error(`Unsupported platform: ${platform}`);

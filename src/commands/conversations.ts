@@ -153,6 +153,17 @@ export function createConversationsCommand(): Command {
               reactions: msg.reactions,
               bot_id: msg.bot_id,
               blocks: msg.blocks,
+              ...(msg.files?.length ? { files: msg.files.map(f => ({
+                id: f.id,
+                name: f.name,
+                title: f.title,
+                mimetype: f.mimetype,
+                filetype: f.filetype,
+                size: f.size,
+                url_private: f.url_private,
+                permalink: f.permalink,
+                mode: f.mode,
+              })) } : {}),
             })),
             users: Array.from(users.values()).map(u => ({
               id: u.id,

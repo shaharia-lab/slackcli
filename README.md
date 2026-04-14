@@ -24,11 +24,31 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 
 ## Installation
 
+### Homebrew (macOS and Linux)
+
+```bash
+brew tap shaharia-lab/tap
+brew install slackcli
+```
+
+To upgrade to the latest version:
+
+```bash
+brew upgrade slackcli
+```
+
 ### Pre-built Binaries
 
-#### Linux
+#### Linux (x86_64)
 ```bash
 curl -L https://github.com/shaharia-lab/slackcli/releases/latest/download/slackcli-linux -o slackcli
+chmod +x slackcli
+mkdir -p ~/.local/bin && mv slackcli ~/.local/bin/
+```
+
+#### Linux (arm64)
+```bash
+curl -L https://github.com/shaharia-lab/slackcli/releases/latest/download/slackcli-linux-arm64 -o slackcli
 chmod +x slackcli
 mkdir -p ~/.local/bin && mv slackcli ~/.local/bin/
 ```
@@ -329,6 +349,8 @@ If you get permission errors when accessing conversations or sending messages:
 - For browser tokens, ensure you have access in the web UI
 
 ### Update Issues
+
+If installed via Homebrew, use `brew upgrade slackcli` instead of `slackcli update`.
 
 If `slackcli update` fails:
 - Ensure you have write permissions to the binary location

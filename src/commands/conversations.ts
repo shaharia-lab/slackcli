@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatChannelList, formatConversationHistory, formatUnreadChannels } from '../lib/formatter.ts';
+import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 
@@ -196,32 +197,7 @@ export function createConversationsCommand(): Command {
       try {
         const client = await getAuthenticatedClient(options.workspace);
 
-        let msg: SlackMessage | undefined;
-
-        if (client.authType === 'browser') {
-          // Single batch call that handles top-level messages and thread replies
-          const response = await client.listMessages([{ channel: channelId, timestamps: [timestamp] }]);
-          const msgs = response.messages?.[channelId] || [];
-          msg = msgs[0];
-        } else {
-          // Standard auth: try channel history first, then thread replies
-          const history = await client.getConversationHistory(channelId, {
-            latest: timestamp,
-            oldest: timestamp,
-            inclusive: true,
-            limit: 1,
-          });
-          msg = history.messages?.[0];
-
-          if (!msg) {
-            // May be a thread reply — try conversations.replies
-            const replies = await client.getConversationReplies(channelId, timestamp, {
-              inclusive: true,
-              limit: 1,
-            });
-            msg = replies.messages?.[0];
-          }
-        }
+        const msg = await fetchMessage(client, channelId, timestamp);
 
         if (!msg) {
           spinner.fail('Message not found');

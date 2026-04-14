@@ -154,6 +154,7 @@ export function createConversationsCommand(): Command {
               reactions: msg.reactions,
               bot_id: msg.bot_id,
               blocks: msg.blocks,
+              attachments: msg.attachments,
               ...(msg.files?.length ? { files: msg.files.map(f => ({
                 id: f.id,
                 name: f.name,

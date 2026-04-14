@@ -79,6 +79,85 @@ describe('SlackMessage', () => {
     expect(parsed.blocks[1].type).toBe('context');
   });
 
+  it('includes attachments in JSON serialization when present', () => {
+    const msg: SlackMessage = {
+      type: 'message',
+      bot_id: 'B0578EJQBFH',
+      text: '',
+      ts: '1234567890.000400',
+      attachments: [
+        {
+          title: 'New error: ConfirmDraft OnSched update failed',
+          fallback: '<https://app.example.com/items/1552|#1552 New error: ConfirmDraft OnSched update failed>',
+          color: '#D00000',
+          title_link: 'https://app.example.com/items/1552',
+        },
+      ],
+    };
+
+    const output = JSON.stringify({
+      ts: msg.ts,
+      bot_id: msg.bot_id,
+      text: msg.text,
+      type: msg.type,
+      attachments: msg.attachments,
+    });
+
+    const parsed = JSON.parse(output);
+    expect(parsed.attachments).toBeDefined();
+    expect(parsed.attachments).toHaveLength(1);
+    expect((parsed.attachments[0] as any).title).toBe('New error: ConfirmDraft OnSched update failed');
+    expect((parsed.attachments[0] as any).fallback).toContain('#1552');
+  });
+
+  it('omits attachments from JSON output when not present', () => {
+    const msg: SlackMessage = {
+      type: 'message',
+      user: 'U789',
+      text: 'Plain message without attachments.',
+      ts: '1234567890.000500',
+    };
+
+    const output = JSON.stringify({
+      ts: msg.ts,
+      user: msg.user,
+      text: msg.text,
+      type: msg.type,
+      attachments: msg.attachments,
+    });
+
+    const parsed = JSON.parse(output);
+    expect(parsed.attachments).toBeUndefined();
+  });
+
+  it('preserves multiple attachments with nested fields in serialization', () => {
+    const msg: SlackMessage = {
+      type: 'message',
+      bot_id: 'B002',
+      text: '',
+      ts: '1234567890.000600',
+      attachments: [
+        {
+          title: 'First error',
+          fields: [
+            { title: 'Environment', value: 'production', short: true },
+            { title: 'Occurrences', value: '42', short: true },
+          ],
+        },
+        {
+          title: 'Second error',
+          fallback: '#1553 Another error',
+        },
+      ],
+    };
+
+    const parsed = JSON.parse(JSON.stringify({ attachments: msg.attachments }));
+    expect(parsed.attachments).toHaveLength(2);
+    expect((parsed.attachments[0] as any).title).toBe('First error');
+    expect((parsed.attachments[0] as any).fields).toHaveLength(2);
+    expect((parsed.attachments[1] as any).fallback).toBe('#1553 Another error');
+  });
+
   it('includes files in JSON serialization when present', () => {
     const msg: SlackMessage = {
       type: 'message',
@@ -147,6 +226,7 @@ describe('SlackMessage', () => {
         reactions: msg.reactions,
         bot_id: msg.bot_id,
         blocks: msg.blocks,
+        attachments: msg.attachments,
         ...(msg.files?.length ? { files: msg.files.map(f => ({
           id: f.id,
           name: f.name,

@@ -88,6 +88,7 @@ export interface SlackMessage {
     users: string[];
   }>;
   blocks?: Array<Record<string, unknown>>;
+  attachments?: Array<Record<string, unknown>>;
   files?: SlackFile[];
 }
 

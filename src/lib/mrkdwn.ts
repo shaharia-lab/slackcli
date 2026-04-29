@@ -95,14 +95,16 @@ function parseInline(text: string): RichTextElement[] {
 }
 
 export function parseMrkdwn(text: string): RichTextBlock[] {
-  const lines = text.split('\n');
-  const sections: RichTextSection[] = lines.map(line => ({
-    type: 'rich_text_section',
-    elements: line.length > 0 ? parseInline(line) : [{ type: 'text', text: '\n' }],
-  }));
+  // Keep newlines embedded in text elements rather than splitting into multiple sections.
+  // Slack's draft composer renders multiple rich_text_section elements inline (no line breaks),
+  // but correctly preserves \n characters within a single text element.
+  const elements = parseInline(text);
 
   return [{
     type: 'rich_text',
-    elements: sections,
+    elements: [{
+      type: 'rich_text_section',
+      elements: elements.length > 0 ? elements : [{ type: 'text', text: '' }],
+    }],
   }];
 }

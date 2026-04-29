@@ -98,43 +98,42 @@ describe('parseMrkdwn', () => {
     }]);
   });
 
-  it('splits newlines into separate sections', () => {
+  it('preserves newlines in text elements', () => {
+    // Newlines must be embedded in text, not split into separate sections.
+    // Slack's draft composer renders multiple sections inline (no breaks),
+    // but correctly preserves \n within text elements.
     const result = parseMrkdwn('line one\nline two');
     expect(result).toEqual([{
       type: 'rich_text',
-      elements: [
-        {
-          type: 'rich_text_section',
-          elements: [{ type: 'text', text: 'line one' }],
-        },
-        {
-          type: 'rich_text_section',
-          elements: [{ type: 'text', text: 'line two' }],
-        },
-      ],
+      elements: [{
+        type: 'rich_text_section',
+        elements: [{ type: 'text', text: 'line one\nline two' }],
+      }],
     }]);
   });
 
-  it('handles formatting across multiple lines', () => {
-    const result = parseMrkdwn('*bold line*\n_italic line_');
+  it('preserves newlines with formatting', () => {
+    const result = parseMrkdwn('*bold*\nplain');
     expect(result).toEqual([{
       type: 'rich_text',
-      elements: [
-        {
-          type: 'rich_text_section',
-          elements: [{ type: 'text', text: 'bold line', style: { bold: true } }],
-        },
-        {
-          type: 'rich_text_section',
-          elements: [{ type: 'text', text: 'italic line', style: { italic: true } }],
-        },
-      ],
+      elements: [{
+        type: 'rich_text_section',
+        elements: [
+          { type: 'text', text: 'bold', style: { bold: true } },
+          { type: 'text', text: '\nplain' },
+        ],
+      }],
     }]);
   });
 
-  it('handles empty lines between content', () => {
+  it('preserves multiple newlines', () => {
     const result = parseMrkdwn('above\n\nbelow');
-    expect(result[0].elements).toHaveLength(3);
-    expect(result[0].elements[1].elements).toEqual([{ type: 'text', text: '\n' }]);
+    expect(result).toEqual([{
+      type: 'rich_text',
+      elements: [{
+        type: 'rich_text_section',
+        elements: [{ type: 'text', text: 'above\n\nbelow' }],
+      }],
+    }]);
   });
 });

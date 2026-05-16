@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "shaharia-lab": {
+      "source": {
+        "source": "github",
+        "repo": "shaharia-lab/claude-power-user"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "github-maintenance@shaharia-lab": true
+  }
+}

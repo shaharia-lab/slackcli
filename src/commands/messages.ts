@@ -14,6 +14,7 @@ export function createMessagesCommand(): Command {
     .requiredOption('--recipient-id <id>', 'Channel ID or User ID')
     .requiredOption('--message <text>', 'Message text content')
     .option('--thread-ts <timestamp>', 'Send as reply to thread')
+    .option('--file <path>', 'Attach a file to the message')
     .option('--workspace <id|name>', 'Workspace to use')
     .action(async (options) => {
       const spinner = ora('Sending message...').start();
@@ -30,6 +31,17 @@ export function createMessagesCommand(): Command {
         }
 
         spinner.text = 'Sending message...';
+        if (options.file) {
+          await client.uploadFileExternal(channelId, options.file, {
+            initial_comment: options.message,
+            thread_ts: options.threadTs,
+          });
+
+          spinner.succeed('Message sent successfully!');
+          success('File uploaded successfully');
+          return;
+        }
+
         const response = await client.postMessage(channelId, options.message, {
           thread_ts: options.threadTs,
         });

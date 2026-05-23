@@ -9,6 +9,9 @@ interface ExternalUploadUrlResponse {
   file_id?: string;
 }
 
+// @ts-ignore - replaced at build time via --define __APP_VERSION__
+const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+
 export class SlackClient {
   private config: WorkspaceConfig;
   private webClient?: WebClient;
@@ -455,6 +458,56 @@ export class SlackClient {
     if (canvasTab?.data?.file_id) return canvasTab.data.file_id;
 
     return null;
+  }
+
+  // Execute a slash command server-side (browser auth only).
+  // Slack does not expose a public chat.command API; this is the same
+  // undocumented endpoint the web/desktop client uses.
+  async executeSlashCommand(channel: string, command: string, text: string = '', clientToken?: string): Promise<any> {
+    if (this.config.auth_type === 'standard') {
+      throw new Error('Slash command execution requires browser authentication (xoxc/xoxd)');
+    }
+
+    const params: Record<string, any> = {
+      channel,
+      command,
+      text,
+      disp: command,
+      client_token: clientToken || crypto.randomUUID(),
+    };
+
+    return this.request('chat.command', params);
+  }
+
+  // Build the Slack MS gateway WebSocket connection details (browser auth only).
+  // The public rtm.connect endpoint returns a LEGACY_BOT URL that rejects
+  // xoxc/xoxd sessions with invalid_auth, so we construct the same URL the
+  // browser client uses and surface the Cookie header the caller must send
+  // during the WebSocket upgrade.
+  async rtmConnect(): Promise<{ url: string; headers: Record<string, string>; self?: any }> {
+    if (this.config.auth_type !== 'browser') {
+      throw new Error('rtm.connect with browser tokens is required to capture ephemeral events');
+    }
+
+    const auth = await this.testAuth();
+    const self = { id: (auth as any).user_id, name: (auth as any).user };
+
+    const token = encodeURIComponent(this.config.xoxc_token);
+    const xoxd = encodeURIComponent(this.config.xoxd_token);
+    const authTs = Math.floor(Date.now() / 1000);
+
+    const url = `wss://wss-primary.slack.com/?token=${token}` +
+      `&sync_desync=1&slack_client=desktop&no_query_on_subscribe=1` +
+      `&flannel_api_ver=4&include_min_version_bump_check=1` +
+      `&auth_ts=${authTs}&batch_presence_aware=1`;
+
+    const headers: Record<string, string> = {
+      Cookie: `d=${xoxd}`,
+      Origin: 'https://app.slack.com',
+      'User-Agent': `Mozilla/5.0 (compatible; SlackCLI/${APP_VERSION})`,
+    };
+
+    return { url, headers, self };
   }
 
   // Check auth type

@@ -3,6 +3,7 @@ import type {
   SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
 } from '../types/index.ts';
+import { renderBlocks, renderAttachments } from './block-renderer.ts';
 
 // Format timestamp to human-readable date
 export function formatTimestamp(ts: string): string {
@@ -116,6 +117,18 @@ export function formatMessage(
       output += chalk.dim(` | thread_ts: ${msg.thread_ts}`);
     }
     output += '\n';
+  }
+
+  // Blocks (rich layout payloads, used by many bots and slash commands)
+  if (msg.blocks && msg.blocks.length > 0) {
+    const blockText = renderBlocks(msg.blocks, indent + 2);
+    if (blockText) output += blockText;
+  }
+
+  // Attachments (legacy bot/slash-command output)
+  if (msg.attachments && msg.attachments.length > 0) {
+    const attText = renderAttachments(msg.attachments, indent + 2);
+    if (attText) output += attText;
   }
 
   // Files

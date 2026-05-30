@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned-by-SHA references up to date. Dependabot
+  # rewrites the SHA and the trailing `# vX.Y.Z` version comment together.
+  # No auto-merge: every bump is reviewed before it lands (supply-chain guard).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - github-actions

@@ -124,6 +124,7 @@ export interface MessageSendOptions {
   recipientId: string;
   message: string;
   threadTs?: string;
+  file?: string;
   workspace?: string;
 }
 

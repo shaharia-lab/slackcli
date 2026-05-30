@@ -1,6 +1,13 @@
 import { WebClient } from '@slack/web-api';
+import { basename } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
 import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
+
+interface ExternalUploadUrlResponse {
+  upload_url?: string;
+  file_id?: string;
+}
 
 export class SlackClient {
   private config: WorkspaceConfig;
@@ -142,6 +149,56 @@ export class SlackClient {
     if (options.thread_ts) params.thread_ts = options.thread_ts;
 
     return this.request('chat.postMessage', params);
+  }
+
+  async uploadFileExternal(channel: string, filePath: string, options: {
+    initial_comment?: string;
+    thread_ts?: string;
+  } = {}): Promise<unknown> {
+    const fileStats = await stat(filePath).catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        throw new Error(`File not found: ${filePath}`);
+      }
+      throw error;
+    });
+    if (!fileStats.isFile()) {
+      throw new Error(`Cannot upload non-file path: ${filePath}`);
+    }
+    if (fileStats.size === 0) {
+      throw new Error(`Cannot upload empty file: ${filePath}`);
+    }
+
+    const filename = basename(filePath);
+    const uploadUrlResponse = await this.request('files.getUploadURLExternal', {
+      filename,
+      length: fileStats.size,
+    }) as ExternalUploadUrlResponse;
+
+    if (!uploadUrlResponse.upload_url || !uploadUrlResponse.file_id) {
+      throw new Error('Slack API error: missing upload URL or file ID');
+    }
+
+    const fileBytes = await readFile(filePath);
+    const uploadResponse = await fetch(uploadUrlResponse.upload_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+      body: fileBytes,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`File upload failed: HTTP ${uploadResponse.status}`);
+    }
+
+    const params: Record<string, string> = {
+      files: JSON.stringify([{ id: uploadUrlResponse.file_id, title: filename }]),
+      channel_id: channel,
+    };
+    if (options.initial_comment) params.initial_comment = options.initial_comment;
+    if (options.thread_ts) params.thread_ts = options.thread_ts;
+
+    return this.request('files.completeUploadExternal', params);
   }
 
   // Create draft message

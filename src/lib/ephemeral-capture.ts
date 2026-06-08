@@ -2,6 +2,16 @@ import type { SlackMessage } from '../types/index.ts';
 
 // Returns true when an MS-socket frame represents an ephemeral message we
 // should capture for the given channel + invocation correlation token.
+//
+// Correlation is best-effort because Slack does not always echo the
+// client_token we send to chat.command back as client_msg_id on the
+// resulting frame. Strategy:
+//   1. Reject anything that is not a `message` frame in our channel.
+//   2. Hard-reject when the payload carries a client_msg_id that does NOT
+//      match our token — that frame belongs to another invocation.
+//   3. Otherwise accept on any ephemeral signal: explicit is_ephemeral,
+//      subtype `ephemeral`, exact correlation, or a frame addressed to our
+//      own user with is_ephemeral.
 export function matchesEphemeral(
   payload: any,
   channelId: string,
@@ -10,6 +20,12 @@ export function matchesEphemeral(
 ): boolean {
   if (!payload || payload.type !== 'message') return false;
   if (payload.channel !== channelId) return false;
+
+  // Hard-reject when payload's client_msg_id explicitly belongs to another
+  // invocation (different non-empty value).
+  if (clientToken !== '' && payload.client_msg_id && payload.client_msg_id !== clientToken) {
+    return false;
+  }
 
   const isEphemeral = payload.is_ephemeral === true || payload.subtype === 'ephemeral';
   const correlated = clientToken !== '' && payload.client_msg_id === clientToken;

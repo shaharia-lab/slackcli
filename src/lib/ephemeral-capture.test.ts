@@ -57,6 +57,20 @@ describe('matchesEphemeral', () => {
     )).toBe(false);
   });
 
+  it('rejects ephemeral whose client_msg_id belongs to another invocation', () => {
+    expect(matchesEphemeral(
+      { type: 'message', channel: CH, is_ephemeral: true, client_msg_id: 'other-token', text: 'hi' },
+      CH, TOKEN,
+    )).toBe(false);
+  });
+
+  it('still rejects mismatched client_msg_id even with subtype=ephemeral', () => {
+    expect(matchesEphemeral(
+      { type: 'message', channel: CH, subtype: 'ephemeral', client_msg_id: 'other-token' },
+      CH, TOKEN,
+    )).toBe(false);
+  });
+
   it('does not correlate when clientToken is empty', () => {
     expect(matchesEphemeral(
       { type: 'message', channel: CH, client_msg_id: '' },

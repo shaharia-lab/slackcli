@@ -34,11 +34,14 @@ const defaultSocketFactory: SocketFactory = (url, headers) =>
   new WebSocket(url, { headers } as any) as unknown as SocketLike;
 
 // Drives the chat.command + ephemeral-capture flow:
-//   1. Open socket, wait for "hello".
-//   2. Invoke the slash command; capture any synchronous reply body.
+//   1. Open socket; arm a `timeoutMs` connection timeout immediately so we
+//      do not hang if Slack never sends a `hello` frame.
+//   2. On `hello`, invoke the slash command; capture any synchronous reply
+//      body, then re-arm the timer to give the ephemeral the full window.
 //   3. Watch incoming frames; the first frame matching matchesEphemeral
 //      resolves the run.
-//   4. If no ephemeral arrives within timeoutMs, resolve with timedOut=true.
+//   4. If no ephemeral arrives before the timer fires, resolve with
+//      timedOut=true.
 // Every settle path runs cleanup() exactly once: clear timer, close socket.
 export async function runSlashCommand(opts: SlashCommandRunOptions): Promise<SlashCommandRunResult> {
   const factory = opts.socketFactory || defaultSocketFactory;
@@ -65,6 +68,17 @@ export async function runSlashCommand(opts: SlashCommandRunOptions): Promise<Sla
       fn();
     };
 
+    const armTimeout = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(
+        () => settle(() => resolve({ messages: captured, timedOut: true })),
+        opts.timeoutMs,
+      );
+    };
+
+    // Pre-hello safety net: bound the wait for a `hello` frame.
+    armTimeout();
+
     socket.addEventListener('error', (ev: any) => {
       settle(() => reject(new Error(`WebSocket error: ${ev?.message || 'unknown'}`)));
     });
@@ -87,10 +101,8 @@ export async function runSlashCommand(opts: SlashCommandRunOptions): Promise<Sla
           settle(() => reject(e));
           return;
         }
-        timer = setTimeout(
-          () => settle(() => resolve({ messages: captured, timedOut: true })),
-          opts.timeoutMs,
-        );
+        // Reset the clock so the post-invocation window is exactly timeoutMs.
+        armTimeout();
         return;
       }
 

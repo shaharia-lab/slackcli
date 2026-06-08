@@ -190,6 +190,26 @@ describe('runSlashCommand', () => {
     expect(invoked).toBe(1);
   });
 
+  it('resolves with timedOut=true when hello never arrives', async () => {
+    const { factory, sockets } = makeFakeFactory();
+    let invoked = 0;
+
+    const promise = runSlashCommand({
+      rtm: { url: 'ws://x', headers: {} },
+      channelId: CH,
+      clientToken: TOKEN,
+      timeoutMs: 5,
+      socketFactory: factory,
+      invokeCommand: async () => { invoked++; return {}; },
+    });
+
+    const result = await promise;
+    expect(result.timedOut).toBe(true);
+    expect(result.messages).toEqual([]);
+    expect(invoked).toBe(0);
+    expect(sockets[0].closed).toBe(true);
+  });
+
   it('skips frames with non-string data without throwing', async () => {
     const { factory, sockets } = makeFakeFactory();
 

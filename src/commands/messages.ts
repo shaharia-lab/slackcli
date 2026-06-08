@@ -116,7 +116,8 @@ export function createMessagesCommand(): Command {
     .requiredOption('--recipient-id <id>', 'Channel ID or User ID where command is issued')
     .requiredOption('--command <slash>', 'Slash command including leading slash, e.g. /genie')
     .option('--text <text>', 'Argument text for the command', '')
-    .option('--timeout <seconds>', 'Seconds to wait for the ephemeral reply', '15')
+    .option('--timeout <seconds>', 'Collection window: seconds to keep listening for ephemeral replies after the command is invoked', '15')
+    .option('--max-events <n>', 'Optional early-exit cap. Stop after N ephemeral frames instead of waiting the full --timeout window.')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output captured events as JSON', false)
     .action(async (options) => {
@@ -141,6 +142,16 @@ export function createMessagesCommand(): Command {
           process.exit(1);
         }
 
+        let maxEvents: number | undefined;
+        if (options.maxEvents !== undefined) {
+          maxEvents = parseInt(options.maxEvents, 10);
+          if (!Number.isFinite(maxEvents) || maxEvents < 1) {
+            spinner.fail(`Invalid --max-events value: ${options.maxEvents}`);
+            error('--max-events must be a positive integer.');
+            process.exit(1);
+          }
+        }
+
         spinner.text = 'Connecting to Slack real-time gateway...';
         const { url, headers, self } = await client.rtmConnect();
 
@@ -152,6 +163,7 @@ export function createMessagesCommand(): Command {
           channelId,
           clientToken,
           timeoutMs: timeoutSeconds * 1000,
+          maxEvents,
           invokeCommand: () => client.executeSlashCommand(
             channelId,
             options.command,
@@ -160,11 +172,11 @@ export function createMessagesCommand(): Command {
           ),
         });
 
-        spinner.succeed(
-          timedOut
-            ? `Timed out after ${timeoutSeconds}s — no ephemeral reply received`
-            : `Captured ${captured.length} ephemeral event(s)`,
-        );
+        if (captured.length > 0) {
+          spinner.succeed(`Captured ${captured.length} event(s) in ${timeoutSeconds}s window`);
+        } else {
+          spinner.succeed(`Timed out after ${timeoutSeconds}s — no ephemeral reply received`);
+        }
 
         if (options.json) {
           console.log(JSON.stringify({

@@ -42,6 +42,7 @@ describe('runSlashCommand', () => {
       channelId: CH,
       clientToken: TOKEN,
       timeoutMs: 5000,
+      maxEvents: 1,
       socketFactory: factory,
       invokeCommand: async () => { invoked++; return { ok: true }; },
     });
@@ -70,6 +71,7 @@ describe('runSlashCommand', () => {
       channelId: CH,
       clientToken: TOKEN,
       timeoutMs: 5000,
+      maxEvents: 1,
       socketFactory: factory,
       invokeCommand: async () => ({ response: { text: 'sync hi' } }),
     });
@@ -208,6 +210,129 @@ describe('runSlashCommand', () => {
     expect(result.messages).toEqual([]);
     expect(invoked).toBe(0);
     expect(sockets[0].closed).toBe(true);
+  });
+
+  it('captures multiple ephemeral frames when maxEvents > 1', async () => {
+    const { factory, sockets } = makeFakeFactory();
+
+    const promise = runSlashCommand({
+      rtm: { url: 'ws://x', headers: {} },
+      channelId: CH,
+      clientToken: TOKEN,
+      timeoutMs: 5000,
+      maxEvents: 3,
+      socketFactory: factory,
+      invokeCommand: async () => ({}),
+    });
+
+    await tick();
+    sockets[0].emitFrame({ type: 'hello' });
+    await tick();
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'one', ts: '1.1' });
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'two', ts: '1.2' });
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'three', ts: '1.3' });
+
+    const result = await promise;
+    expect(result.timedOut).toBe(false);
+    expect(result.messages.map(m => m.text)).toEqual(['one', 'two', 'three']);
+    expect(sockets[0].closed).toBe(true);
+  });
+
+  it('returns partial captures (timedOut=false) when fewer than maxEvents arrive before timer', async () => {
+    const { factory, sockets } = makeFakeFactory();
+
+    const promise = runSlashCommand({
+      rtm: { url: 'ws://x', headers: {} },
+      channelId: CH,
+      clientToken: TOKEN,
+      timeoutMs: 20,
+      maxEvents: 5,
+      socketFactory: factory,
+      invokeCommand: async () => ({}),
+    });
+
+    await tick();
+    sockets[0].emitFrame({ type: 'hello' });
+    await tick();
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'only', ts: '1.1' });
+
+    const result = await promise;
+    // timedOut tracks the ephemeral stream: at least one arrived, so false.
+    expect(result.timedOut).toBe(false);
+    expect(result.messages.map(m => m.text)).toEqual(['only']);
+  });
+
+  it('without maxEvents collects every ephemeral until the timer fires', async () => {
+    const { factory, sockets } = makeFakeFactory();
+
+    const promise = runSlashCommand({
+      rtm: { url: 'ws://x', headers: {} },
+      channelId: CH,
+      clientToken: TOKEN,
+      timeoutMs: 30,
+      socketFactory: factory,
+      invokeCommand: async () => ({}),
+    });
+
+    await tick();
+    sockets[0].emitFrame({ type: 'hello' });
+    await tick();
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'a', ts: '1.1' });
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'b', ts: '1.2' });
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'c', ts: '1.3' });
+
+    const result = await promise;
+    expect(result.timedOut).toBe(false);
+    expect(result.messages.map(m => m.text)).toEqual(['a', 'b', 'c']);
+    expect(sockets[0].closed).toBe(true);
+  });
+
+  it('window stays open between matches: late frame still captured', async () => {
+    const { factory, sockets } = makeFakeFactory();
+
+    const promise = runSlashCommand({
+      rtm: { url: 'ws://x', headers: {} },
+      channelId: CH,
+      clientToken: TOKEN,
+      timeoutMs: 50,
+      socketFactory: factory,
+      invokeCommand: async () => ({}),
+    });
+
+    await tick();
+    sockets[0].emitFrame({ type: 'hello' });
+    await tick();
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'first', ts: '1.1' });
+    await new Promise(r => setTimeout(r, 20));
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'late', ts: '1.2' });
+
+    const result = await promise;
+    expect(result.timedOut).toBe(false);
+    expect(result.messages.map(m => m.text)).toEqual(['first', 'late']);
+  });
+
+  it('sync response body does not count toward maxEvents cap', async () => {
+    const { factory, sockets } = makeFakeFactory();
+
+    const promise = runSlashCommand({
+      rtm: { url: 'ws://x', headers: {} },
+      channelId: CH,
+      clientToken: TOKEN,
+      timeoutMs: 5000,
+      maxEvents: 2,
+      socketFactory: factory,
+      invokeCommand: async () => ({ response: { text: 'sync' } }),
+    });
+
+    await tick();
+    sockets[0].emitFrame({ type: 'hello' });
+    await tick();
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'eph1', ts: '1.1' });
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'eph2', ts: '1.2' });
+
+    const result = await promise;
+    expect(result.timedOut).toBe(false);
+    expect(result.messages.map(m => m.text)).toEqual(['sync', 'eph1', 'eph2']);
   });
 
   it('skips frames with non-string data without throwing', async () => {

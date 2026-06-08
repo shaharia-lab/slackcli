@@ -23,6 +23,11 @@ export interface SlashCommandRunOptions {
   invokeCommand: () => Promise<unknown>;
   timeoutMs: number;
   socketFactory?: SocketFactory;
+  // Optional early-exit cap: stop after this many matching ephemeral
+  // frames have been captured. Sync HTTP response bodies do not count
+  // toward this cap. When unset, the runner waits the full timeoutMs
+  // window and returns every ephemeral that arrived in it.
+  maxEvents?: number;
 }
 
 export interface SlashCommandRunResult {
@@ -33,19 +38,25 @@ export interface SlashCommandRunResult {
 const defaultSocketFactory: SocketFactory = (url, headers) =>
   new WebSocket(url, { headers } as any) as unknown as SocketLike;
 
-// Drives the chat.command + ephemeral-capture flow:
+// Drives the chat.command + ephemeral-capture flow. Slack does not send a
+// terminator frame for slash commands, so timeoutMs doubles as the
+// collection window:
 //   1. Open socket; arm a `timeoutMs` connection timeout immediately so we
 //      do not hang if Slack never sends a `hello` frame.
 //   2. On `hello`, invoke the slash command; capture any synchronous reply
-//      body, then re-arm the timer to give the ephemeral the full window.
-//   3. Watch incoming frames; the first frame matching matchesEphemeral
-//      resolves the run.
-//   4. If no ephemeral arrives before the timer fires, resolve with
-//      timedOut=true.
+//      body, then re-arm the timer for the full post-invocation window.
+//   3. Append every matching ephemeral to `captured` and keep listening.
+//   4. Settle when the timer fires, OR — if maxEvents is set — early-exit
+//      after that many ephemerals.
+//   5. timedOut is true only when zero ephemerals arrived. Sync-only
+//      replies still count as a successful capture in `messages`, but
+//      timedOut reflects the ephemeral stream specifically.
 // Every settle path runs cleanup() exactly once: clear timer, close socket.
 export async function runSlashCommand(opts: SlashCommandRunOptions): Promise<SlashCommandRunResult> {
   const factory = opts.socketFactory || defaultSocketFactory;
   const captured: SlackMessage[] = [];
+  const maxEvents = opts.maxEvents !== undefined ? Math.max(1, opts.maxEvents) : Infinity;
+  let ephemeralMatches = 0;
 
   return new Promise<SlashCommandRunResult>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -71,7 +82,7 @@ export async function runSlashCommand(opts: SlashCommandRunOptions): Promise<Sla
     const armTimeout = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(
-        () => settle(() => resolve({ messages: captured, timedOut: true })),
+        () => settle(() => resolve({ messages: captured, timedOut: ephemeralMatches === 0 })),
         opts.timeoutMs,
       );
     };
@@ -108,7 +119,10 @@ export async function runSlashCommand(opts: SlashCommandRunOptions): Promise<Sla
 
       if (matchesEphemeral(payload, opts.channelId, opts.clientToken, opts.rtm.selfUserId)) {
         captured.push(payloadToMessage(payload));
-        settle(() => resolve({ messages: captured, timedOut: false }));
+        ephemeralMatches++;
+        if (ephemeralMatches >= maxEvents) {
+          settle(() => resolve({ messages: captured, timedOut: false }));
+        }
       }
     });
   });

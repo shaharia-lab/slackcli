@@ -1,7 +1,7 @@
 import { WebClient } from '@slack/web-api';
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
-import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
+import type { WorkspaceConfig, SlackAuthTestResponse, CanvasChange, CanvasSectionCriteria } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
 
 interface ExternalUploadUrlResponse {
@@ -381,6 +381,22 @@ export class SlackClient {
   // Get file info (used to get canvas download URL)
   async getFileInfo(fileId: string): Promise<any> {
     return this.request('files.info', { file: fileId });
+  }
+
+  // Edit a canvas. changes[] follows Slack's canvases.edit schema.
+  async editCanvas(canvasId: string, changes: CanvasChange[]): Promise<any> {
+    return this.request('canvases.edit', {
+      canvas_id: canvasId,
+      changes: JSON.stringify(changes),
+    });
+  }
+
+  // Look up section IDs within a canvas for targeted edits.
+  async lookupCanvasSections(canvasId: string, criteria: CanvasSectionCriteria = {}): Promise<any> {
+    return this.request('canvases.sections.lookup', {
+      canvas_id: canvasId,
+      criteria: JSON.stringify(criteria),
+    });
   }
 
   // Download file content with auth, size guard, and auth page detection

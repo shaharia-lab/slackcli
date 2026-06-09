@@ -1,16 +1,91 @@
 import { Command } from 'commander';
 import ora from 'ora';
+import { readFile, stat } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatCanvasList, formatCanvasContent } from '../lib/formatter.ts';
+import { error, success, formatCanvasList, formatCanvasContent } from '../lib/formatter.ts';
 import { canvasHtmlToMarkdown, isAuthPage } from '../lib/canvas-parser.ts';
-import type { SlackCanvas, SlackUser } from '../types/index.ts';
+import { readInteractiveInput } from '../lib/interactive-input.ts';
+import type { SlackCanvas, SlackUser, CanvasChange, CanvasEditOperation, CanvasSectionCriteria } from '../types/index.ts';
 
 const CANVAS_ID_PATTERN = /^F[A-Z0-9]+$/i;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
+export const VALID_EDIT_OPERATIONS: CanvasEditOperation[] = [
+  'insert_at_start',
+  'insert_at_end',
+  'insert_after',
+  'insert_before',
+  'replace',
+  'delete',
+];
+
+export const VALID_SECTION_TYPES = ['h1', 'h2', 'h3', 'any_header'] as const;
+
+// Resolve canvas markdown from exactly one of --content, --file, or --stdin.
+export async function resolveMarkdown(options: { content?: string; file?: string; stdin?: boolean }): Promise<string | undefined> {
+  const sources = [options.content, options.file, options.stdin].filter(Boolean).length;
+  if (sources > 1) {
+    throw new Error('Use only one of --content, --file, or --stdin');
+  }
+  if (options.content) return options.content;
+  if (options.file) {
+    const stats = await stat(options.file).catch((err: any) => {
+      if (err?.code === 'ENOENT') throw new Error(`File not found: ${options.file}`);
+      throw err;
+    });
+    if (!stats.isFile()) throw new Error(`Not a file: ${options.file}`);
+    if (stats.size > MAX_FILE_SIZE) throw new Error(`File too large: ${stats.size} bytes (max ${MAX_FILE_SIZE})`);
+    return await readFile(options.file, 'utf-8');
+  }
+  if (options.stdin) return (await readInteractiveInput()).trim();
+  return undefined;
+}
+
+// Build a single canvases.edit change and validate the operation/argument combo.
+export function buildEditChange(
+  operation: CanvasEditOperation,
+  markdown: string | undefined,
+  sectionId: string | undefined,
+): CanvasChange {
+  const needsContent = operation !== 'delete';
+  const needsSection = operation === 'insert_after' || operation === 'insert_before' || operation === 'delete';
+  const forbidsSection = operation === 'insert_at_start' || operation === 'insert_at_end';
+
+  if (needsContent && !markdown) {
+    throw new Error(`Operation "${operation}" requires content (--content, --file, or --stdin)`);
+  }
+  if (needsSection && !sectionId) {
+    throw new Error(`Operation "${operation}" requires --section`);
+  }
+  if (forbidsSection && sectionId) {
+    throw new Error(`Operation "${operation}" does not accept --section`);
+  }
+  if (operation === 'delete' && markdown) {
+    throw new Error('Operation "delete" does not accept content');
+  }
+
+  const change: CanvasChange = { operation };
+  if (needsContent && markdown) change.document_content = { type: 'markdown', markdown };
+  if (sectionId) change.section_id = sectionId;
+  return change;
+}
+
+// Build canvases.sections.lookup criteria from CLI options.
+export function buildSectionCriteria(options: { contains?: string; type?: 'h1' | 'h2' | 'h3' | 'any_header' }): CanvasSectionCriteria {
+  const criteria: CanvasSectionCriteria = {};
+  if (options.type) criteria.section_types = [options.type];
+  if (options.contains) criteria.contains_text = options.contains;
+  // Slack requires criteria to have at least one property. With no filters given,
+  // default to matching any header so `canvas sections <id>` lists all headers.
+  if (!criteria.section_types && !criteria.contains_text) {
+    criteria.section_types = ['any_header'];
+  }
+  return criteria;
+}
+
 export function createCanvasCommand(): Command {
   const canvas = new Command('canvas')
-    .description('List and read Slack canvas documents');
+    .description('List, read, and edit Slack canvas documents');
 
   // List canvases
   canvas
@@ -218,6 +293,109 @@ export function createCanvasCommand(): Command {
         console.log('\n' + formatCanvasContent(file, markdown));
       } catch (err: any) {
         spinner.fail('Failed to read canvas');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // Edit canvas content
+  canvas
+    .command('edit')
+    .description('Edit an existing canvas')
+    .argument('<canvas-id>', 'Canvas file ID (e.g., F1234567890)')
+    .option('--operation <op>', 'Edit operation: insert_at_start, insert_at_end, insert_after, insert_before, replace, delete')
+    .option('--content <markdown>', 'Canvas content as markdown')
+    .option('--file <path>', 'Read canvas markdown from a file')
+    .option('--stdin', 'Read canvas markdown from stdin', false)
+    .option('--section <id>', 'Target section ID (from "canvas sections")')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (canvasId, options) => {
+      if (!CANVAS_ID_PATTERN.test(canvasId)) {
+        error('Invalid canvas ID', 'Canvas ID must start with F followed by alphanumeric characters (e.g., F1234567890).');
+        process.exit(1);
+      }
+
+      const operation = options.operation as CanvasEditOperation;
+      if (!operation || !VALID_EDIT_OPERATIONS.includes(operation)) {
+        error('Invalid or missing --operation', `Valid operations: ${VALID_EDIT_OPERATIONS.join(', ')}`);
+        process.exit(1);
+      }
+
+      let change: CanvasChange;
+      try {
+        const markdown = await resolveMarkdown(options);
+        change = buildEditChange(operation, markdown, options.section);
+      } catch (err: any) {
+        error(err.message);
+        process.exit(1);
+      }
+
+      const spinner = ora('Editing canvas...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+        await client.editCanvas(canvasId, [change]);
+        spinner.succeed(`Edited canvas ${canvasId}`);
+
+        if (options.json) {
+          console.log(JSON.stringify({ ok: true, canvas_id: canvasId, change }, null, 2));
+          return;
+        }
+
+        success(`Applied "${operation}" to canvas ${canvasId}`);
+      } catch (err: any) {
+        spinner.fail('Failed to edit canvas');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // Look up section IDs for targeted edits
+  canvas
+    .command('sections')
+    .description('Look up section IDs within a canvas (for targeted edits)')
+    .argument('<canvas-id>', 'Canvas file ID (e.g., F1234567890)')
+    .option('--contains <text>', 'Only sections containing this text')
+    .option('--type <type>', 'Section type: h1, h2, h3, or any_header')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (canvasId, options) => {
+      if (!CANVAS_ID_PATTERN.test(canvasId)) {
+        error('Invalid canvas ID', 'Canvas ID must start with F followed by alphanumeric characters (e.g., F1234567890).');
+        process.exit(1);
+      }
+
+      if (options.type && !VALID_SECTION_TYPES.includes(options.type)) {
+        error('Invalid --type', `Valid types: ${VALID_SECTION_TYPES.join(', ')}`);
+        process.exit(1);
+      }
+
+      const spinner = ora('Looking up canvas sections...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+        const criteria = buildSectionCriteria(options);
+        const response = await client.lookupCanvasSections(canvasId, criteria);
+        const sections = response.sections || [];
+
+        if (sections.length === 0) {
+          spinner.succeed('No matching sections found');
+          return;
+        }
+
+        spinner.succeed(`Found ${sections.length} section(s)`);
+
+        if (options.json) {
+          console.log(JSON.stringify({ section_count: sections.length, sections }, null, 2));
+          return;
+        }
+
+        for (const section of sections) {
+          console.log(`  ${section.id}`);
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to look up sections');
         error(err.message);
         process.exit(1);
       }

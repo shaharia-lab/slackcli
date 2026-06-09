@@ -17,7 +17,7 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 - 🏢 **Multi-Workspace Management**: Manage multiple Slack workspaces with ease
 - 💬 **Conversation Management**: List channels, read messages, send messages
 - 🎉 **Message Reactions**: Add emoji reactions to messages programmatically
-- 📄 **Canvas Support**: List and read Slack canvas documents as markdown
+- 📄 **Canvas Support**: List, read, and edit Slack canvas documents as markdown
 - 🚀 **Fast & Lightweight**: Built with Bun for blazing fast performance
 - 🔄 **Auto-Update**: Built-in self-update mechanism
 - 🎨 **Beautiful Output**: Colorful, user-friendly terminal output
@@ -245,7 +245,35 @@ slackcli canvas read F1234567890 --raw
 
 # Read the canvas associated with a channel
 slackcli canvas read --channel=C1234567890
+
+# Edit a canvas (requires the canvases:write scope)
+slackcli canvas edit F1234567890 --operation insert_at_end --content "## Update"
+slackcli canvas edit F1234567890 --operation insert_at_start --file ./header.md
+cat new.md | slackcli canvas edit F1234567890 --operation replace --stdin
+
+# Look up section IDs, then target a section
+slackcli canvas sections F1234567890 --contains "Action Items" --json
+slackcli canvas edit F1234567890 --operation insert_after --section "temp:C:abc123" --content "- follow up"
+slackcli canvas edit F1234567890 --operation replace --section "temp:C:abc123" --content "## Action Items (done)"
+slackcli canvas edit F1234567890 --operation delete --section "temp:C:abc123"
 ```
+
+**Edit operations** (`--operation`):
+
+| Operation | Requires | Effect |
+|---|---|---|
+| `insert_at_start` | content | Prepend to the canvas |
+| `insert_at_end` | content | Append to the canvas |
+| `insert_after` | content + `--section` | Insert after a section |
+| `insert_before` | content + `--section` | Insert before a section |
+| `replace` | content (+ optional `--section`) | Replace a section, or the whole canvas if no `--section` |
+| `delete` | `--section` | Delete a section |
+
+Content for an edit comes from one of `--content`, `--file`, or `--stdin`. Use `slackcli canvas sections <canvas-id>` to discover the `--section` IDs that the targeted operations need (`--type` accepts `h1`, `h2`, `h3`, or `any_header`; with no filter it lists all headers).
+
+> **Section IDs are ephemeral.** Slack regenerates the `temp:` section IDs every time a canvas is edited. Always run `canvas sections` to fetch a fresh ID immediately before each section-targeted edit (`insert_after`, `insert_before`, `replace --section`, `delete`) — a stale ID from before another edit will fail with `section_not_found`.
+
+> **Token support.** Editing and section-targeted operations require a Standard Slack token (`xoxb`/`xoxp`) with `canvases:write` (and `canvases:read` for `sections`). Browser tokens (`xoxd`/`xoxc`) cannot edit canvases.
 
 ### Update Commands
 

@@ -242,3 +242,44 @@ export interface CanvasReadOptions {
   raw?: boolean;
   workspace?: string;
 }
+
+export interface CanvasDocumentContent {
+  type: 'markdown';
+  markdown: string;
+}
+
+export type CanvasEditOperation =
+  | 'insert_at_start'
+  | 'insert_at_end'
+  | 'insert_after'
+  | 'insert_before'
+  | 'replace'
+  | 'delete';
+
+export interface CanvasChange {
+  operation: CanvasEditOperation;
+  document_content?: CanvasDocumentContent;
+  section_id?: string;
+}
+
+export interface CanvasEditOptions {
+  operation?: CanvasEditOperation;
+  content?: string;
+  file?: string;
+  stdin?: boolean;
+  section?: string;
+  json?: boolean;
+  workspace?: string;
+}
+
+export interface CanvasSectionCriteria {
+  section_types?: Array<'h1' | 'h2' | 'h3' | 'any_header'>;
+  contains_text?: string;
+}
+
+export interface CanvasSectionsOptions {
+  contains?: string;
+  type?: 'h1' | 'h2' | 'h3' | 'any_header';
+  json?: boolean;
+  workspace?: string;
+}

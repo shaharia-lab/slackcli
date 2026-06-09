@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { isInteractiveTerminal, hasPipedInput } from './interactive-input';
+import { isInteractiveTerminal, hasPipedInput, parseConfirm } from './interactive-input';
 
 describe('interactive-input', () => {
   describe('isInteractiveTerminal', () => {
@@ -49,6 +49,31 @@ describe('interactive-input', () => {
     it('should be importable', async () => {
       const { readInteractiveInput } = await import('./interactive-input');
       expect(typeof readInteractiveInput).toBe('function');
+    });
+  });
+
+  describe('parseConfirm', () => {
+    it('treats y / yes (any case) as confirmation', () => {
+      expect(parseConfirm('y')).toBe(true);
+      expect(parseConfirm('Y')).toBe(true);
+      expect(parseConfirm('yes')).toBe(true);
+      expect(parseConfirm('YES')).toBe(true);
+      expect(parseConfirm('Yes')).toBe(true);
+    });
+
+    it('ignores surrounding whitespace', () => {
+      expect(parseConfirm('  y  ')).toBe(true);
+      expect(parseConfirm('\tyes\n')).toBe(true);
+    });
+
+    it('treats everything else as no (default safe)', () => {
+      expect(parseConfirm('')).toBe(false);
+      expect(parseConfirm('n')).toBe(false);
+      expect(parseConfirm('no')).toBe(false);
+      expect(parseConfirm('maybe')).toBe(false);
+      expect(parseConfirm('yep')).toBe(false);
+      expect(parseConfirm('yeah')).toBe(false);
+      expect(parseConfirm('1')).toBe(false);
     });
   });
 });

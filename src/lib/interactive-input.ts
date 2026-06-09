@@ -91,6 +91,31 @@ export async function readInteractiveInput(
 }
 
 /**
+ * Parse a yes/no answer. Only "y"/"yes" (case-insensitive) count as yes;
+ * everything else (including empty) is no. Pure function for easy testing.
+ */
+export function parseConfirm(answer: string): boolean {
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+/**
+ * Ask a yes/no confirmation question. Defaults to No on empty input or EOF.
+ * TTY-only — callers should guard non-TTY usage (e.g. require an explicit flag).
+ */
+export async function confirmPrompt(question: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(`${question} [y/N] `, (answer) => {
+      rl.close();
+      resolve(parseConfirm(answer));
+    });
+  });
+}
+
+/**
  * Check if we're running in an interactive terminal
  */
 export function isInteractiveTerminal(): boolean {

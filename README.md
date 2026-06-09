@@ -245,7 +245,14 @@ slackcli canvas read F1234567890 --raw
 
 # Read the canvas associated with a channel
 slackcli canvas read --channel=C1234567890
+
+# Delete a canvas (permanent — prompts for confirmation unless --yes)
+slackcli canvas delete F1234567890
+slackcli canvas delete F1234567890 --yes
+slackcli canvas delete F1234567890 --yes --json
 ```
+
+> **Warning:** `canvas delete` permanently removes the canvas. Once deleted, there is no way to recover it. In an interactive terminal you'll be asked to confirm; pass `--yes` to skip the prompt (required when running non-interactively). Requires the `canvases:write` scope.
 
 ### Update Commands
 

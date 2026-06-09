@@ -113,3 +113,35 @@ describe('SlackClient.uploadFileExternal', () => {
     expect(client.calls).toEqual([]);
   });
 });
+
+class CapturingSlackClient extends SlackClient {
+  public readonly calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  constructor() {
+    super({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+  }
+
+  override async request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    this.calls.push({ method, params });
+    return { ok: true };
+  }
+}
+
+describe('SlackClient.deleteCanvas', () => {
+  it('calls canvases.delete with the canvas_id', async () => {
+    const client = new CapturingSlackClient();
+
+    await client.deleteCanvas('F1234567890');
+
+    expect(client.calls).toEqual([
+      { method: 'canvases.delete', params: { canvas_id: 'F1234567890' } },
+    ]);
+  });
+});

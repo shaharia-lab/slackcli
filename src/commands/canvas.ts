@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatCanvasList, formatCanvasContent } from '../lib/formatter.ts';
+import { error, success, info, formatCanvasList, formatCanvasContent } from '../lib/formatter.ts';
 import { canvasHtmlToMarkdown, isAuthPage } from '../lib/canvas-parser.ts';
+import { confirmPrompt } from '../lib/interactive-input.ts';
 import type { SlackCanvas, SlackUser } from '../types/index.ts';
 
 const CANVAS_ID_PATTERN = /^F[A-Z0-9]+$/i;
@@ -10,7 +11,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export function createCanvasCommand(): Command {
   const canvas = new Command('canvas')
-    .description('List and read Slack canvas documents');
+    .description('Manage Slack canvas documents');
 
   // List canvases
   canvas
@@ -218,6 +219,65 @@ export function createCanvasCommand(): Command {
         console.log('\n' + formatCanvasContent(file, markdown));
       } catch (err: any) {
         spinner.fail('Failed to read canvas');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // Delete a canvas (permanent)
+  canvas
+    .command('delete')
+    .description('Permanently delete a canvas')
+    .argument('<canvas-id>', 'Canvas file ID (e.g., F1234567890)')
+    .option('-y, --yes', 'Skip the confirmation prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (canvasId, options) => {
+      // Validate the canvas ID before doing anything destructive
+      if (!CANVAS_ID_PATTERN.test(canvasId)) {
+        error(
+          'Invalid canvas ID',
+          'Canvas ID must start with F followed by alphanumeric characters (e.g., F1234567890).',
+        );
+        process.exit(1);
+      }
+
+      // Confirmation guard — deletion is irreversible
+      if (!options.yes) {
+        if (!process.stdin.isTTY) {
+          error(
+            'Refusing to delete without confirmation.',
+            'Re-run with --yes to delete non-interactively.',
+          );
+          process.exit(1);
+        }
+
+        const confirmed = await confirmPrompt(
+          `Delete canvas ${canvasId}? This cannot be undone.`,
+        );
+        if (!confirmed) {
+          info('Aborted.');
+          return;
+        }
+      }
+
+      const spinner = ora('Deleting canvas...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+
+        await client.deleteCanvas(canvasId);
+
+        spinner.succeed(`Deleted canvas ${canvasId}`);
+
+        if (options.json) {
+          console.log(JSON.stringify({ ok: true, canvas_id: canvasId }, null, 2));
+          return;
+        }
+
+        success(`Canvas ${canvasId} has been permanently deleted.`);
+      } catch (err: any) {
+        spinner.fail('Failed to delete canvas');
         error(err.message);
         process.exit(1);
       }

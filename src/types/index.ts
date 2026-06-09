@@ -242,3 +242,9 @@ export interface CanvasReadOptions {
   raw?: boolean;
   workspace?: string;
 }
+
+export interface CanvasDeleteOptions {
+  yes?: boolean;
+  json?: boolean;
+  workspace?: string;
+}

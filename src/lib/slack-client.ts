@@ -457,6 +457,21 @@ export class SlackClient {
     return null;
   }
 
+  // Create a canvas. document_content is markdown wrapped per Slack's schema.
+  async createCanvas(options: {
+    title?: string;
+    markdown?: string;
+    channel?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.title) params.title = options.title;
+    if (options.markdown) {
+      params.document_content = JSON.stringify({ type: 'markdown', markdown: options.markdown });
+    }
+    if (options.channel) params.channel_id = options.channel;
+    return this.request('canvases.create', params);
+  }
+
   // Check auth type
   get authType(): string {
     return this.config.auth_type;

@@ -1,12 +1,76 @@
 import { Command } from 'commander';
 import ora from 'ora';
+import { readFile, stat } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatCanvasList, formatCanvasContent } from '../lib/formatter.ts';
+import { error, success, info, formatCanvasList, formatCanvasContent } from '../lib/formatter.ts';
 import { canvasHtmlToMarkdown, isAuthPage } from '../lib/canvas-parser.ts';
+import { readInteractiveInput } from '../lib/interactive-input.ts';
 import type { SlackCanvas, SlackUser } from '../types/index.ts';
 
 const CANVAS_ID_PATTERN = /^F[A-Z0-9]+$/i;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+/**
+ * Resolve canvas markdown from exactly one source: inline --content, a --file,
+ * or --stdin. Returns undefined when no source is given (Slack allows creating
+ * an empty canvas). Throws on conflicting sources or an unreadable file.
+ */
+export async function resolveCanvasMarkdown(options: {
+  content?: string;
+  file?: string;
+  stdin?: boolean;
+}): Promise<string | undefined> {
+  const sources = [options.content, options.file, options.stdin].filter(Boolean).length;
+  if (sources > 1) {
+    throw new Error('Use only one of --content, --file, or --stdin');
+  }
+
+  if (options.content) return options.content;
+
+  if (options.file) {
+    const fileStats = await stat(options.file).catch((err: unknown) => {
+      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
+        throw new Error(`File not found: ${options.file}`);
+      }
+      throw err;
+    });
+    if (!fileStats.isFile()) {
+      throw new Error(`Cannot read non-file path: ${options.file}`);
+    }
+    if (fileStats.size > MAX_FILE_SIZE) {
+      throw new Error(`File too large: ${fileStats.size} bytes (max ${MAX_FILE_SIZE})`);
+    }
+    return await readFile(options.file, 'utf-8');
+  }
+
+  if (options.stdin) {
+    const input = await readInteractiveInput({
+      prompt: 'Enter canvas markdown (press Enter twice when done):',
+    });
+    return input.trim();
+  }
+
+  return undefined;
+}
+
+/**
+ * Build the canvases.create request params from resolved inputs. Pure so it can
+ * be unit-tested without a network call. document_content is JSON-stringified
+ * to match how the Slack API expects nested objects over form-encoding.
+ */
+export function buildCreateParams(input: {
+  title?: string;
+  markdown?: string;
+  channel?: string;
+}): Record<string, any> {
+  const params: Record<string, any> = {};
+  if (input.title) params.title = input.title;
+  if (input.markdown) {
+    params.document_content = JSON.stringify({ type: 'markdown', markdown: input.markdown });
+  }
+  if (input.channel) params.channel_id = input.channel;
+  return params;
+}
 
 export function createCanvasCommand(): Command {
   const canvas = new Command('canvas')
@@ -218,6 +282,66 @@ export function createCanvasCommand(): Command {
         console.log('\n' + formatCanvasContent(file, markdown));
       } catch (err: any) {
         spinner.fail('Failed to read canvas');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // Create a canvas
+  canvas
+    .command('create')
+    .description('Create a new canvas')
+    .option('--title <title>', 'Canvas title')
+    .option('--content <markdown>', 'Canvas body as markdown')
+    .option('--file <path>', 'Read canvas markdown from a file')
+    .option('--stdin', 'Read canvas markdown from stdin', false)
+    .option('--channel <id>', 'Channel to tab the canvas into (required on free teams)')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (options) => {
+      // Resolve content before starting the spinner so prompts/errors are clean
+      let markdown: string | undefined;
+      try {
+        markdown = await resolveCanvasMarkdown(options);
+      } catch (err: any) {
+        error(err.message);
+        process.exit(1);
+      }
+
+      const spinner = ora('Creating canvas...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+
+        const response = await client.createCanvas({
+          title: options.title,
+          markdown,
+          channel: options.channel,
+        });
+
+        const canvasId = response.canvas_id;
+        if (!canvasId) {
+          spinner.fail('Canvas creation failed');
+          error('Slack did not return a canvas ID.');
+          process.exit(1);
+        }
+
+        spinner.succeed(`Created canvas ${canvasId}`);
+
+        if (options.json) {
+          console.log(JSON.stringify({
+            ok: true,
+            canvas_id: canvasId,
+            title: options.title,
+            channel: options.channel,
+          }, null, 2));
+          return;
+        }
+
+        success(`Canvas created: ${canvasId}`);
+        info('Read it back with: slackcli canvas read ' + canvasId);
+      } catch (err: any) {
+        spinner.fail('Failed to create canvas');
         error(err.message);
         process.exit(1);
       }

@@ -17,7 +17,7 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 - 🏢 **Multi-Workspace Management**: Manage multiple Slack workspaces with ease
 - 💬 **Conversation Management**: List channels, read messages, send messages
 - 🎉 **Message Reactions**: Add emoji reactions to messages programmatically
-- 📄 **Canvas Support**: List and read Slack canvas documents as markdown
+- 📄 **Canvas Support**: List, read, and create Slack canvas documents as markdown
 - 🚀 **Fast & Lightweight**: Built with Bun for blazing fast performance
 - 🔄 **Auto-Update**: Built-in self-update mechanism
 - 🎨 **Beautiful Output**: Colorful, user-friendly terminal output
@@ -245,7 +245,32 @@ slackcli canvas read F1234567890 --raw
 
 # Read the canvas associated with a channel
 slackcli canvas read --channel=C1234567890
+
+# Create a canvas with inline markdown
+slackcli canvas create --title="Sprint Notes" --content="# Sprint 42"
+
+# Create a canvas from a file, tabbed into a channel
+# (--channel is required on free Slack teams)
+slackcli canvas create --title="Runbook" --file=./runbook.md --channel=C1234567890
+
+# Create a canvas from stdin
+cat notes.md | slackcli canvas create --title="Imported" --stdin
+
+# Create and print machine-readable output (includes canvas_id)
+slackcli canvas create --title="Empty start" --json
 ```
+
+> **Token support for canvas commands**
+>
+> Due to Slack API limitations, **creating a canvas works only with Standard Slack tokens** (`xoxb`/`xoxp`) that carry the `canvases:write` scope. **Browser tokens (`xoxd`/`xoxc`) cannot create canvases** — the canvas write API rejects browser session auth. Listing and reading canvases work with **both** token types.
+>
+> | Command | Standard token (`xoxb`/`xoxp`) | Browser token (`xoxd`/`xoxc`) |
+> |---|:---:|:---:|
+> | `canvas list` | ✅ | ✅ |
+> | `canvas read` | ✅ | ✅ |
+> | `canvas create` | ✅ (needs `canvases:write`) | ❌ |
+>
+> Reading a canvas additionally requires the `files:read` scope on standard tokens.
 
 ### Update Commands
 

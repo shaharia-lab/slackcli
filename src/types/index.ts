@@ -242,3 +242,18 @@ export interface CanvasReadOptions {
   raw?: boolean;
   workspace?: string;
 }
+
+export interface CanvasDocumentContent {
+  type: 'markdown';
+  markdown: string;
+}
+
+export interface CanvasCreateOptions {
+  title?: string;
+  content?: string;
+  file?: string;
+  stdin?: boolean;
+  channel?: string;
+  json?: boolean;
+  workspace?: string;
+}

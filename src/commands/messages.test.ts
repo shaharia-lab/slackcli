@@ -8,4 +8,12 @@ describe('messages command', () => {
 
     expect(send?.options.some((option) => option.long === '--file')).toBe(true);
   });
+
+  it('exposes --message and --recipient-id on messages draft', () => {
+    const messages = createMessagesCommand();
+    const draft = messages.commands.find((command) => command.name() === 'draft');
+
+    expect(draft?.options.some((option) => option.long === '--message')).toBe(true);
+    expect(draft?.options.some((option) => option.long === '--recipient-id')).toBe(true);
+  });
 });

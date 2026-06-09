@@ -351,6 +351,17 @@ export class SlackClient {
     return this.request('users.list', params);
   }
 
+  // List usergroups (used to resolve @group:<handle> mentions to <!subteam^S…>)
+  async listUsergroups(options: {
+    include_disabled?: boolean;
+    include_users?: boolean;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.include_disabled !== undefined) params.include_disabled = options.include_disabled;
+    if (options.include_users !== undefined) params.include_users = options.include_users;
+    return this.request('usergroups.list', params);
+  }
+
   // Get conversation info
   async getConversationInfo(channel: string): Promise<any> {
     return this.request('conversations.info', { channel });

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { success, error } from '../lib/formatter.ts';
+import { resolveMentions } from '../lib/mentions.ts';
 
 export function createMessagesCommand(): Command {
   const messages = new Command('messages')
@@ -101,8 +102,11 @@ export function createMessagesCommand(): Command {
           channelId = dmResponse.channel.id;
         }
 
+        spinner.text = 'Resolving mentions...';
+        const resolvedMessage = await resolveMentions(options.message, client);
+
         spinner.text = 'Creating draft...';
-        const response = await client.createDraft(channelId, options.message, {
+        const response = await client.createDraft(channelId, resolvedMessage, {
           thread_ts: options.threadTs,
         });
 

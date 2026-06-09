@@ -216,6 +216,43 @@ slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 -
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=eyes
 ```
 
+#### Mentions, links & broadcasts in drafts
+
+`messages draft` understands rich mention, link, and broadcast syntax and turns it into real Slack pills — a clickable @-mention, channel link, or broadcast — instead of dead literal text. This applies to **drafts only**.
+
+**Friendly tokens** are resolved against your workspace before the draft is created:
+
+```bash
+# Mention a user by username or email
+slackcli messages draft --recipient-id=C1234567890 --message='@user:jane.doe please review'
+slackcli messages draft --recipient-id=C1234567890 --message='@user:jane@example.com please review'
+
+# A name with spaces must be quoted
+slackcli messages draft --recipient-id=C1234567890 --message='@user:"Jane Doe" please review'
+
+# Mention a usergroup by its handle or name
+slackcli messages draft --recipient-id=C1234567890 --message='@group:ror-team standup in 5'
+
+# Link a channel by name
+slackcli messages draft --recipient-id=C1234567890 --message='moved to #general'
+```
+
+Resolution uses exact-match priority (username → email → display name → real name for `@user:`; exact handle/name for `@group:` and `#channel`). If a token is ambiguous or not found, the command fails with a clear error that lists the candidates or available handles — it never silently leaves a friendly token behind as plain text.
+
+**Raw Slack escape tokens** are passed through untouched, so you can address things by ID directly:
+
+```bash
+slackcli messages draft --recipient-id=C1234567890 \
+  --message='<@U0123ABCD> see <#C0123WXYZ> and <!here> https://example.com'
+```
+
+Supported raw tokens: `<@U…>` (user), `<!subteam^S…>` (usergroup), `<#C…>` (channel), `<!here>` / `<!channel>` / `<!everyone>` (broadcasts), and `<https://…>` or `<https://…|label>` (links). Bare `https://` URLs are linkified automatically.
+
+**Scope & limitations:**
+
+- Mention resolution is wired into `messages draft` only. `messages send` posts flat text that Slack auto-links server-side; wiring it there is a planned follow-up.
+- A bold span that ends in a space (e.g. `*Tests: *`) is not valid Slack mrkdwn — keep the space outside the markers (`*Tests:* `).
+
 File uploads require Slack workspace permissions that allow file upload, such as `files:write` for standard Slack app tokens.
 
 **Common emoji names:**

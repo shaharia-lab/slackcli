@@ -122,10 +122,9 @@ describe('payloadToMessage', () => {
     expect(msg.is_ephemeral).toBe(true);
   });
 
-  it('synthesizes ts when missing', () => {
+  it('synthesizes ts in Slack sec.microsec format when missing', () => {
     const msg = payloadToMessage({ type: 'message', channel: CH });
-    expect(msg.ts).toBeDefined();
-    expect(msg.ts.length).toBeGreaterThan(0);
+    expect(msg.ts).toMatch(/^\d+\.\d{6}$/);
   });
 });
 
@@ -140,6 +139,7 @@ describe('syncResponseToMessage', () => {
     expect(msg!.blocks).toEqual([{ type: 'section' }]);
     expect(msg!.is_ephemeral).toBe(true);
     expect(msg!.channel).toBe(CH);
+    expect(msg!.ts).toMatch(/^\d+\.\d{6}$/);
   });
 
   it('synthesizes from message.text', () => {

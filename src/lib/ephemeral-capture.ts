@@ -42,7 +42,7 @@ export function payloadToMessage(payload: any): SlackMessage {
     user: payload.user,
     bot_id: payload.bot_id,
     text: payload.text || '',
-    ts: payload.ts || String(Date.now() / 1000),
+    ts: payload.ts || (Date.now() / 1000).toFixed(6),
     thread_ts: payload.thread_ts,
     blocks: payload.blocks,
     attachments: payload.attachments,
@@ -70,7 +70,7 @@ export function syncResponseToMessage(syncResp: any, channelId: string): SlackMe
   return {
     type: 'message',
     text: text || '',
-    ts: String(Date.now() / 1000),
+    ts: (Date.now() / 1000).toFixed(6),
     is_ephemeral: true,
     channel: channelId,
     blocks,

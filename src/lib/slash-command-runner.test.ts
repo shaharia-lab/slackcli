@@ -147,6 +147,30 @@ describe('runSlashCommand', () => {
     expect(sockets[0].closed).toBe(true);
   });
 
+  it('resolves with captures on socket error after at least one ephemeral arrived', async () => {
+    const { factory, sockets } = makeFakeFactory();
+
+    const promise = runSlashCommand({
+      rtm: { url: 'ws://x', headers: {} },
+      channelId: CH,
+      clientToken: TOKEN,
+      timeoutMs: 5000,
+      socketFactory: factory,
+      invokeCommand: async () => ({}),
+    });
+
+    await tick();
+    sockets[0].emitFrame({ type: 'hello' });
+    await tick();
+    sockets[0].emitFrame({ type: 'message', channel: CH, is_ephemeral: true, text: 'got it', ts: '1.1' });
+    sockets[0].emit('error', { message: 'kaput' });
+
+    const result = await promise;
+    expect(result.timedOut).toBe(false);
+    expect(result.messages.map(m => m.text)).toEqual(['got it']);
+    expect(sockets[0].closed).toBe(true);
+  });
+
   it('ignores unrelated frames (different channel, non-message types)', async () => {
     const { factory, sockets } = makeFakeFactory();
 

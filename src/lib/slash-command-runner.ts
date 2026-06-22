@@ -91,7 +91,11 @@ export async function runSlashCommand(opts: SlashCommandRunOptions): Promise<Sla
     armTimeout();
 
     socket.addEventListener('error', (ev: any) => {
-      settle(() => reject(new Error(`WebSocket error: ${ev?.message || 'unknown'}`)));
+      if (ephemeralMatches > 0) {
+        settle(() => resolve({ messages: captured, timedOut: false }));
+      } else {
+        settle(() => reject(new Error(`WebSocket error: ${ev?.message || 'unknown'}`)));
+      }
     });
 
     socket.addEventListener('message', async (ev: any) => {

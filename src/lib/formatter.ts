@@ -104,11 +104,16 @@ export function formatMessage(
 
   let output = `${indentStr}${chalk.dim(`[${timestamp}]`)} ${chalk.bold(`@${userName}`)}${threadIndicator}\n`;
 
-  // Message text
-  const textLines = msg.text.split('\n');
-  textLines.forEach(line => {
-    output += `${indentStr}  ${line}\n`;
-  });
+  // Message text. Suppressed when blocks are present, since bots typically
+  // copy block content into `text` as a notification fallback — rendering
+  // both would duplicate the body.
+  const hasBlocks = !!(msg.blocks && msg.blocks.length > 0);
+  if (msg.text && !hasBlocks) {
+    const textLines = msg.text.split('\n');
+    textLines.forEach(line => {
+      output += `${indentStr}  ${line}\n`;
+    });
+  }
 
   // Show timestamps for threading
   if (msg.ts) {

@@ -351,6 +351,58 @@ describe('formatMessage file display', () => {
   });
 });
 
+describe('formatMessage text vs blocks', () => {
+  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const users = new Map<string, SlackUser>([
+    ['U1', { id: 'U1', name: 'alice', real_name: 'Alice' }],
+  ]);
+
+  it('suppresses text when blocks are present (avoids duplicate body)', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1',
+      text: 'Notification fallback copy of the body',
+      ts: '1700000000.000100',
+      blocks: [{ type: 'section', text: { text: 'Block body' } }],
+    };
+    const output = stripAnsi(formatMessage(msg, users));
+    expect(output).toContain('Block body');
+    expect(output).not.toContain('Notification fallback copy of the body');
+  });
+
+  it('renders text when blocks are absent', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1',
+      text: 'Plain message',
+      ts: '1700000000.000100',
+    };
+    const output = stripAnsi(formatMessage(msg, users));
+    expect(output).toContain('Plain message');
+  });
+
+  it('renders text when only attachments are present (no blocks)', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1',
+      text: 'Lead-in text',
+      ts: '1700000000.000100',
+      attachments: [{ title: 'Att title' }],
+    };
+    const output = stripAnsi(formatMessage(msg, users));
+    expect(output).toContain('Lead-in text');
+    expect(output).toContain('Att title');
+  });
+
+  it('renders text when blocks is an empty array', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1',
+      text: 'Visible text',
+      ts: '1700000000.000100',
+      blocks: [],
+    };
+    const output = stripAnsi(formatMessage(msg, users));
+    expect(output).toContain('Visible text');
+  });
+});
+
 describe('formatFileSize', () => {
   it('formats 0 bytes', () => {
     expect(formatFileSize(0)).toBe('0 B');

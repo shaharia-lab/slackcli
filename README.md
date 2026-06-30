@@ -189,6 +189,13 @@ slackcli conversations read C1234567890 --limit=50
 slackcli conversations read C1234567890 --json
 ```
 
+> **Note on "Only visible to you" messages:** Slack does *not* persist
+> ephemeral messages (the "Only visible to you" replies from bots and
+> slash commands) server-side, so `conversations read` cannot retrieve
+> them after the fact. To trigger a slash command and capture its
+> ephemeral reply live, use `slackcli messages command` (browser auth
+> only).
+
 ### Message Commands
 
 ```bash
@@ -214,6 +221,13 @@ slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 -
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=heart
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=fire
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=eyes
+
+# Execute a slash command and capture its ephemeral ("Only visible to you") reply.
+# Requires browser auth (xoxc/xoxd). Default timeout is 15 seconds.
+slackcli messages command --recipient-id=D0123456789 --command=/genie --text="help"
+
+# Customize timeout and emit JSON
+slackcli messages command --recipient-id=C1234567890 --command=/giphy --text="cats" --timeout=30 --json
 ```
 
 File uploads require Slack workspace permissions that allow file upload, such as `files:write` for standard Slack app tokens.

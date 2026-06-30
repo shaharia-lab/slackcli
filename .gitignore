@@ -5,6 +5,7 @@ bun.lockb
 # Build output
 dist/
 *.tsbuildinfo
+*.bun-build
 
 # IDE
 .idea/
@@ -53,3 +54,4 @@ docs/internal/
 secrets/
 credentials/
 *.secret
+/.claude/settings.local.json

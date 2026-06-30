@@ -76,6 +76,7 @@ export interface SlackFile {
 
 export interface SlackMessage {
   type: string;
+  subtype?: string;
   user?: string;
   bot_id?: string;
   text: string;
@@ -90,6 +91,9 @@ export interface SlackMessage {
   blocks?: Array<Record<string, unknown>>;
   attachments?: Array<Record<string, unknown>>;
   files?: SlackFile[];
+  is_ephemeral?: boolean;
+  client_msg_id?: string;
+  channel?: string;
 }
 
 export interface SlackAuthTestResponse {
@@ -133,6 +137,15 @@ export interface MessageDraftOptions {
   message: string;
   threadTs?: string;
   workspace?: string;
+}
+
+export interface MessageCommandOptions {
+  recipientId: string;
+  command: string;
+  text?: string;
+  timeout?: number;
+  workspace?: string;
+  json?: boolean;
 }
 
 export interface AuthLoginOptions {

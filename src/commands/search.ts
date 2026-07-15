@@ -7,6 +7,7 @@ import {
   formatChannelSearchResults,
   formatPeopleSearchResults,
   formatPaginationHint,
+  writeJson,
 } from '../lib/formatter.ts';
 import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts';
 
@@ -57,13 +58,13 @@ export function createSearchCommand(): Command {
 
         if (options.json) {
           const pagination = response.messages?.pagination;
-          console.log(JSON.stringify({
+          writeJson({
             query,
             total,
             page: pagination?.page || 1,
             pages: pagination?.page_count || 1,
             matches,
-          }, null, 2));
+          });
           return;
         }
 
@@ -125,7 +126,7 @@ export function createSearchCommand(): Command {
         spinner.succeed(`Found ${total} matching channels (showing ${channels.length})`);
 
         if (options.json) {
-          console.log(JSON.stringify({ query, total, channels }, null, 2));
+          writeJson({ query, total, channels });
           return;
         }
 
@@ -186,7 +187,7 @@ export function createSearchCommand(): Command {
         spinner.succeed(`Found ${total} matching people (showing ${people.length})`);
 
         if (options.json) {
-          console.log(JSON.stringify({ query, total, people }, null, 2));
+          writeJson({ query, total, people });
           return;
         }
 

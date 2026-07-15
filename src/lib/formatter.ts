@@ -11,7 +11,13 @@ import type {
 // which materialises Bun's Node-compat WriteStream. Once that exists,
 // console.log routes through the async stream path, and output past the
 // 64 KiB pipe buffer is dropped when the process exits, silently producing
-// truncated JSON with exit code 0. process.stdout.write is unaffected.
+// truncated JSON with exit code 0 (issue #73).
+//
+// process.stdout.write shares that async pipe path; it is not synchronous.
+// It completes only because callers return and let the process exit
+// naturally, which drains pending writes. So: never call process.exit()
+// after writeJson() — doing so truncates at 64 KiB and reintroduces #73.
+// Set process.exitCode and return instead.
 export function writeJson(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + '\n');
 }

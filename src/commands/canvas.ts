@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatCanvasList, formatCanvasContent } from '../lib/formatter.ts';
+import { error, formatCanvasList, formatCanvasContent, writeJson } from '../lib/formatter.ts';
 import { canvasHtmlToMarkdown, isAuthPage } from '../lib/canvas-parser.ts';
 import type { SlackCanvas, SlackUser } from '../types/index.ts';
 
@@ -48,7 +48,7 @@ export function createCanvasCommand(): Command {
         spinner.succeed(`Found ${files.length} canvases`);
 
         if (options.json) {
-          console.log(JSON.stringify({
+          writeJson({
             canvas_count: files.length,
             canvases: files.map(f => ({
               id: f.id,
@@ -60,7 +60,7 @@ export function createCanvasCommand(): Command {
               size: f.size,
               permalink: f.permalink,
             })),
-          }, null, 2));
+          });
           return;
         }
 
@@ -201,7 +201,7 @@ export function createCanvasCommand(): Command {
         }
 
         if (options.json) {
-          console.log(JSON.stringify({
+          writeJson({
             id: file.id,
             title: file.title || file.name,
             created: file.created,
@@ -211,7 +211,7 @@ export function createCanvasCommand(): Command {
             size: file.size,
             permalink: file.permalink,
             markdown,
-          }, null, 2));
+          });
           return;
         }
 

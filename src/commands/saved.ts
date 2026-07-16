@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatSavedItems } from '../lib/formatter.ts';
+import { error, formatSavedItems, writeJson } from '../lib/formatter.ts';
 import { enrichSavedItems } from '../lib/saved.ts';
 
 export function createSavedCommand(): Command {
@@ -39,7 +39,7 @@ export function createSavedCommand(): Command {
         spinner.succeed(`Found ${items.length} saved items`);
 
         if (options.json) {
-          console.log(JSON.stringify({ item_count: items.length, items }, null, 2));
+          writeJson({ item_count: items.length, items });
           return;
         }
 

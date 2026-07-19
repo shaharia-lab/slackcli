@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand } from './updater.ts';
+import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion } from './updater.ts';
+import packageJson from '../../package.json';
 
 describe('isNewerVersion', () => {
   it('returns true when latest is newer', () => {
@@ -71,5 +72,11 @@ describe('getUpdateCommand', () => {
     Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/slackcli', configurable: true });
     expect(getUpdateCommand()).toBe('slackcli update');
     Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  });
+});
+
+describe('getCurrentVersion', () => {
+  it('matches package.json when not running a baked-in binary', () => {
+    expect(getCurrentVersion()).toBe(packageJson.version);
   });
 });

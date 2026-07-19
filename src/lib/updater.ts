@@ -4,6 +4,7 @@ import { tmpdir, homedir } from 'os';
 import { join } from 'path';
 import chalk from 'chalk';
 import { info, success, error as logError } from './formatter.ts';
+import { getAppVersion, isRunningUnderBun } from '../version.ts';
 
 const CONFIG_DIR = join(homedir(), '.config', 'slackcli');
 const UPDATE_CACHE_FILE = join(CONFIG_DIR, 'update-check.json');
@@ -15,8 +16,7 @@ interface UpdateCache {
 }
 
 const GITHUB_REPO = 'shaharia-lab/slackcli';
-// @ts-ignore - This will be replaced at build time
-const CURRENT_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+const CURRENT_VERSION = getAppVersion();
 
 interface GitHubRelease {
   tag_name: string;
@@ -212,6 +212,11 @@ export function getUpdateCommand(): string {
 // Show a one-line update notification after the command finishes (via beforeExit),
 // and refresh the cache in the background if it is stale.
 export function notifyIfUpdateAvailable(): void {
+  // Local `bun run` / source checkout — not a release binary; skip self-update nags.
+  if (isRunningUnderBun()) {
+    return;
+  }
+
   const cache = readUpdateCache();
   const now = Date.now();
 

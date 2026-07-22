@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion } from './updater.ts';
+import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion, performUpdate } from './updater.ts';
 import packageJson from '../../package.json';
 
 describe('isNewerVersion', () => {
@@ -78,5 +78,15 @@ describe('getUpdateCommand', () => {
 describe('getCurrentVersion', () => {
   it('matches package.json when not running a baked-in binary', () => {
     expect(getCurrentVersion()).toBe(packageJson.version);
+  });
+});
+
+describe('performUpdate', () => {
+  const originalExecPath = process.execPath;
+
+  it('bails early when running under bun without downloading', async () => {
+    Object.defineProperty(process, 'execPath', { value: '/Users/me/.bun/bin/bun', configurable: true });
+    await expect(performUpdate()).resolves.toBeUndefined();
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
   });
 });

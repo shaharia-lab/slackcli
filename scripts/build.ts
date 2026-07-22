@@ -10,6 +10,7 @@ import { version } from '../package.json';
 const outfileArg = process.argv.find((a) => a.startsWith('--outfile='));
 const outfile = outfileArg?.slice('--outfile='.length) ?? 'dist/slackcli';
 const extraArgs = process.argv.slice(2).filter((a) => !a.startsWith('--outfile='));
+const hasTarget = extraArgs.some((a) => a.startsWith('--target='));
 const cwd = join(import.meta.dir, '..');
 
 const result = Bun.spawnSync(
@@ -18,7 +19,7 @@ const result = Bun.spawnSync(
     'build',
     '--compile',
     '--minify',
-    '--sourcemap',
+    ...(hasTarget ? [] : ['--sourcemap']),
     ...extraArgs,
     '--define',
     `__APP_VERSION__=${JSON.stringify(version)}`,

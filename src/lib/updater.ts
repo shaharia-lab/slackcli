@@ -113,6 +113,11 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
 // Download and install update
 export async function performUpdate(): Promise<void> {
+  if (isRunningUnderBun()) {
+    info('Running from source (bun) — update with `git pull`, not `slackcli update`.');
+    return;
+  }
+
   info(`Checking for updates...`);
 
   const release = await fetchLatestRelease();

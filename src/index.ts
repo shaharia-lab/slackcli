@@ -9,17 +9,14 @@ import { createUpdateCommand } from './commands/update.ts';
 import { createSavedCommand } from './commands/saved.ts';
 import { createSearchCommand } from './commands/search.ts';
 import { notifyIfUpdateAvailable } from './lib/updater.ts';
-import chalk from 'chalk';
+import { getAppVersion } from './version.ts';
 
 const program = new Command();
-
-// @ts-ignore - This will be replaced at build time
-const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 
 program
   .name('slackcli')
   .description('A fast, developer-friendly CLI tool for interacting with Slack workspaces')
-  .version(APP_VERSION);
+  .version(getAppVersion());
 
 // Add commands
 program.addCommand(createAuthCommand());

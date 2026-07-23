@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
+import { normalizeSlackWorkspaceUrl } from './workspace-url.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
@@ -14,10 +15,13 @@ export class SlackClient {
   private webClient?: WebClient;
 
   constructor(config: WorkspaceConfig) {
-    this.config = config;
-
-    // Only use WebClient for standard auth
-    if (config.auth_type === 'standard') {
+    if (config.auth_type === 'browser') {
+      this.config = {
+        ...config,
+        workspace_url: normalizeSlackWorkspaceUrl(config.workspace_url),
+      };
+    } else {
+      this.config = config;
       this.webClient = new WebClient(config.token);
     }
   }

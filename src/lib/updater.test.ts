@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand } from './updater.ts';
+import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion, performUpdate } from './updater.ts';
+import packageJson from '../../package.json';
 
 describe('isNewerVersion', () => {
   it('returns true when latest is newer', () => {
@@ -70,6 +71,22 @@ describe('getUpdateCommand', () => {
   it('returns slackcli update for direct installs', () => {
     Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/slackcli', configurable: true });
     expect(getUpdateCommand()).toBe('slackcli update');
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  });
+});
+
+describe('getCurrentVersion', () => {
+  it('matches package.json when not running a baked-in binary', () => {
+    expect(getCurrentVersion()).toBe(packageJson.version);
+  });
+});
+
+describe('performUpdate', () => {
+  const originalExecPath = process.execPath;
+
+  it('bails early when running under bun without downloading', async () => {
+    Object.defineProperty(process, 'execPath', { value: '/Users/me/.bun/bin/bun', configurable: true });
+    await expect(performUpdate()).resolves.toBeUndefined();
     Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
   });
 });

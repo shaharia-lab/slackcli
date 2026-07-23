@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatChannelList, formatConversationHistory, formatUnreadChannels } from '../lib/formatter.ts';
+import { error, formatChannelList, formatConversationHistory, formatUnreadChannels, writeJson } from '../lib/formatter.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
@@ -141,7 +141,7 @@ export function createConversationsCommand(): Command {
 
         // Output in JSON format if requested
         if (options.json) {
-          console.log(JSON.stringify({
+          writeJson({
             channel_id: channelId,
             message_count: messages.length,
             messages: messages.map(msg => ({
@@ -173,7 +173,7 @@ export function createConversationsCommand(): Command {
               real_name: u.real_name,
               email: u.profile?.email,
             })),
-          }, null, 2));
+          });
         } else {
           console.log('\n' + formatConversationHistory(channelId, messages, users));
         }
@@ -222,7 +222,7 @@ export function createConversationsCommand(): Command {
         spinner.succeed('Message found');
 
         if (options.json) {
-          console.log(JSON.stringify({
+          writeJson({
             channel_id: channelId,
             message: {
               ts: msg.ts,
@@ -252,7 +252,7 @@ export function createConversationsCommand(): Command {
               real_name: u.real_name,
               email: u.profile?.email,
             })),
-          }, null, 2));
+          });
         } else {
           console.log('\n' + formatConversationHistory(channelId, [msg], users));
         }
@@ -299,7 +299,7 @@ export function createConversationsCommand(): Command {
         spinner.succeed(`${channels.length} conversations with unread messages`);
 
         if (options.json) {
-          console.log(JSON.stringify({ unread_channels: channels }, null, 2));
+          writeJson({ unread_channels: channels });
           return;
         }
 

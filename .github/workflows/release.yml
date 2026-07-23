@@ -10,7 +10,29 @@ permissions:
   contents: read
 
 jobs:
+  # Fail fast if the pushed tag disagrees with package.json, so we never
+  # release binaries whose baked-in version drifts from the source tree (#81).
+  verify-version:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION="$(jq -r .version package.json)"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag v${TAG_VERSION} does not match package.json version ${PKG_VERSION}"
+            echo "Fix: bump package.json to \"${TAG_VERSION}\" on main, then delete and re-push the tag."
+            exit 1
+          fi
+          echo "Tag v${TAG_VERSION} matches package.json version ${PKG_VERSION}"
+
   build:
+    needs: verify-version
     permissions:
       contents: read
     strategy:
@@ -99,7 +121,7 @@ jobs:
           cat checksums.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: release/*
           generate_release_notes: true

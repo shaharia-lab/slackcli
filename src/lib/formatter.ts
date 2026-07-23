@@ -4,6 +4,24 @@ import type {
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
 } from '../types/index.ts';
 
+// Serialise a value as JSON and write it to stdout.
+//
+// Deliberately process.stdout.write rather than console.log: ora reads
+// process.stdout.isTTY at import time (via cli-cursor -> restore-cursor),
+// which materialises Bun's Node-compat WriteStream. Once that exists,
+// console.log routes through the async stream path, and output past the
+// 64 KiB pipe buffer is dropped when the process exits, silently producing
+// truncated JSON with exit code 0 (issue #73).
+//
+// process.stdout.write shares that async pipe path; it is not synchronous.
+// It completes only because callers return and let the process exit
+// naturally, which drains pending writes. So: never call process.exit()
+// after writeJson() — doing so truncates at 64 KiB and reintroduces #73.
+// Set process.exitCode and return instead.
+export function writeJson(value: unknown): void {
+  process.stdout.write(JSON.stringify(value, null, 2) + '\n');
+}
+
 // Format timestamp to human-readable date
 export function formatTimestamp(ts: string): string {
   const timestamp = parseFloat(ts) * 1000;

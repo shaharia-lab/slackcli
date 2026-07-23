@@ -8,6 +8,7 @@ import {
   formatPaginationHint,
   formatFileSize,
   formatMessage,
+  writeJson,
 } from './formatter.ts';
 import type {
   SavedItem,
@@ -395,4 +396,46 @@ describe('formatFileSize', () => {
   it('formats 1023 bytes (boundary before KB)', () => {
     expect(formatFileSize(1023)).toBe('1023 B');
   });
+});
+
+describe('writeJson', () => {
+  it('writes 2-space indented JSON with a trailing newline', () => {
+    const chunks: string[] = [];
+    const original = process.stdout.write;
+    process.stdout.write = ((chunk: string) => { chunks.push(chunk); return true; }) as typeof process.stdout.write;
+    try {
+      writeJson({ a: 1, b: ['x'] });
+    } finally {
+      process.stdout.write = original;
+    }
+    expect(chunks.join('')).toBe(JSON.stringify({ a: 1, b: ['x'] }, null, 2) + '\n');
+  });
+
+  // Regression for #73. The truncation only manifests when stdout is a pipe
+  // and ora has already materialised process.stdout, so this has to run in a
+  // real child process with piped stdout; an in-process stub cannot catch it.
+  it('does not truncate output larger than the 64 KiB pipe buffer', async () => {
+    const buildPayload = "{ items: Array.from({ length: 4000 }, (_, i) => ({ i, text: 'x'.repeat(200) })) }";
+    const script = `
+      import ora from 'ora';
+      import { writeJson } from ${JSON.stringify(import.meta.dir + '/formatter.ts')};
+      ora('working').start().succeed('done');
+      writeJson(${buildPayload});
+    `;
+    const proc = Bun.spawn(['bun', '-e', script], { stdout: 'pipe', stderr: 'ignore' });
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    // Compare byte-exactly against the same payload built here. A
+    // greater-than check would pass on a truncated build, since a draining
+    // reader lets a nondeterministic amount past the 64 KiB buffer.
+    const expected = JSON.stringify(
+      { items: Array.from({ length: 4000 }, (_, i) => ({ i, text: 'x'.repeat(200) })) },
+      null,
+      2,
+    ) + '\n';
+    expect(expected.length).toBeGreaterThan(65536); // guards the fixture stays big enough to regress
+    expect(out.length).toBe(expected.length);
+    expect(out).toBe(expected);
+  }, 30000);
 });

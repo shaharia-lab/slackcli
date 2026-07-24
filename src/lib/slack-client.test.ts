@@ -36,6 +36,10 @@ class TestSlackClient extends SlackClient {
       };
     }
 
+    if (method === 'chat.update') {
+      return { ok: true, channel: params.channel, ts: params.ts, text: params.text };
+    }
+
     throw new Error(`Unexpected method: ${method}`);
   }
 }
@@ -111,5 +115,21 @@ describe('SlackClient.uploadFileExternal', () => {
     ).rejects.toThrow('File not found: /tmp/slackcli-missing-file.txt');
 
     expect(client.calls).toEqual([]);
+  });
+});
+
+describe('SlackClient.updateMessage', () => {
+  it('calls chat.update with the channel, timestamp, and new text', async () => {
+    const client = new TestSlackClient();
+
+    const response = await client.updateMessage('C123', '1234567890.123456', 'Corrected message');
+
+    expect(client.calls).toEqual([
+      {
+        method: 'chat.update',
+        params: { channel: 'C123', ts: '1234567890.123456', text: 'Corrected message' },
+      },
+    ]);
+    expect(response.ts).toBe('1234567890.123456');
   });
 });

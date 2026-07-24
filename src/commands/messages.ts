@@ -80,6 +80,35 @@ export function createMessagesCommand(): Command {
       }
     });
 
+  // Edit an existing message
+  messages
+    .command('edit')
+    .description('Update the text of an existing message you posted')
+    .requiredOption('--channel-id <id>', 'Channel ID where the message is')
+    .requiredOption('--timestamp <ts>', 'Message timestamp')
+    .requiredOption('--message <text>', 'New message text content')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .action(async (options) => {
+      const spinner = ora('Updating message...').start();
+
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+
+        const response = await client.updateMessage(
+          options.channelId,
+          options.timestamp,
+          options.message,
+        );
+
+        spinner.succeed('Message updated successfully!');
+        success(`Message timestamp: ${response.ts}`);
+      } catch (err: any) {
+        spinner.fail('Failed to update message');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
   // Create draft message
   messages
     .command('draft')

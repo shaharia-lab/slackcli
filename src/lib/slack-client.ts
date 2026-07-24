@@ -151,6 +151,10 @@ export class SlackClient {
     return this.request('chat.postMessage', params);
   }
 
+  async updateMessage(channel: string, ts: string, text: string): Promise<any> {
+    return this.request('chat.update', { channel, ts, text });
+  }
+
   async uploadFileExternal(channel: string, filePath: string, options: {
     initial_comment?: string;
     thread_ts?: string;

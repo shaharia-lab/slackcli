@@ -204,6 +204,9 @@ slackcli messages send --recipient-id=C1234567890 --thread-ts=1234567890.123456 
 # Send a message with a file attachment
 slackcli messages send --recipient-id=C1234567890 --message="Here is the file" --file=./report.pdf
 
+# Edit an existing message you posted
+slackcli messages edit --channel-id=C1234567890 --timestamp=1234567890.123456 --message="Corrected message"
+
 # Create a draft message in a channel (only works with browser session tokens)
 slackcli messages draft --recipient-id=C1234567890 --message="Hello team!"
 
@@ -217,6 +220,8 @@ slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 -
 ```
 
 File uploads require Slack workspace permissions that allow file upload, such as `files:write` for standard Slack app tokens.
+
+Editing only works on messages posted by the authenticated user or app; ephemeral messages cannot be edited.
 
 **Common emoji names:**
 - `+1` or `thumbsup` - 👍

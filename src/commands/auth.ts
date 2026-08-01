@@ -218,7 +218,15 @@ export function createAuthCommand(): Command {
         if (options.keepBrowserSession) {
           warning('Browser session kept — "auth login-auto" can still sign in without prompting.');
         } else {
-          await clearBrowserProfile();
+          const cleared = await clearBrowserProfile();
+          // Never silent about a profile left behind: it is a live credential,
+          // and a logout the user believes is complete would not be.
+          if (!cleared.cleared && cleared.reason === 'not_ours') {
+            warning(
+              `Left ${cleared.path} alone — slackcli did not create it, so it was not deleted.`
+            );
+            console.log(chalk.dim('   Remove it yourself if it holds a Slack session.'));
+          }
         }
 
         success('Logged out from all workspaces');

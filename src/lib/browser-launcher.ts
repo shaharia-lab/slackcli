@@ -13,7 +13,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
-import { mkdir, readFile, rm, stat } from 'fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'fs/promises';
 import { join, delimiter } from 'path';
 import { homedir } from 'os';
 
@@ -204,6 +204,12 @@ export async function launchBrowser(
   }
 
   await mkdir(profileDir, { recursive: true, mode: 0o700 });
+  // Marks the directory as ours so `auth logout` may delete it. Written on
+  // every launch, not just creation, so profiles from earlier versions become
+  // clearable rather than stranded.
+  await writeFile(join(profileDir, PROFILE_SENTINEL), 'slackcli browser profile\n', {
+    mode: 0o600,
+  }).catch(() => {});
 
   // A port file left by a previous run would otherwise be read as this run's
   // port, pointing the session at a browser that is already gone.
@@ -245,6 +251,28 @@ export async function launchBrowser(
     };
   }
 
+  // Registered here, immediately after spawn — NOT once CDP is attached.
+  // Everything between spawn and attach (the DevToolsActivePort wait, target
+  // lookup, WebSocket connect) is seconds of real time, and it is exactly when
+  // a user hits Ctrl-C because nothing appears to be happening. Without this,
+  // that interrupt strands a signed-in browser holding an open, unauthenticated
+  // DevTools port indefinitely.
+  const reap = (): void => {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // Already gone.
+    }
+  };
+  process.once('SIGINT', reap);
+  process.once('SIGTERM', reap);
+  process.once('exit', reap);
+  const unregisterReap = (): void => {
+    process.off('SIGINT', reap);
+    process.off('SIGTERM', reap);
+    process.off('exit', reap);
+  };
+
   let exitedEarly = false;
   child.on('exit', () => {
     exitedEarly = true;
@@ -256,6 +284,7 @@ export async function launchBrowser(
   });
 
   const stop = async (): Promise<void> => {
+    unregisterReap();
     if (child.exitCode !== null || child.signalCode !== null) return;
     try {
       child.kill('SIGTERM');
@@ -304,15 +333,45 @@ export async function launchBrowser(
 }
 
 /**
- * Delete the browser profile.
- *
- * The profile holds a signed-in Slack session — a longer-lived credential
- * than `workspaces.json`, since `login-auto` can re-mint working tokens from
- * it with no interaction. `auth logout` therefore has to clear it too, or the
- * command reports a logout it did not perform.
+ * Marker written when slackcli creates a profile directory. Its presence is
+ * what makes deletion safe: without it, `clearBrowserProfile` has no way to
+ * tell its own scratch profile from a directory the user pointed
+ * `SLACKCLI_BROWSER_PROFILE` at.
  */
-export async function clearBrowserProfile(profileDir?: string): Promise<void> {
-  await rm(profileDir ?? defaultProfileDir(), { recursive: true, force: true });
+const PROFILE_SENTINEL = '.slackcli-browser-profile';
+
+export type ClearProfileResult =
+  | { cleared: true }
+  | { cleared: false; reason: 'absent' | 'not_ours'; path: string };
+
+/**
+ * Delete the browser profile, but only one slackcli created.
+ *
+ * The profile holds a signed-in Slack session — a longer-lived credential than
+ * `workspaces.json`, since `login-auto` re-mints working tokens from it with no
+ * interaction. `auth logout` therefore has to clear it, or it reports a logout
+ * it did not perform.
+ *
+ * The sentinel check is the whole safety story. `SLACKCLI_BROWSER_PROFILE` is
+ * user input, and this is a recursive delete: pointed at a real browser profile
+ * or a home directory, an unguarded `rm` destroys it and still exits 0. Refusing
+ * anything we did not create keeps the logout guarantee without ever deleting
+ * something we do not own.
+ */
+export async function clearBrowserProfile(
+  profileDir?: string
+): Promise<ClearProfileResult> {
+  const target = profileDir ?? defaultProfileDir();
+
+  if (!(await defaultFileExists(target))) {
+    return { cleared: false, reason: 'absent', path: target };
+  }
+  if (!(await defaultFileExists(join(target, PROFILE_SENTINEL)))) {
+    return { cleared: false, reason: 'not_ours', path: target };
+  }
+
+  await rm(target, { recursive: true, force: true });
+  return { cleared: true };
 }
 
 /**

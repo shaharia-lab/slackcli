@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findBrowser, defaultProfileDir, isSafeStartUrl, launchBrowser } from './browser-launcher';
+import { existsSync } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import {
+  findBrowser,
+  defaultProfileDir,
+  isSafeStartUrl,
+  launchBrowser,
+  clearBrowserProfile,
+} from './browser-launcher';
 
 const CHROME_MAC = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const EDGE_MAC = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
@@ -153,6 +161,48 @@ describe('launchBrowser', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe('browser_not_found');
+  });
+});
+
+describe('clearBrowserProfile', () => {
+  const scratch = () => join(tmpdir(), `slackcli-clear-test-${Math.random().toString(36).slice(2)}`);
+
+  it('deletes a profile slackcli created', async () => {
+    const dir = scratch();
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, '.slackcli-browser-profile'), 'slackcli browser profile\n');
+    await writeFile(join(dir, 'Cookies'), 'session');
+
+    const result = await clearBrowserProfile(dir);
+
+    expect(result.cleared).toBe(true);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  // The case that matters: SLACKCLI_BROWSER_PROFILE is user input and this is a
+  // recursive delete. Pointed at a real browser profile or a home directory, an
+  // unguarded rm destroys it and still reports success.
+  it('refuses to delete a directory it did not create', async () => {
+    const dir = scratch();
+    await mkdir(join(dir, 'irreplaceable'), { recursive: true });
+    await writeFile(join(dir, 'irreplaceable', 'photos.jpg'), 'precious');
+
+    const result = await clearBrowserProfile(dir);
+
+    expect(result.cleared).toBe(false);
+    if (result.cleared) return;
+    expect(result.reason).toBe('not_ours');
+    expect(existsSync(join(dir, 'irreplaceable', 'photos.jpg'))).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('reports absent rather than failing when there is no profile', async () => {
+    const result = await clearBrowserProfile(scratch());
+
+    expect(result.cleared).toBe(false);
+    if (result.cleared) return;
+    expect(result.reason).toBe('absent');
   });
 });
 

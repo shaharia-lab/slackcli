@@ -140,6 +140,7 @@ export async function authenticateAuto(
   let capture;
   try {
     capture = await captureSlackTokens(opened.session, {
+      headless: options.headless ?? false,
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       ...(options.workspaceUrl ? { startUrl: options.workspaceUrl } : {}),
       onProgress,

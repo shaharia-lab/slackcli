@@ -175,18 +175,18 @@ function isSlackCookieDomain(domain: string): boolean {
  * must cost us the extra workspaces, never the run.
  */
 export function extractWorkspacesFromLocalConfig(raw: string): CapturedWorkspace[] {
-  let parsed: any;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return [];
   }
 
-  const teams = parsed?.teams;
+  const teams = (parsed as { teams?: unknown } | null)?.teams;
   if (!teams || typeof teams !== 'object') return [];
 
   const captured: CapturedWorkspace[] = [];
-  for (const team of Object.values<any>(teams)) {
+  for (const team of Object.values(teams as Record<string, any>)) {
     const token = team?.token;
     if (typeof token !== 'string' || !token.startsWith('xoxc-')) continue;
 
@@ -259,6 +259,8 @@ export function slackOriginFromApiUrl(url: string): string | null {
 export interface CaptureOptions {
   /** Overall budget for the user to finish signing in. */
   timeoutMs?: number;
+  /** Only affects guidance text: with no window, "sign in" is unactionable. */
+  headless?: boolean;
   /** Where to send the browser; defaults to the Slack web client. */
   startUrl?: string;
   onProgress?: (line: string) => void;
@@ -271,6 +273,9 @@ const defaultSleep = (ms: number): Promise<void> =>
   new Promise((r) => setTimeout(r, ms));
 
 const POLL_INTERVAL_MS = 500;
+
+/** Ceiling on waiting for additional workspaces to finish booting. */
+const SETTLE_BUDGET_MS = 3_000;
 
 /**
  * Drive an attached CDP session until Slack tokens are captured.
@@ -328,10 +333,14 @@ export async function captureSlackTokens(
   let fromLocalConfig: CapturedWorkspace[] = [];
   let sessionLost = false;
 
+  let consecutiveProbeFailures = 0;
   while (now() < deadline) {
     fromLocalConfig = await readWorkspacesFromLocalStorage(session);
     if (fromLocalConfig.length > 0 || intercepted.size > 0) break;
-    if (!(await sessionAlive(session))) {
+
+    if (await sessionAlive(session)) {
+      consecutiveProbeFailures = 0;
+    } else if (++consecutiveProbeFailures >= LIVENESS_FAILURES_BEFORE_DEAD) {
       sessionLost = true;
       break;
     }
@@ -352,21 +361,34 @@ export async function captureSlackTokens(
     return {
       ok: false,
       reason: 'capture_timeout',
-      message:
-        'No Slack session was detected before the timeout.\n' +
-        '   Make sure you completed sign-in in the browser window.',
+      // Headless has no window, so "complete sign-in in the browser window" is
+      // advice the user cannot act on. The real cause there is almost always a
+      // saved session that has since expired.
+      message: options.headless
+        ? 'No Slack session was detected before the timeout.\n' +
+          '   The saved browser session has probably expired — re-run without --headless\n' +
+          '   and sign in again.'
+        : 'No Slack session was detected before the timeout.\n' +
+          '   Make sure you completed sign-in in the browser window.',
     };
   }
 
   // A workspace beyond the first surfaces a beat later, as the client boots
-  // each one. A short extra settle is much cheaper than making the user
-  // re-run to pick up the rest.
-  const settleDeadline = Math.min(now() + 3_000, deadline);
-  while (now() < settleDeadline) {
+  // each one — so re-read until the count stops growing rather than waiting a
+  // fixed interval. Two stable reads end it, which costs the common
+  // single-workspace case one poll instead of the full settle budget.
+  const settleDeadline = Math.min(now() + SETTLE_BUDGET_MS, deadline);
+  let stableReads = 0;
+  while (now() < settleDeadline && stableReads < 2) {
     await sleep(POLL_INTERVAL_MS);
+    const settled = await readWorkspacesFromLocalStorage(session);
+    if (settled.length > fromLocalConfig.length) {
+      fromLocalConfig = settled;
+      stableReads = 0;
+    } else {
+      stableReads += 1;
+    }
   }
-  const settled = await readWorkspacesFromLocalStorage(session);
-  if (settled.length > fromLocalConfig.length) fromLocalConfig = settled;
 
   onProgress('Session detected — reading tokens…');
 
@@ -433,10 +455,18 @@ async function readWorkspacesFromLocalStorage(
 /**
  * Cheap liveness probe.
  *
- * Without this the wait loop is a bare sleep: a user who closes the browser
- * waits out the entire timeout — five minutes by default — and is then told
- * to complete sign-in in a window that no longer exists.
+ * Without a probe the wait loop is a bare sleep: a user who closes the browser
+ * waits out the entire timeout — five minutes by default — and is then told to
+ * complete sign-in in a window that no longer exists.
+ *
+ * A single failure is NOT death. This exact call fails transiently whenever the
+ * tab renavigates and tears down its execution context, which is precisely what
+ * an SSO redirect does — so treating one error as fatal aborts the sign-in the
+ * command exists to perform, at the moment the user is typing their password.
+ * Only a sustained run of failures counts.
  */
+const LIVENESS_FAILURES_BEFORE_DEAD = 4;
+
 async function sessionAlive(session: CdpSession): Promise<boolean> {
   try {
     await session.send('Runtime.evaluate', { expression: '1', returnByValue: true });
@@ -482,33 +512,17 @@ export async function openBrowserSession(
     const socket = await connectCdpSocket(wsUrl);
     const session = createCdpSession(socket);
 
-    // An abnormal exit (SIGINT, SIGTERM, a supervisor kill) would otherwise
-    // orphan a browser holding a live Slack session behind an unauthenticated
-    // loopback DevTools port — with --headless there is no window to notice.
+    // Signal reaping lives in `launchBrowser`, registered the moment the child
+    // exists — the window between spawn and attach is seconds long and is
+    // exactly when a user interrupts, so covering only this point would leave
+    // the common case orphaning a signed-in browser.
     let stopped = false;
-    const reap = (): void => {
-      // Signal handlers cannot await; start the kill rather than leave the
-      // browser running for the life of the machine.
+    const stop = async (): Promise<void> => {
       if (stopped) return;
       stopped = true;
       session.close();
-      void stopBrowser();
-    };
-    const stop = async (): Promise<void> => {
-      if (stopped) {
-        await stopBrowser();
-        return;
-      }
-      stopped = true;
-      process.off('SIGINT', reap);
-      process.off('SIGTERM', reap);
-      process.off('exit', reap);
-      session.close();
       await stopBrowser();
     };
-    process.once('SIGINT', reap);
-    process.once('SIGTERM', reap);
-    process.once('exit', reap);
 
     return { ok: true, session, stop };
   } catch (err: any) {

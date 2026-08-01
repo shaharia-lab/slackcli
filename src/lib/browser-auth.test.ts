@@ -289,11 +289,15 @@ interface FakeOptions {
   /** Every command starts failing after this many calls — a browser the user
    *  closed mid-capture. */
   dieAfterCalls?: number;
+  /** Fail exactly this many calls, then recover — a tab renavigating, which
+   *  tears down the execution context without the browser going anywhere. */
+  transientFailures?: number;
 }
 
 function makeFakeSession(options: FakeOptions = {}): CdpSession {
   const handlers = new Map<string, Array<(params: any) => void>>();
   let calls = 0;
+  let transientRemaining = options.transientFailures ?? 0;
   return {
     on(method, handler) {
       const list = handlers.get(method);
@@ -304,6 +308,12 @@ function makeFakeSession(options: FakeOptions = {}): CdpSession {
       calls += 1;
       if (options.dieAfterCalls !== undefined && calls > options.dieAfterCalls) {
         throw new Error('CDP Runtime.evaluate failed: socket closed');
+      }
+      // Models a renavigation: only evaluations fail, and only for a while.
+      // The socket is fine, so setup and cookie reads are unaffected.
+      if (method === 'Runtime.evaluate' && transientRemaining > 0) {
+        transientRemaining -= 1;
+        throw new Error('CDP Runtime.evaluate failed: Execution context was destroyed');
       }
       if (options.throwOn === method) throw new Error('boom');
       if (method === 'Page.navigate') {
@@ -493,6 +503,27 @@ describe('captureSlackTokens', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe('browser_closed');
+  });
+
+  // An SSO redirect tears down the execution context, so this probe fails
+  // transiently while the browser is perfectly alive. Treating one failure as
+  // death aborts the sign-in at the moment the user is typing their password.
+  it('survives transient probe failures without declaring the browser closed', async () => {
+    const session = makeFakeSession({
+      transientFailures: 3,
+      cookies: SLACK_COOKIES,
+      localConfig: LOCAL_CONFIG,
+    });
+
+    const result = await captureSlackTokens(session, {
+      ...captureDeps,
+      now: advancingClock(),
+      timeoutMs: 60_000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces.length).toBeGreaterThan(0);
   });
 
   it('refuses a hostile workspace URL planted in localStorage', async () => {

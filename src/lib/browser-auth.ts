@@ -520,6 +520,21 @@ export async function openBrowserSession(
     const stop = async (): Promise<void> => {
       if (stopped) return;
       stopped = true;
+
+      // Ask Chrome to quit itself before resorting to signals. Only the browser
+      // can reap its own renderer/GPU/utility helpers and release the profile
+      // locks — signalling the parent leaves the helpers orphaned, and killing
+      // them outright leaves the profile in a state Chrome refuses to reopen.
+      // Best effort: if it does not oblige, `stopBrowser` still escalates.
+      try {
+        await Promise.race([
+          session.send('Browser.close'),
+          new Promise((resolve) => setTimeout(resolve, 5_000)),
+        ]);
+      } catch {
+        // Browser already gone, or the command is unavailable.
+      }
+
       session.close();
       await stopBrowser();
     };

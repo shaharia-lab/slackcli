@@ -12,7 +12,7 @@
  * profile persists, so later runs need no interaction.
  */
 
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises';
 import { join, delimiter } from 'path';
 import { homedir } from 'os';
@@ -162,23 +162,23 @@ async function readDevToolsPort(profileDir: string): Promise<number | null> {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Kill any process still running against this profile.
+ * Kill helper processes still bound to this profile.
  *
- * Chrome's helpers survive a signalled parent and get reparented to init. They
- * all carry `--user-data-dir=<profileDir>` on their command line, and that path
- * is ours alone, so matching on it reaps exactly this browser's tree. Done with
- * `pkill -f` rather than a process group so the browser can stay attached to
- * the login session — detaching it costs macOS keyring access, which costs the
- * saved session.
+ * Every Chrome helper carries `--user-data-dir=<profileDir>` on its command
+ * line, and that path is ours alone, so the match hits exactly this browser's
+ * residue and nothing the user is running. Synchronous because it must also
+ * work from an exit handler, where nothing can be awaited.
+ *
+ * Note the pattern drops the flag's leading `--`: pkill reads a pattern
+ * starting with a dash as an option and aborts outright ("illegal option -- -",
+ * exit 2) without killing anything.
  */
-export function killProfileProcesses(profileDir: string): void {
+export function sweepProfileHelpers(profileDir: string): void {
   if (process.platform === 'win32') return;
   try {
-    spawn('pkill', ['-9', '-f', `--user-data-dir=${profileDir}`], {
-      stdio: 'ignore',
-    }).unref();
+    spawnSync('pkill', ['-9', '-f', `user-data-dir=${profileDir}`], { stdio: 'ignore' });
   } catch {
-    // Best effort; the parent kill above is the primary path.
+    // Best effort; the browser's own shutdown is the primary path.
   }
 }
 
@@ -347,7 +347,7 @@ export async function launchBrowser(
     // command line, and that path is unique to this profile, so matching on it
     // reaps exactly our tree and nothing else — no process group required, so
     // the browser keeps its keyring access.
-    if (signal === 'SIGKILL') killProfileProcesses(profileDir);
+    if (signal === 'SIGKILL') sweepProfileHelpers(profileDir);
   };
 
   const reap = (): void => signalTree('SIGKILL');
@@ -399,9 +399,16 @@ export async function launchBrowser(
       if (child.exitCode !== null || child.signalCode !== null) break;
       await sleep(100);
     }
-    // Then insist on the group. Chrome's helpers routinely outlive a graceful
-    // parent shutdown; without this they survive as orphans.
     signalTree('SIGKILL');
+
+    // Chrome leaves a `--type=utility` helper behind even after closing itself
+    // cleanly, so one targeted sweep clears the residue. Order matters: this
+    // runs only AFTER the browser has shut down and released its profile
+    // locks. Sweeping *instead of* a clean shutdown leaves the profile in a
+    // state Chrome refuses to reopen (exit 13, "profile in use"), which broke
+    // login entirely when it was tried the other way round.
+    await sleep(300);
+    sweepProfileHelpers(profileDir);
   };
 
   const deadline = Date.now() + launchTimeoutMs;

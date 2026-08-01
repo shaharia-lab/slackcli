@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Typed failure reasons (browser not found, launch timeout, capture timeout, browser closed, missing cookie) each with actionable guidance
   - Workspace URLs are gated to `https://` on a `slack.com` host before any session cookie is sent to them
 
+### Fixed
+- `login-auto` now asks Chrome to close itself (CDP `Browser.close`) before falling back to signals, then sweeps any helper the browser leaves behind — previously each run stranded ~5 Chrome processes. Order matters: sweeping *instead of* a clean shutdown leaves the profile unopenable.
+
 ### Changed
 - `auth logout` now also deletes the `login-auto` browser profile, which is a credential store in its own right — while it exists, `login-auto` re-mints working tokens without prompting. Use `--keep-browser-session` to retain the old behaviour.
 

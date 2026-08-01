@@ -13,6 +13,7 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 ## Features
 
 - 🔐 **Dual Authentication Support**: Standard Slack tokens (xoxb/xoxp) or browser tokens (xoxd/xoxc)
+- 🪄 **Automatic Browser Login**: `auth login-auto` — sign into Slack in a browser and the tokens are captured for you, no DevTools, no copy-paste
 - 🎯 **Easy Token Extraction**: Automatically parse tokens from browser cURL commands
 - 🏢 **Multi-Workspace Management**: Manage multiple Slack workspaces with ease
 - 💬 **Conversation Management**: List channels, read messages, send messages
@@ -181,6 +182,12 @@ This automatically extracts:
 ### Authentication Commands
 
 ```bash
+# Sign in via a browser; tokens are captured automatically
+slackcli auth login-auto
+
+# Refresh tokens later without any interaction (profile stays signed in)
+slackcli auth login-auto --headless
+
 # List all authenticated workspaces
 slackcli auth list
 
@@ -190,8 +197,11 @@ slackcli auth set-default T1234567
 # Remove a workspace
 slackcli auth remove T1234567
 
-# Logout from all workspaces
+# Logout from all workspaces (also clears the login-auto browser profile)
 slackcli auth logout
+
+# Logout but keep the browser signed in
+slackcli auth logout --keep-browser-session
 ```
 
 ### Conversation Commands

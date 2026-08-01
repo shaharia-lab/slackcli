@@ -19,6 +19,7 @@ import { homedir } from 'os';
 
 export type BrowserLaunchFailure =
   | 'browser_not_found'
+  | 'invalid_start_url'
   | 'launch_timeout'
   | 'browser_exited';
 
@@ -285,7 +286,7 @@ export async function launchBrowser(
     if (!isSafeStartUrl(options.startUrl)) {
       return {
         ok: false,
-        reason: 'browser_not_found',
+        reason: 'invalid_start_url',
         message: `Refusing to open an unsupported URL: ${options.startUrl}`,
       };
     }

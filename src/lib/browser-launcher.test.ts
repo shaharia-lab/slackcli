@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -22,6 +22,16 @@ const existsAmong = (present: string[]) => async (path: string) =>
   present.includes(path);
 
 const savedEnv = { ...process.env };
+
+// Start every test from a known environment. Without this the suite inherits
+// whatever the developer (or CI) happens to have exported: a machine with
+// SLACKCLI_BROWSER set fails nine of these for reasons that have nothing to do
+// with the code.
+beforeEach(() => {
+  delete process.env.SLACKCLI_BROWSER;
+  delete process.env.SLACKCLI_BROWSER_PROFILE;
+  delete process.env.LOCALAPPDATA;
+});
 
 afterEach(() => {
   // PATH is mutated by the PATH-scan case; leaving it set leaks into every
@@ -142,14 +152,22 @@ describe('isSafeStartUrl (launcher gate)', () => {
 
 describe('launchBrowser', () => {
   it('refuses to exec a start URL that would be read as a switch', async () => {
+    // SLACKCLI_BROWSER rather than a path from the platform table: the table is
+    // per-OS, so a macOS path resolves to nothing on the Linux CI runner and
+    // the run fails at browser_not_found before it ever reaches the URL check.
+    process.env.SLACKCLI_BROWSER = '/fake/browser';
     const result = await launchBrowser({
       startUrl: '--proxy-server=127.0.0.1:9931',
-      fileExists: existsAmong([CHROME_MAC]),
-      profileDir: `${tmpdir()}/slackcli-launch-guard-test`,
+      fileExists: existsAmong(['/fake/browser']),
+      profileDir: join(tmpdir(), `slackcli-launch-guard-${Math.random().toString(36).slice(2)}`),
     });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    // Its own reason, not browser_not_found — the command layer branches on
+    // that one to suggest installing a browser, which is unhelpful advice when
+    // the real problem is the URL.
+    expect(result.reason).toBe('invalid_start_url');
     expect(result.message).toContain('Refusing to open an unsupported URL');
   });
 

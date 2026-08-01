@@ -13,7 +13,7 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 ## Features
 
 - 🔐 **Dual Authentication Support**: Standard Slack tokens (xoxb/xoxp) or browser tokens (xoxd/xoxc)
-- 🪄 **Automatic Browser Login**: `auth login-auto` — sign into Slack in a browser and the tokens are captured for you, no DevTools, no copy-paste
+- 🪄 **Automatic Browser Login**: sign into Slack in a browser and the tokens are captured for you
 - 🎯 **Easy Token Extraction**: Automatically parse tokens from browser cURL commands
 - 🏢 **Multi-Workspace Management**: Manage multiple Slack workspaces with ease
 - 💬 **Conversation Management**: List channels, read messages, send messages

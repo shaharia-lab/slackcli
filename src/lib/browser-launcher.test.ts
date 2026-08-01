@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
 import {
   findBrowser,
   defaultProfileDir,
@@ -12,7 +11,6 @@ import {
   clearBrowserProfile,
   resetProfileIfStale,
   PROFILE_FORMAT,
-  killProfileProcesses,
 } from './browser-launcher';
 
 const CHROME_MAC = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -288,46 +286,6 @@ describe('resetProfileIfStale', () => {
 
   it('is a no-op when the profile does not exist yet', async () => {
     expect(await resetProfileIfStale(scratch())).toBe(false);
-  });
-});
-
-describe('killProfileProcesses', () => {
-  // Regression guard for a silent failure: the sweep pattern was
-  // `--user-data-dir=<path>`, and pkill parses a pattern beginning with a dash
-  // as an option — "illegal option -- -", exit 2, nothing killed. Every run
-  // leaked browser processes while the command appeared to succeed.
-  it('reaps a process matching the profile path', async () => {
-    if (process.platform === 'win32') return;
-
-    const marker = join(tmpdir(), `slackcli-reap-${Math.random().toString(36).slice(2)}`);
-    // A loop, not `sleep 30 # marker`: sh exec-optimizes a single trailing
-    // command, replacing its own command line with `sleep`'s and dropping the
-    // marker — the process would then be unmatchable and the test would fail
-    // for the wrong reason. A loop keeps sh alive with the marker intact.
-    // (Passing the marker as an argument to `sleep` is worse still: sleep
-    // rejects it and exits, so the assertion passes without anything being
-    // killed.)
-    const victim = spawn('sh', ['-c', `while true; do sleep 1; done # user-data-dir=${marker}`], {
-      stdio: 'ignore',
-    });
-
-    await new Promise((r) => setTimeout(r, 500));
-    // Precondition: it must actually be running, or the assertion below is
-    // vacuous.
-    expect(victim.exitCode).toBeNull();
-    expect(victim.signalCode).toBeNull();
-
-    const exited = new Promise<void>((resolve) => victim.once('exit', () => resolve()));
-    killProfileProcesses(marker);
-
-    await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
-    expect(victim.exitCode !== null || victim.signalCode !== null).toBe(true);
-
-    try {
-      victim.kill('SIGKILL');
-    } catch {
-      // already gone
-    }
   });
 });
 

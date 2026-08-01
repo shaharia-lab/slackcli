@@ -242,7 +242,18 @@ export async function launchBrowser(
 
   let child: ChildProcess;
   try {
-    child = spawn(executable, args, { stdio: 'ignore', detached: false });
+    // `detached` makes the browser its own process-group leader so the whole
+    // tree can be signalled at once. Chrome spawns renderer/GPU helpers, and
+    // signalling only the parent leaves them running: measured 2026-08-01, a
+    // plain SIGTERM to the parent still had a live child after 10s, and the
+    // SIGKILL that followed orphaned three renderers reparented to init.
+    // Signalling the group takes the tree to zero. The trade-off is that the
+    // browser no longer dies automatically with the CLI, which is why the
+    // handlers below are registered immediately.
+    child = spawn(executable, args, {
+      stdio: 'ignore',
+      detached: process.platform !== 'win32',
+    });
   } catch (err: any) {
     return {
       ok: false,
@@ -257,13 +268,36 @@ export async function launchBrowser(
   // a user hits Ctrl-C because nothing appears to be happening. Without this,
   // that interrupt strands a signed-in browser holding an open, unauthenticated
   // DevTools port indefinitely.
-  const reap = (): void => {
+  /**
+   * Signal the browser's whole process group.
+   *
+   * Falls back to the bare child if the group signal fails (no group leader,
+   * or the process is already gone). Windows has no process groups, so the
+   * tree is torn down with taskkill /T.
+   */
+  const signalTree = (signal: NodeJS.Signals): void => {
+    const pid = child.pid;
+    if (pid === undefined) return;
+    if (process.platform === 'win32') {
+      try {
+        spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      } catch {
+        // Nothing further to try.
+      }
+      return;
+    }
     try {
-      child.kill('SIGKILL');
+      process.kill(-pid, signal);
     } catch {
-      // Already gone.
+      try {
+        child.kill(signal);
+      } catch {
+        // Already gone.
+      }
     }
   };
+
+  const reap = (): void => signalTree('SIGKILL');
   process.once('SIGINT', reap);
   process.once('SIGTERM', reap);
   process.once('exit', reap);
@@ -285,22 +319,22 @@ export async function launchBrowser(
 
   const stop = async (): Promise<void> => {
     unregisterReap();
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    try {
-      child.kill('SIGTERM');
-    } catch {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      // The parent is gone but helpers may not be; sweep the group regardless.
+      signalTree('SIGKILL');
       return;
     }
-    // Give the browser a moment to flush its profile, then insist.
-    for (let i = 0; i < 20; i++) {
-      if (child.exitCode !== null || child.signalCode !== null) return;
+
+    // SIGTERM first so the browser flushes its profile — the session cookies
+    // and localConfig_v2 we depend on next run live there.
+    signalTree('SIGTERM');
+    for (let i = 0; i < 30; i++) {
+      if (child.exitCode !== null || child.signalCode !== null) break;
       await sleep(100);
     }
-    try {
-      child.kill('SIGKILL');
-    } catch {
-      // Already gone.
-    }
+    // Then insist on the group. Chrome's helpers routinely outlive a graceful
+    // parent shutdown; without this they survive as orphans.
+    signalTree('SIGKILL');
   };
 
   const deadline = Date.now() + launchTimeoutMs;

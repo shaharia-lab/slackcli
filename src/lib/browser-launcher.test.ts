@@ -2,13 +2,15 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import {
   findBrowser,
   defaultProfileDir,
   isSafeStartUrl,
   launchBrowser,
   clearBrowserProfile,
+  resetProfileIfStale,
+  PROFILE_FORMAT,
 } from './browser-launcher';
 
 const CHROME_MAC = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -203,6 +205,87 @@ describe('clearBrowserProfile', () => {
     expect(result.cleared).toBe(false);
     if (result.cleared) return;
     expect(result.reason).toBe('absent');
+  });
+
+  // A stat-based check follows the symlink and passes, then `rm` unlinks the
+  // link while the real credential store survives — a logout that reports
+  // success but leaves a signed-in profile behind.
+  it('refuses a symlink pointing at a real profile', async () => {
+    const real = scratch();
+    const link = scratch();
+    await mkdir(real, { recursive: true });
+    await writeFile(join(real, '.slackcli-browser-profile'), `slackcli browser profile\n${PROFILE_FORMAT}\n`);
+    await writeFile(join(real, 'Cookies'), 'live session');
+    await symlink(real, link);
+
+    const result = await clearBrowserProfile(link);
+
+    expect(result.cleared).toBe(false);
+    expect(existsSync(join(real, 'Cookies'))).toBe(true);
+
+    await rm(link, { force: true });
+    await rm(real, { recursive: true, force: true });
+  });
+
+  // A *directory* named like the sentinel satisfies a mere existence test, so
+  // the ownership guard would delete a tree slackcli never created.
+  it('refuses when the sentinel is a directory rather than a file', async () => {
+    const dir = scratch();
+    await mkdir(join(dir, '.slackcli-browser-profile'), { recursive: true });
+    await writeFile(join(dir, 'important.txt'), 'not ours');
+
+    const result = await clearBrowserProfile(dir);
+
+    expect(result.cleared).toBe(false);
+    expect(existsSync(join(dir, 'important.txt'))).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe('resetProfileIfStale', () => {
+  const scratch = () => join(tmpdir(), `slackcli-stale-test-${Math.random().toString(36).slice(2)}`);
+
+  it('discards a profile written in an older format', async () => {
+    // v1 profiles encrypted cookies with the OS keyring key; the mock keyring
+    // cannot decrypt them, so the session is unrecoverable and the profile is
+    // worse than useless — it fails with a confusing "cookie not readable".
+    const dir = scratch();
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, '.slackcli-browser-profile'), 'slackcli browser profile\n');
+    await writeFile(join(dir, 'Cookies'), 'undecryptable');
+
+    expect(await resetProfileIfStale(dir)).toBe(true);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('keeps a profile in the current format', async () => {
+    const dir = scratch();
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, '.slackcli-browser-profile'),
+      `slackcli browser profile\n${PROFILE_FORMAT}\n`
+    );
+
+    expect(await resetProfileIfStale(dir)).toBe(false);
+    expect(existsSync(dir)).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('never deletes a directory without our sentinel', async () => {
+    const dir = scratch();
+    await mkdir(join(dir, 'nested'), { recursive: true });
+    await writeFile(join(dir, 'nested', 'photo.jpg'), 'precious');
+
+    expect(await resetProfileIfStale(dir)).toBe(false);
+    expect(existsSync(join(dir, 'nested', 'photo.jpg'))).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('is a no-op when the profile does not exist yet', async () => {
+    expect(await resetProfileIfStale(scratch())).toBe(false);
   });
 });
 

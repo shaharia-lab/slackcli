@@ -490,7 +490,7 @@ export type BrowserSessionResult =
  * here must never strand a window on the user's desktop.
  */
 export async function openBrowserSession(
-  options: LaunchOptions = {}
+  options: LaunchOptions & { onProgress?: (line: string) => void } = {}
 ): Promise<BrowserSessionResult> {
   const launched = await launchBrowser(options);
   if (!launched.ok) return launched;

@@ -13,7 +13,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
-import { mkdir, readFile, rm, stat, writeFile } from 'fs/promises';
+import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises';
 import { join, delimiter } from 'path';
 import { homedir } from 'os';
 
@@ -162,6 +162,52 @@ async function readDevToolsPort(profileDir: string): Promise<number | null> {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Kill any process still running against this profile.
+ *
+ * Chrome's helpers survive a signalled parent and get reparented to init. They
+ * all carry `--user-data-dir=<profileDir>` on their command line, and that path
+ * is ours alone, so matching on it reaps exactly this browser's tree. Done with
+ * `pkill -f` rather than a process group so the browser can stay attached to
+ * the login session — detaching it costs macOS keyring access, which costs the
+ * saved session.
+ */
+export function killProfileProcesses(profileDir: string): void {
+  if (process.platform === 'win32') return;
+  try {
+    spawn('pkill', ['-9', '-f', `--user-data-dir=${profileDir}`], {
+      stdio: 'ignore',
+    }).unref();
+  } catch {
+    // Best effort; the parent kill above is the primary path.
+  }
+}
+
+/**
+ * Discard a profile written in a format this build can no longer read.
+ *
+ * Only ever touches a directory carrying our own sentinel, so the same
+ * ownership rule that guards `clearBrowserProfile` applies here — a profile
+ * directory we did not create is left alone even if it looks stale.
+ */
+export async function resetProfileIfStale(profileDir: string): Promise<boolean> {
+  if (!(await isOwnedProfile(profileDir))) return false;
+  let sentinel: string;
+  try {
+    sentinel = await readFile(join(profileDir, PROFILE_SENTINEL), 'utf-8');
+  } catch {
+    // No sentinel: either a brand-new profile, or one we do not own. Creating
+    // is handled by the caller; deleting an unowned directory is never ours.
+    return false;
+  }
+
+  // Line-exact, not a substring: `includes('v2')` would also match `v20`.
+  if (sentinel.split('\n').some((line) => line.trim() === PROFILE_FORMAT)) return false;
+
+  await rm(profileDir, { recursive: true, force: true });
+  return true;
+}
+
+/**
  * Only http(s) URLs may be handed to the browser as positional argv.
  *
  * Rejects anything that could be read as a switch, plus non-web schemes
@@ -203,13 +249,19 @@ export async function launchBrowser(
     };
   }
 
-  await mkdir(profileDir, { recursive: true, mode: 0o700 });
-  // Marks the directory as ours so `auth logout` may delete it. Written on
-  // every launch, not just creation, so profiles from earlier versions become
-  // clearable rather than stranded.
-  await writeFile(join(profileDir, PROFILE_SENTINEL), 'slackcli browser profile\n', {
-    mode: 0o600,
-  }).catch(() => {});
+  await resetProfileIfStale(profileDir);
+
+  // Claim the directory before using it. The sentinel is what later authorises
+  // `auth logout` to delete this tree, so it may only ever be written to a
+  // directory slackcli created or already owns — never stamped onto whatever
+  // SLACKCLI_BROWSER_PROFILE happens to point at. Without this rule, pointing
+  // the documented override at an existing browser profile (the natural way to
+  // try to reuse a session) and then running `logout` recursively deletes it
+  // and reports success.
+  const claim = await claimProfileDir(profileDir);
+  if (!claim.ok) {
+    return { ok: false, reason: 'browser_not_found', message: claim.message };
+  }
 
   // A port file left by a previous run would otherwise be read as this run's
   // port, pointing the session at a browser that is already gone.
@@ -242,18 +294,17 @@ export async function launchBrowser(
 
   let child: ChildProcess;
   try {
-    // `detached` makes the browser its own process-group leader so the whole
-    // tree can be signalled at once. Chrome spawns renderer/GPU helpers, and
-    // signalling only the parent leaves them running: measured 2026-08-01, a
-    // plain SIGTERM to the parent still had a live child after 10s, and the
-    // SIGKILL that followed orphaned three renderers reparented to init.
-    // Signalling the group takes the tree to zero. The trade-off is that the
-    // browser no longer dies automatically with the CLI, which is why the
-    // handlers below are registered immediately.
-    child = spawn(executable, args, {
-      stdio: 'ignore',
-      detached: process.platform !== 'win32',
-    });
+    // Deliberately NOT detached. Detaching makes the browser a process-group
+    // leader, which is a tidy way to signal the whole tree — but on macOS it
+    // also severs the process from the login session's keyring, and Chrome
+    // then interrupts the user with "Keychain cannot be found to store
+    // Chrome" (observed 2026-08-01). Suppressing that with
+    // `--use-mock-keychain` trades one bug for a worse one: Chrome derives a
+    // fresh cookie-encryption key per launch, so the saved session stops
+    // surviving a restart and silent re-login — the point of the persistent
+    // profile — breaks. Helpers are reaped by profile match instead; see
+    // `killProfileProcesses`.
+    child = spawn(executable, args, { stdio: 'ignore', detached: false });
   } catch (err: any) {
     return {
       ok: false,
@@ -287,23 +338,39 @@ export async function launchBrowser(
       return;
     }
     try {
-      process.kill(-pid, signal);
+      child.kill(signal);
     } catch {
-      try {
-        child.kill(signal);
-      } catch {
-        // Already gone.
-      }
+      // Already gone.
     }
+    // Chrome's renderer and GPU helpers outlive a signalled parent and get
+    // reparented to init. Every one of them carries our --user-data-dir on its
+    // command line, and that path is unique to this profile, so matching on it
+    // reaps exactly our tree and nothing else — no process group required, so
+    // the browser keeps its keyring access.
+    if (signal === 'SIGKILL') killProfileProcesses(profileDir);
   };
 
   const reap = (): void => signalTree('SIGKILL');
-  process.once('SIGINT', reap);
-  process.once('SIGTERM', reap);
+
+  // SIGHUP matters as much as SIGINT here: closing a terminal tab or dropping
+  // an SSH session sends it, and an unhandled SIGHUP would leave a signed-in
+  // browser running with an open DevTools port.
+  const FATAL_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'];
+
+  // Installing a listener replaces Node's default disposition, so the process
+  // would otherwise survive the first Ctrl-C and need a second. Reap, restore
+  // the default, then re-raise so the shell sees the conventional 128+signal
+  // exit rather than a silently swallowed interrupt.
+  const onFatalSignal = (signal: NodeJS.Signals): void => {
+    reap();
+    for (const s of FATAL_SIGNALS) process.off(s, onFatalSignal);
+    process.kill(process.pid, signal);
+  };
+  for (const s of FATAL_SIGNALS) process.once(s, onFatalSignal);
   process.once('exit', reap);
+
   const unregisterReap = (): void => {
-    process.off('SIGINT', reap);
-    process.off('SIGTERM', reap);
+    for (const s of FATAL_SIGNALS) process.off(s, onFatalSignal);
     process.off('exit', reap);
   };
 
@@ -374,6 +441,21 @@ export async function launchBrowser(
  */
 const PROFILE_SENTINEL = '.slackcli-browser-profile';
 
+/**
+ * Bumped when a launch-flag change makes an existing profile unusable.
+ *
+ * Cookie encryption is the reason this exists. Chrome's key comes from the OS
+ * keyring, so any change to how the browser reaches that keyring makes existing
+ * cookies undecryptable — the session is unrecoverable and the only honest
+ * outcome is one fresh sign-in. Doing that automatically beats failing with
+ * "the `d` cookie was not readable" and leaving the user to work out why.
+ *
+ * v2 briefly used `--use-mock-keychain`; that suppressed a macOS keychain
+ * prompt but made Chrome mint a new key per launch, so the saved session never
+ * survived a restart. v3 is the revert.
+ */
+export const PROFILE_FORMAT = 'v3';
+
 export type ClearProfileResult =
   | { cleared: true }
   | { cleared: false; reason: 'absent' | 'not_ours'; path: string };
@@ -397,15 +479,91 @@ export async function clearBrowserProfile(
 ): Promise<ClearProfileResult> {
   const target = profileDir ?? defaultProfileDir();
 
-  if (!(await defaultFileExists(target))) {
-    return { cleared: false, reason: 'absent', path: target };
-  }
-  if (!(await defaultFileExists(join(target, PROFILE_SENTINEL)))) {
-    return { cleared: false, reason: 'not_ours', path: target };
+  if (!(await isOwnedProfile(target))) {
+    // `absent` and `not_ours` read the same to a caller that only needs to know
+    // nothing was deleted, but they lead to different advice.
+    const exists = await lstat(target).then(
+      () => true,
+      () => false
+    );
+    return { cleared: false, reason: exists ? 'not_ours' : 'absent', path: target };
   }
 
   await rm(target, { recursive: true, force: true });
   return { cleared: true };
+}
+
+/**
+ * Take ownership of the profile directory, or refuse to use it.
+ *
+ * Creating it ourselves, or finding our own sentinel already there, both count
+ * as ownership. An existing directory with other content and no sentinel is
+ * somebody else's — most likely a real browser profile the user pointed
+ * SLACKCLI_BROWSER_PROFILE at — so we neither stamp it nor touch it.
+ */
+async function claimProfileDir(
+  profileDir: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (await isOwnedProfile(profileDir)) {
+    // mkdir's mode only applies on creation, so an existing profile (restored
+    // from backup, or made by an older build) could hold a live cookie store
+    // with looser bits.
+    await chmod(profileDir, 0o700).catch(() => {});
+    await stampSentinel(profileDir);
+    return { ok: true };
+  }
+
+  let existing: string[] | null = null;
+  try {
+    existing = await readdir(profileDir);
+  } catch {
+    existing = null; // does not exist yet
+  }
+
+  if (existing !== null && existing.length > 0) {
+    return {
+      ok: false,
+      message:
+        `${profileDir} already contains data and was not created by slackcli.\n` +
+        '   Refusing to use it as a browser profile. Point SLACKCLI_BROWSER_PROFILE\n' +
+        '   at a new or empty directory, or unset it to use the default.',
+    };
+  }
+
+  await mkdir(profileDir, { recursive: true, mode: 0o700 });
+  await chmod(profileDir, 0o700).catch(() => {});
+  await stampSentinel(profileDir);
+  return { ok: true };
+}
+
+/** Record ownership and the profile format this build writes. */
+async function stampSentinel(profileDir: string): Promise<void> {
+  await writeFile(
+    join(profileDir, PROFILE_SENTINEL),
+    `slackcli browser profile\n${PROFILE_FORMAT}\n`,
+    { mode: 0o600 }
+  ).catch(() => {});
+}
+
+/**
+ * Is this a profile directory slackcli created?
+ *
+ * `lstat`, not `stat`: a symlink pointing at a real profile would otherwise
+ * pass the check, and `rm` would unlink the symlink while the credential store
+ * it referenced survived — reporting a logout that never happened. The sentinel
+ * must be a regular file for the same reason: a *directory* by that name
+ * satisfies a mere existence test and would let the guard delete a tree we
+ * never created.
+ */
+async function isOwnedProfile(target: string): Promise<boolean> {
+  try {
+    const dir = await lstat(target);
+    if (!dir.isDirectory()) return false;
+    const sentinel = await lstat(join(target, PROFILE_SENTINEL));
+    return sentinel.isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**

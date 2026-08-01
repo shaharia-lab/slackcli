@@ -53,3 +53,6 @@ docs/internal/
 secrets/
 credentials/
 *.secret
+
+# Tribunal verification scratch (not a deliverable)
+.tribunal/

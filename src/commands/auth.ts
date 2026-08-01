@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import ora from 'ora';
-import { authenticateStandard, authenticateBrowser } from '../lib/auth.ts';
+import { authenticateStandard, authenticateBrowser, authenticateAuto, AutoLoginError } from '../lib/auth.ts';
 import {
   getAllWorkspaces,
   setDefaultWorkspace,
@@ -8,7 +8,7 @@ import {
   clearAllWorkspaces,
   getDefaultWorkspaceId,
 } from '../lib/workspaces.ts';
-import { success, error, info, formatWorkspace } from '../lib/formatter.ts';
+import { success, error, info, warning, formatWorkspace } from '../lib/formatter.ts';
 import chalk from 'chalk';
 import { parseCurlCommand, CurlParseError, looksLikeCurlCommand } from '../lib/curl-parser.ts';
 import { readClipboard } from '../lib/clipboard.ts';
@@ -74,6 +74,64 @@ export function createAuthCommand(): Command {
       } catch (err: any) {
         spinner.fail('Authentication failed');
         error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // Login by capturing tokens from a browser session
+  auth
+    .command('login-auto')
+    .description('Login by signing into Slack in a browser (captures tokens automatically)')
+    .option('--workspace-url <url>', 'Open a specific workspace (e.g., https://myteam.slack.com)')
+    .option('--headless', 'Run without a visible window (only works if already signed in)')
+    .option('--timeout <seconds>', 'How long to wait for sign-in', '300')
+    .action(async (options) => {
+      const timeoutSeconds = Number.parseInt(options.timeout, 10);
+      if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+        error('--timeout must be a positive number of seconds');
+        process.exit(1);
+      }
+
+      const spinner = ora('Launching browser...').start();
+
+      try {
+        const result = await authenticateAuto({
+          headless: options.headless === true,
+          workspaceUrl: options.workspaceUrl,
+          timeoutMs: timeoutSeconds * 1000,
+          // The spinner owns the terminal line, so progress has to go through it.
+          onProgress: (line) => {
+            spinner.text = line;
+          },
+        });
+
+        if (result.saved.length === 0) {
+          spinner.fail('No workspaces could be authenticated');
+          result.failed.forEach((f) => error(`${f.workspaceUrl}: ${f.error}`));
+          process.exit(1);
+        }
+
+        spinner.succeed(
+          `Authenticated ${result.saved.length} workspace${result.saved.length === 1 ? '' : 's'}`
+        );
+
+        result.saved.forEach((config) => {
+          success(`${config.workspace_name} ${chalk.dim(`(${config.workspace_id})`)}`);
+        });
+
+        // Partial success is still success — surface the misses without
+        // discarding the workspaces that did authenticate.
+        result.failed.forEach((f) => {
+          warning(`Skipped ${f.workspaceUrl}: ${f.error}`);
+        });
+      } catch (err: any) {
+        spinner.fail('Automatic login failed');
+        error(err.message);
+
+        if (err instanceof AutoLoginError && err.reason === 'browser_not_found') {
+          console.log(chalk.yellow('\n💡 Or extract tokens manually:'));
+          console.log(chalk.cyan('   slackcli auth parse-curl --login\n'));
+        }
         process.exit(1);
       }
     });
@@ -154,7 +212,11 @@ export function createAuthCommand(): Command {
     .command('extract-tokens')
     .description('Show guide for extracting browser tokens')
     .action(() => {
-      console.log(chalk.bold('\n🔍 How to Extract Browser Tokens:\n'));
+      console.log(chalk.bold('\n✨ Easiest: let slackcli do it\n'));
+      console.log(chalk.cyan('   slackcli auth login-auto'));
+      console.log(chalk.dim('   Opens a browser, you sign in, tokens are captured automatically.'));
+      console.log(chalk.dim('   Enrols every workspace you are signed into.\n'));
+      console.log(chalk.bold('🔍 Or extract them by hand:\n'));
       console.log('1. Open your Slack workspace in a web browser');
       console.log('2. Open Developer Tools (F12 or Cmd+Option+I)');
       console.log('3. Go to the Network tab');

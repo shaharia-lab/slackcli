@@ -96,9 +96,33 @@ Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps) and obtai
 slackcli auth login --token=xoxb-YOUR-TOKEN --workspace-name="My Team"
 ```
 
-### 2. Browser Session Tokens (Quick Setup)
+### 2. Automatic Browser Login (Easiest)
 
-Extract tokens from your browser session. No Slack app creation required!
+Sign into Slack in a browser and let SlackCLI capture the tokens. No Slack app, no DevTools, no copy-paste.
+
+```bash
+slackcli auth login-auto
+```
+
+A browser window opens on Slack. Sign in as you normally would, and SlackCLI enrols **every workspace you are signed into** — one sign-in covers them all.
+
+| Option | Purpose |
+|---|---|
+| `--workspace-url <url>` | Open a specific workspace instead of the Slack home |
+| `--timeout <seconds>` | How long to wait for sign-in (default `300`) |
+| `--headless` | No visible window — only works once you are already signed in |
+| `SLACKCLI_BROWSER` | Path to a browser, if yours is not auto-detected |
+| `SLACKCLI_BROWSER_PROFILE` | Override the profile directory |
+
+**Requirements:** Chrome, Edge, Chromium, or Brave installed. Nothing is downloaded and no extra dependency is installed — SlackCLI drives the browser you already have.
+
+**Why you sign in again the first time.** SlackCLI runs the browser against its own profile in `~/.config/slackcli/browser-profile`, separate from your everyday browsing. It has to: since Chrome 136 the browser refuses remote debugging against the default profile, so your existing session cannot be reused. The profile persists, so **only the first run needs interaction** — after that the window opens and closes on its own.
+
+**Security notes.** Tokens are never printed. While the browser is open it exposes a DevTools port on loopback that any local process could connect to; SlackCLI closes the browser as soon as capture finishes. Credentials land in `~/.config/slackcli/workspaces.json` (mode `0600`).
+
+### 3. Browser Session Tokens (Manual)
+
+Extract tokens from your browser session by hand. No Slack app creation required!
 
 ```bash
 # Step 1: Get extraction guide
@@ -122,7 +146,7 @@ slackcli auth login-browser \
    - `xoxd` token from Cookie header (d=xoxd-...)
    - `xoxc` token from request payload ("token":"xoxc-...")
 
-### 3. Easy Method: Parse cURL Command (Recommended for Browser Tokens)
+### 4. Parse cURL Command
 
 The easiest way to extract browser tokens is to copy a Slack API request as cURL and let SlackCLI parse it automatically!
 

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Automatic browser login** (`auth login-auto`): sign into Slack in a browser and let SlackCLI capture the `xoxd`/`xoxc` tokens — no DevTools, no copy-paste
+  - Enrols every workspace the user is signed into from a single sign-in
+  - Drives an already-installed Chrome/Edge/Chromium/Brave over the Chrome DevTools Protocol; **no new runtime dependency** and no change to binary size
+  - Uses a dedicated browser profile (required: Chrome 136+ refuses remote debugging against the default profile), so only the first run needs interaction
+  - `--workspace-url`, `--timeout`, `--headless`; `SLACKCLI_BROWSER` and `SLACKCLI_BROWSER_PROFILE` env overrides
+  - Typed failure reasons (browser not found, launch timeout, capture timeout, missing cookie) each with actionable guidance
+
 ## [0.2.0] - 2026-01-30
 
 ### Added

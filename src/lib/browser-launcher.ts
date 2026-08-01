@@ -12,7 +12,7 @@
  * profile persists, so later runs need no interaction.
  */
 
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises';
 import { join, delimiter } from 'path';
 import { homedir } from 'os';
@@ -174,11 +174,19 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export function killProfileProcesses(profileDir: string): void {
   if (process.platform === 'win32') return;
   try {
-    spawn('pkill', ['-9', '-f', `--user-data-dir=${profileDir}`], {
+    // Synchronous on purpose. Spawned asynchronously, this loses the race
+    // against the CLI's own exit and the helpers survive — which is exactly
+    // what happened when it was `spawn().unref()`. It also has to work from a
+    // signal handler, where there is no opportunity to await anything.
+    // Pattern deliberately omits the flag's leading `--`: pkill parses a
+    // pattern that starts with a dash as an option and fails outright
+    // ("illegal option -- -", exit 2) without killing anything. `user-data-dir=`
+    // plus our profile path is still unique to this browser.
+    spawnSync('pkill', ['-9', '-f', `user-data-dir=${profileDir}`], {
       stdio: 'ignore',
-    }).unref();
+    });
   } catch {
-    // Best effort; the parent kill above is the primary path.
+    // Best effort; killing the parent above is the primary path.
   }
 }
 
@@ -269,7 +277,7 @@ export async function launchBrowser(
 
   const args = [
     '--remote-debugging-port=0',
-    `--user-data-dir=${profileDir}`,
+    `user-data-dir=${profileDir}`,
     '--no-first-run',
     '--no-default-browser-check',
     // Slack serves a degraded client to obviously-automated browsers.
@@ -369,9 +377,14 @@ export async function launchBrowser(
   for (const s of FATAL_SIGNALS) process.once(s, onFatalSignal);
   process.once('exit', reap);
 
+  // Only the signal handlers come off, so signals behave normally once the
+  // browser has been stopped. The `exit` sweep deliberately stays registered:
+  // Chrome spawns a short-lived utility helper during its own shutdown, after
+  // stop() has already killed everything it could see, and that helper
+  // survives as an orphan without one last synchronous pass. A pkill against a
+  // profile with nothing running is a no-op, so leaving it armed costs nothing.
   const unregisterReap = (): void => {
     for (const s of FATAL_SIGNALS) process.off(s, onFatalSignal);
-    process.off('exit', reap);
   };
 
   let exitedEarly = false;
@@ -399,9 +412,16 @@ export async function launchBrowser(
       if (child.exitCode !== null || child.signalCode !== null) break;
       await sleep(100);
     }
-    // Then insist on the group. Chrome's helpers routinely outlive a graceful
-    // parent shutdown; without this they survive as orphans.
+    // Then insist. Chrome's helpers routinely outlive a graceful parent
+    // shutdown; without this they survive as orphans.
     signalTree('SIGKILL');
+
+    // Second pass. Chrome spawns a short-lived utility helper *during* its own
+    // shutdown, so a single sweep reliably leaves exactly one process behind
+    // (measured: 1 orphan per run). Settling briefly and sweeping again clears
+    // it. Bounded and cheap — the process is exiting anyway.
+    await sleep(400);
+    killProfileProcesses(profileDir);
   };
 
   const deadline = Date.now() + launchTimeoutMs;

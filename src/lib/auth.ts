@@ -6,6 +6,7 @@ import {
   captureSlackTokens,
   openBrowserSession,
   SLACK_CLIENT_URL,
+  isSlackWorkspaceUrl,
   type CaptureFailure,
 } from './browser-auth.ts';
 import type { BrowserSessionFailure } from './browser-auth.ts';
@@ -157,6 +158,17 @@ export async function authenticateAuto(
   const failed: AutoLoginResult['failed'] = [];
 
   for (const workspace of capture.workspaces) {
+    // Last gate before the session cookie is sent anywhere. The extractors
+    // already filter, but this is the line that decides where a live
+    // credential travels, so it does not delegate that check.
+    if (!isSlackWorkspaceUrl(workspace.workspaceUrl)) {
+      failed.push({
+        workspaceUrl: workspace.workspaceUrl,
+        error: 'Refused: not an https slack.com workspace URL',
+      });
+      continue;
+    }
+
     try {
       const config = await authenticateBrowser(
         capture.xoxd,

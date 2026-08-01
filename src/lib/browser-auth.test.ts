@@ -6,8 +6,10 @@ import {
   extractXoxdFromCookies,
   mergeWorkspaces,
   slackOriginFromApiUrl,
+  isSlackWorkspaceUrl,
   SLACK_CLIENT_URL,
 } from './browser-auth';
+import { isSafeStartUrl } from './browser-launcher';
 import type { CdpSession } from './cdp-client';
 
 // Anonymized bodies matching the three encodings Slack's web client uses.
@@ -100,6 +102,35 @@ describe('extractXoxdFromCookies', () => {
     expect(extractXoxdFromCookies(cookies)).toBeNull();
   });
 
+  // A substring test passes all of these; only a dot-anchored suffix rejects
+  // them. Each one would otherwise hand a hostile page's value back as the
+  // user's real session.
+  it.each([
+    'notslack.com',
+    'slack.com.evil.net',
+    '.slack.com.attacker.io',
+    'myslack.community',
+  ])('rejects a d cookie on look-alike domain %s', (domain) => {
+    expect(extractXoxdFromCookies([{ name: 'd', domain, value: 'xoxd-stolen' }])).toBeNull();
+  });
+
+  it('accepts the real parent domain and an enterprise subdomain', () => {
+    expect(extractXoxdFromCookies([{ name: 'd', domain: '.slack.com', value: 'xoxd-ok' }])).toBe('xoxd-ok');
+    expect(
+      extractXoxdFromCookies([{ name: 'd', domain: 'foo.enterprise.slack.com', value: 'xoxd-ent' }])
+    ).toBe('xoxd-ent');
+  });
+
+  it('returns null rather than throwing on a malformed percent-sequence', () => {
+    // decodeURIComponent throws URIError here; the signature promises null.
+    expect(() =>
+      extractXoxdFromCookies([{ name: 'd', domain: '.slack.com', value: 'xoxd-100%bad' }])
+    ).not.toThrow();
+    expect(
+      extractXoxdFromCookies([{ name: 'd', domain: '.slack.com', value: 'xoxd-100%bad' }])
+    ).toBeNull();
+  });
+
   it('ignores a d cookie whose value is not an xoxd token', () => {
     const cookies = [{ name: 'd', domain: '.slack.com', value: 'something-else' }];
     expect(extractXoxdFromCookies(cookies)).toBeNull();
@@ -136,6 +167,66 @@ describe('extractWorkspacesFromLocalConfig', () => {
 
   it('degrades to empty when the teams key is missing', () => {
     expect(extractWorkspacesFromLocalConfig('{"other":true}')).toEqual([]);
+  });
+
+  // localStorage is only as trustworthy as whatever page the browser has
+  // open, and this URL becomes the host the live session cookie is sent to.
+  it.each([
+    ['plain http', 'http://attacker.example:8731'],
+    ['non-Slack https host', 'https://attacker.example'],
+    ['look-alike host', 'https://slack.com.evil.net'],
+    ['the client host itself', 'https://app.slack.com'],
+    ['a file URL', 'file:///etc/passwd'],
+    ['unparseable', 'not a url at all'],
+  ])('refuses a team whose url is %s', (_label, url) => {
+    const raw = JSON.stringify({ teams: { T1: { id: 'T1', url, token: 'xoxc-x' } } });
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([]);
+  });
+
+  it('reduces a team url carrying a path to its origin', () => {
+    const raw = JSON.stringify({
+      teams: { T1: { id: 'T1', url: 'https://alpha.slack.com/messages/C1', token: 'xoxc-a' } },
+    });
+    expect(extractWorkspacesFromLocalConfig(raw)[0].workspaceUrl).toBe('https://alpha.slack.com');
+  });
+});
+
+describe('isSlackWorkspaceUrl', () => {
+  it.each([
+    'https://alpha.slack.com',
+    'https://myorg.enterprise.slack.com',
+    'https://slack.com',
+  ])('accepts %s', (url) => {
+    expect(isSlackWorkspaceUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'http://alpha.slack.com',
+    'https://app.slack.com',
+    'https://slack.com.evil.net',
+    'https://notslack.com',
+    'javascript:alert(1)',
+    '',
+  ])('rejects %s', (url) => {
+    expect(isSlackWorkspaceUrl(url)).toBe(false);
+  });
+});
+
+describe('isSafeStartUrl', () => {
+  // A start URL is positional browser argv: a leading dash makes it a switch.
+  it.each([
+    '--proxy-server=127.0.0.1:9931',
+    '--remote-debugging-address=0.0.0.0',
+    '-incognito',
+    'file:///etc/passwd',
+    'javascript:alert(1)',
+    'not a url',
+  ])('rejects %s', (url) => {
+    expect(isSafeStartUrl(url)).toBe(false);
+  });
+
+  it('accepts an ordinary https URL', () => {
+    expect(isSafeStartUrl('https://alpha.slack.com/')).toBe(true);
   });
 });
 
@@ -195,17 +286,25 @@ interface FakeOptions {
   cookies?: Array<{ name?: string; domain?: string; value?: string }>;
   localConfig?: string | null;
   throwOn?: string;
+  /** Every command starts failing after this many calls — a browser the user
+   *  closed mid-capture. */
+  dieAfterCalls?: number;
 }
 
 function makeFakeSession(options: FakeOptions = {}): CdpSession {
   const handlers = new Map<string, Array<(params: any) => void>>();
+  let calls = 0;
   return {
     on(method, handler) {
       const list = handlers.get(method);
       if (list) list.push(handler);
       else handlers.set(method, [handler]);
     },
-    async send<T>(method: string): Promise<T> {
+    async send<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+      calls += 1;
+      if (options.dieAfterCalls !== undefined && calls > options.dieAfterCalls) {
+        throw new Error('CDP Runtime.evaluate failed: socket closed');
+      }
       if (options.throwOn === method) throw new Error('boom');
       if (method === 'Page.navigate') {
         for (const request of options.requests ?? []) {
@@ -214,11 +313,17 @@ function makeFakeSession(options: FakeOptions = {}): CdpSession {
           }
         }
       }
-      if (method === 'Network.getCookies') {
+      if (method === 'Storage.getCookies' || method === 'Network.getCookies') {
         return { cookies: options.cookies ?? [] } as T;
       }
       if (method === 'Runtime.evaluate') {
-        return { result: { value: options.localConfig ?? undefined } } as T;
+        const expression = String(params?.expression ?? '');
+        // The capture uses Runtime.evaluate for two different jobs; only the
+        // localStorage read should yield a config payload.
+        if (expression.includes('localConfig_v2')) {
+          return { result: { value: options.localConfig ?? undefined } } as T;
+        }
+        return { result: { value: 1 } } as T;
       }
       return {} as T;
     },
@@ -339,6 +444,75 @@ describe('captureSlackTokens', () => {
     expect(result.reason).toBe('devtools_unreachable');
   });
 
+  // The two sources must be genuine alternatives. Interception only sees the
+  // attached tab and only while Slack is calling, so a valid session would
+  // otherwise time out whenever it happened not to be talking.
+  it('succeeds from localStorage alone when no request is intercepted', async () => {
+    const session = makeFakeSession({
+      requests: [],
+      cookies: SLACK_COOKIES,
+      localConfig: LOCAL_CONFIG,
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces.map((w) => w.workspaceUrl).sort()).toEqual([
+      'https://alpha.slack.com',
+      'https://beta.slack.com',
+    ]);
+  });
+
+  it('succeeds from interception alone when localStorage is empty', async () => {
+    const session = makeFakeSession({
+      requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+      cookies: SLACK_COOKIES,
+      localConfig: null,
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces).toHaveLength(1);
+  });
+
+  // Without a liveness probe this waited out the full timeout — five minutes
+  // by default — then told the user to finish signing in inside a window that
+  // no longer existed.
+  it('reports browser_closed instead of waiting out the timeout', async () => {
+    const session = makeFakeSession({ dieAfterCalls: 3, cookies: SLACK_COOKIES });
+
+    const result = await captureSlackTokens(session, {
+      ...captureDeps,
+      now: advancingClock(),
+      timeoutMs: 300_000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('browser_closed');
+  });
+
+  it('refuses a hostile workspace URL planted in localStorage', async () => {
+    const hostile = JSON.stringify({
+      teams: { T1: { id: 'T1', url: 'http://attacker.example:8731', token: 'xoxc-x' } },
+    });
+    const session = makeFakeSession({
+      requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+      cookies: SLACK_COOKIES,
+      localConfig: hostile,
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Only the legitimately intercepted workspace survives.
+    expect(result.workspaces.map((w) => w.workspaceUrl)).toEqual(['https://alpha.slack.com']);
+  });
+
   it('still succeeds when localStorage cannot be read', async () => {
     const session = makeFakeSession({
       requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
@@ -359,8 +533,7 @@ describe('captureSlackTokens', () => {
         { url: 'https://analytics.example.com/api/track', postData: 'token=xoxc-decoy-1' },
       ],
       cookies: SLACK_COOKIES,
-      timeoutMs: 3000,
-    } as FakeOptions);
+    });
 
     const result = await captureSlackTokens(session, {
       ...captureDeps,

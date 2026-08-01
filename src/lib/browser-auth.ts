@@ -30,6 +30,7 @@ import {
 export type CaptureFailure =
   | 'devtools_unreachable'
   | 'capture_timeout'
+  | 'browser_closed'
   | 'no_cookie';
 
 export interface CapturedWorkspace {
@@ -45,6 +46,41 @@ export type CaptureResult =
 
 /** Slack API endpoints carrying the token we want. */
 const SLACK_API_URL = /^https:\/\/([\w-]+(?:\.enterprise)?)\.slack\.com\/api\//i;
+
+/**
+ * The Slack web client's own host. It serves the app shell for every
+ * workspace, so it is never itself a workspace origin — accepting it would
+ * let a client-host API call masquerade as a distinct workspace and, since
+ * workspaces are keyed by team id on save, overwrite the real entry's API
+ * base with one that resolves to no particular team.
+ */
+const SLACK_CLIENT_HOST = 'app.slack.com';
+
+/**
+ * Gate every URL that will be paired with a session token.
+ *
+ * Load-bearing security boundary, not a tidiness check. Workspace URLs are
+ * read out of the page's own localStorage, which is only as trustworthy as
+ * whatever the browser happens to have open — and the URL becomes the host
+ * that `slack-client.ts` sends the `d` cookie to. Without this gate a
+ * non-Slack page can name any origin and receive the user's live session
+ * credential in cleartext.
+ */
+export function isSlackWorkspaceUrl(candidate: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:') return false;
+
+  const host = parsed.hostname.toLowerCase();
+  if (host === SLACK_CLIENT_HOST) return false;
+  // Suffix match on a dot boundary — a plain `includes` would accept
+  // `notslack.com.evil.net`.
+  return host === 'slack.com' || host.endsWith('.slack.com');
+}
 
 /**
  * Where to send the browser by default.
@@ -104,12 +140,32 @@ export function extractXoxdFromCookies(
       c.name === 'd' &&
       typeof c.value === 'string' &&
       c.value.length > 0 &&
-      (c.domain ?? '').includes('slack.com')
+      isSlackCookieDomain(c.domain ?? '')
   );
   if (!match?.value) return null;
 
-  const decoded = decodeURIComponent(match.value);
+  // A malformed percent-sequence makes decodeURIComponent throw; this
+  // function's contract is `string | null`, and the caller reports a missing
+  // cookie rather than the real cause if it escapes.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(match.value);
+  } catch {
+    return null;
+  }
   return decoded.startsWith('xoxd-') ? decoded : null;
+}
+
+/**
+ * Cookie-domain match, anchored on a dot boundary.
+ *
+ * Cookie domains may carry a leading dot (`.slack.com`). A substring test
+ * would accept `notslack.com.evil.net` and hand that page's `d` value back as
+ * if it were the real session.
+ */
+function isSlackCookieDomain(domain: string): boolean {
+  const normalized = domain.toLowerCase().replace(/^\./, '');
+  return normalized === 'slack.com' || normalized.endsWith('.slack.com');
 }
 
 /**
@@ -136,12 +192,16 @@ export function extractWorkspacesFromLocalConfig(raw: string): CapturedWorkspace
 
     const domain = typeof team?.domain === 'string' ? team.domain : null;
     const url = typeof team?.url === 'string' ? team.url : null;
+    // Reduce to an origin: Slack stores `https://team.slack.com/` but has also
+    // been seen carrying a path, and this value becomes the API base that
+    // every later request is built on.
     const workspaceUrl = url
-      ? url.replace(/\/+$/, '')
+      ? safeOrigin(url)
       : domain
-        ? `https://${domain}.slack.com`
+        ? `https://${encodeURIComponent(domain)}.slack.com`
         : null;
-    if (!workspaceUrl) continue;
+    // The gate: this URL is about to be paired with the live session cookie.
+    if (!workspaceUrl || !isSlackWorkspaceUrl(workspaceUrl)) continue;
 
     captured.push({
       workspaceUrl,
@@ -178,10 +238,22 @@ export function mergeWorkspaces(
   return [...byUrl.values()];
 }
 
+/** Origin of a URL, or null if it does not parse. */
+function safeOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
 /** Workspace origin for a Slack API URL, or null when it is not one. */
 export function slackOriginFromApiUrl(url: string): string | null {
   const match = url.match(SLACK_API_URL);
-  return match ? `https://${match[1]}.slack.com` : null;
+  if (!match) return null;
+  const origin = `https://${match[1]}.slack.com`;
+  // Rejects the client host, which serves every workspace and belongs to none.
+  return isSlackWorkspaceUrl(origin) ? origin : null;
 }
 
 export interface CaptureOptions {
@@ -247,12 +319,36 @@ export async function captureSlackTokens(
 
   onProgress('Waiting for Slack sign-in in the browser window…');
 
+  // Poll BOTH sources. Interception proves a token is live, but it only sees
+  // the attached tab and only while Slack happens to be calling — so waiting
+  // on it alone means a valid, fully signed-in session can time out. Reading
+  // localStorage each tick makes the two sources genuine alternatives rather
+  // than a primary and a decoration: either one alone is enough to finish.
   const deadline = now() + timeoutMs;
-  while (now() < deadline && intercepted.size === 0) {
+  let fromLocalConfig: CapturedWorkspace[] = [];
+  let sessionLost = false;
+
+  while (now() < deadline) {
+    fromLocalConfig = await readWorkspacesFromLocalStorage(session);
+    if (fromLocalConfig.length > 0 || intercepted.size > 0) break;
+    if (!(await sessionAlive(session))) {
+      sessionLost = true;
+      break;
+    }
     await sleep(POLL_INTERVAL_MS);
   }
 
-  if (intercepted.size === 0) {
+  if (sessionLost) {
+    return {
+      ok: false,
+      reason: 'browser_closed',
+      message:
+        'The browser was closed before sign-in completed.\n' +
+        '   Run the command again and leave the window open until it finishes.',
+    };
+  }
+
+  if (fromLocalConfig.length === 0 && intercepted.size === 0) {
     return {
       ok: false,
       reason: 'capture_timeout',
@@ -269,17 +365,12 @@ export async function captureSlackTokens(
   while (now() < settleDeadline) {
     await sleep(POLL_INTERVAL_MS);
   }
+  const settled = await readWorkspacesFromLocalStorage(session);
+  if (settled.length > fromLocalConfig.length) fromLocalConfig = settled;
 
   onProgress('Session detected — reading tokens…');
 
-  let xoxd: string | null = null;
-  try {
-    const result = await session.send<{ cookies?: any[] }>('Network.getCookies');
-    xoxd = extractXoxdFromCookies(result?.cookies ?? []);
-  } catch {
-    xoxd = null;
-  }
-
+  const xoxd = await readSessionCookie(session);
   if (!xoxd) {
     return {
       ok: false,
@@ -290,7 +381,39 @@ export async function captureSlackTokens(
     };
   }
 
-  let fromLocalConfig: CapturedWorkspace[] = [];
+  return {
+    ok: true,
+    xoxd,
+    workspaces: mergeWorkspaces([...intercepted.values()], fromLocalConfig),
+  };
+}
+
+/**
+ * Read the `d` cookie from the browser's whole cookie store.
+ *
+ * `Storage.getCookies` is the browser-wide call. `Network.getCookies` returns
+ * cookies *for the current URL* — which happens to work while the tab sits on
+ * Slack, and silently returns nothing when sign-in has parked it on an SSO or
+ * IdP origin. It stays as a fallback for older protocol builds.
+ */
+async function readSessionCookie(session: CdpSession): Promise<string | null> {
+  for (const method of ['Storage.getCookies', 'Network.getCookies'] as const) {
+    try {
+      const result = await session.send<{ cookies?: any[] }>(method);
+      const found = extractXoxdFromCookies(result?.cookies ?? []);
+      if (found) return found;
+    } catch {
+      // Try the next method; a session that is truly gone fails both and the
+      // caller reports no_cookie.
+    }
+  }
+  return null;
+}
+
+/** Read signed-in workspaces from Slack's localStorage. Never throws. */
+async function readWorkspacesFromLocalStorage(
+  session: CdpSession
+): Promise<CapturedWorkspace[]> {
   try {
     const evaluated = await session.send<{ result?: { value?: string } }>(
       'Runtime.evaluate',
@@ -300,19 +423,27 @@ export async function captureSlackTokens(
       }
     );
     const raw = evaluated?.result?.value;
-    if (typeof raw === 'string') {
-      fromLocalConfig = extractWorkspacesFromLocalConfig(raw);
-    }
+    return typeof raw === 'string' ? extractWorkspacesFromLocalConfig(raw) : [];
   } catch {
-    // Undocumented client state; interception already gave us a usable result.
-    fromLocalConfig = [];
+    // Undocumented client state, and the tab may be mid-navigation.
+    return [];
   }
+}
 
-  return {
-    ok: true,
-    xoxd,
-    workspaces: mergeWorkspaces([...intercepted.values()], fromLocalConfig),
-  };
+/**
+ * Cheap liveness probe.
+ *
+ * Without this the wait loop is a bare sleep: a user who closes the browser
+ * waits out the entire timeout — five minutes by default — and is then told
+ * to complete sign-in in a window that no longer exists.
+ */
+async function sessionAlive(session: CdpSession): Promise<boolean> {
+  try {
+    await session.send('Runtime.evaluate', { expression: '1', returnByValue: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export type BrowserSessionFailure = BrowserLaunchFailure | 'devtools_unreachable';
@@ -344,17 +475,42 @@ export async function openBrowserSession(
     };
   }
 
+  // Captured before the closures below so the narrowed type survives.
+  const stopBrowser = launched.stop;
+
   try {
     const socket = await connectCdpSocket(wsUrl);
     const session = createCdpSession(socket);
-    return {
-      ok: true,
-      session,
-      stop: async () => {
-        session.close();
-        await launched.stop();
-      },
+
+    // An abnormal exit (SIGINT, SIGTERM, a supervisor kill) would otherwise
+    // orphan a browser holding a live Slack session behind an unauthenticated
+    // loopback DevTools port — with --headless there is no window to notice.
+    let stopped = false;
+    const reap = (): void => {
+      // Signal handlers cannot await; start the kill rather than leave the
+      // browser running for the life of the machine.
+      if (stopped) return;
+      stopped = true;
+      session.close();
+      void stopBrowser();
     };
+    const stop = async (): Promise<void> => {
+      if (stopped) {
+        await stopBrowser();
+        return;
+      }
+      stopped = true;
+      process.off('SIGINT', reap);
+      process.off('SIGTERM', reap);
+      process.off('exit', reap);
+      session.close();
+      await stopBrowser();
+    };
+    process.once('SIGINT', reap);
+    process.once('SIGTERM', reap);
+    process.once('exit', reap);
+
+    return { ok: true, session, stop };
   } catch (err: any) {
     await launched.stop();
     return {

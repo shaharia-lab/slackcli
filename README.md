@@ -118,7 +118,13 @@ A browser window opens on Slack. Sign in as you normally would, and SlackCLI enr
 
 **Why you sign in again the first time.** SlackCLI runs the browser against its own profile in `~/.config/slackcli/browser-profile`, separate from your everyday browsing. It has to: since Chrome 136 the browser refuses remote debugging against the default profile, so your existing session cannot be reused. The profile persists, so **only the first run needs interaction** — after that the window opens and closes on its own.
 
-**Security notes.** Tokens are never printed. While the browser is open it exposes a DevTools port on loopback that any local process could connect to; SlackCLI closes the browser as soon as capture finishes. Credentials land in `~/.config/slackcli/workspaces.json` (mode `0600`).
+**Security notes.**
+
+- Token values are never printed.
+- **The browser profile is a credential store.** While it exists, `login-auto` can re-mint working tokens with no prompt. `slackcli auth logout` therefore deletes it along with `workspaces.json`; pass `--keep-browser-session` to keep it signed in.
+- Only `https://` URLs on a `slack.com` host are ever paired with your session cookie — a URL read from the browser that points anywhere else is refused.
+- While the browser is open it exposes a DevTools port on loopback that any local process could connect to. SlackCLI closes the browser as soon as capture finishes, and also on `Ctrl-C` or termination.
+- Credentials land in `~/.config/slackcli/workspaces.json` (mode `0600`); the profile directory is `0700` on macOS and Linux (Windows uses ACL defaults).
 
 ### 3. Browser Session Tokens (Manual)
 

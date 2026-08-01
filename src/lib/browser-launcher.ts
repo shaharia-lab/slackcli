@@ -52,11 +52,21 @@ const BROWSER_PATHS: Record<string, string[]> = {
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
     '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
   ],
+  // Per-user installs come FIRST: on a managed Windows machine the user
+  // often lacks the admin rights to install into Program Files, so
+  // %LOCALAPPDATA% is the common layout, not the exotic one.
   win32: [
+    `${process.env.LOCALAPPDATA ?? ''}\\Google\\Chrome\\Application\\chrome.exe`,
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    `${process.env.LOCALAPPDATA ?? ''}\\Microsoft\\Edge\\Application\\msedge.exe`,
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    `${process.env.LOCALAPPDATA ?? ''}\\Chromium\\Application\\chrome.exe`,
+    'C:\\Program Files\\Chromium\\Application\\chrome.exe',
+    `${process.env.LOCALAPPDATA ?? ''}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+    'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
+    'C:\\Program Files (x86)\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
   ],
   linux: [
     '/usr/bin/google-chrome',
@@ -68,15 +78,22 @@ const BROWSER_PATHS: Record<string, string[]> = {
   ],
 };
 
-/** Bare names to resolve against PATH when no absolute candidate exists. */
-const PATH_CANDIDATES = [
-  'google-chrome',
-  'google-chrome-stable',
-  'chromium',
-  'chromium-browser',
-  'microsoft-edge',
-  'brave-browser',
-];
+/**
+ * Bare names to resolve against PATH when no absolute candidate exists.
+ * Platform-specific: POSIX names never match on Windows, where the
+ * executables carry a `.exe` suffix and are named differently.
+ */
+const PATH_CANDIDATES: Record<string, string[]> = {
+  win32: ['chrome.exe', 'msedge.exe', 'brave.exe', 'chromium.exe'],
+  default: [
+    'google-chrome',
+    'google-chrome-stable',
+    'chromium',
+    'chromium-browser',
+    'microsoft-edge',
+    'brave-browser',
+  ],
+};
 
 const defaultFileExists = async (path: string): Promise<boolean> => {
   try {
@@ -114,10 +131,12 @@ export async function findBrowser(
     if (await fileExists(candidate)) return candidate;
   }
 
-  // PATH scan covers Linux installs outside /usr/bin (Nix, Flatpak shims,
-  // distro variants) without hardcoding every layout.
+  // PATH scan covers installs outside the standard prefixes (Nix, Flatpak
+  // shims, distro variants, Scoop/Chocolatey on Windows) without hardcoding
+  // every layout.
   const pathDirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
-  for (const name of PATH_CANDIDATES) {
+  const names = PATH_CANDIDATES[platform] ?? PATH_CANDIDATES.default;
+  for (const name of names) {
     for (const dir of pathDirs) {
       const full = join(dir, name);
       if (await fileExists(full)) return full;
@@ -141,6 +160,23 @@ async function readDevToolsPort(profileDir: string): Promise<number | null> {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Only http(s) URLs may be handed to the browser as positional argv.
+ *
+ * Rejects anything that could be read as a switch, plus non-web schemes
+ * (`file:`, `javascript:`) that would give a caller-supplied string more
+ * reach than opening a page.
+ */
+export function isSafeStartUrl(candidate: string): boolean {
+  if (candidate.startsWith('-')) return false;
+  try {
+    const { protocol } = new URL(candidate);
+    return protocol === 'https:' || protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Launch the browser and wait until its DevTools endpoint is addressable.
@@ -182,7 +218,21 @@ export async function launchBrowser(
     '--disable-blink-features=AutomationControlled',
   ];
   if (options.headless) args.push('--headless=new');
-  if (options.startUrl) args.push(options.startUrl);
+  // Defence in depth against argument injection: a start URL is positional
+  // argv, so any value beginning with `-` would be read by the browser as a
+  // switch instead. `--proxy-server=...` alone would route the user's entire
+  // sign-in through an attacker's host. Callers validate too; this is the
+  // last gate before exec, so it must not trust them.
+  if (options.startUrl) {
+    if (!isSafeStartUrl(options.startUrl)) {
+      return {
+        ok: false,
+        reason: 'browser_not_found',
+        message: `Refusing to open an unsupported URL: ${options.startUrl}`,
+      };
+    }
+    args.push(options.startUrl);
+  }
 
   let child: ChildProcess;
   try {
@@ -236,8 +286,8 @@ export async function launchBrowser(
         reason: 'browser_exited',
         message:
           'The browser exited before exposing its DevTools endpoint.\n' +
-          '   This usually means the profile directory is in use by another window.\n' +
-          '   Close other slackcli browser windows, or retry with --force.',
+          '   Most often the profile is already open in another slackcli window —\n' +
+          '   close it and retry. On a headless machine with no display, add --headless.',
       };
     }
     await sleep(100);
@@ -251,6 +301,18 @@ export async function launchBrowser(
       launchTimeoutMs / 1000
     )}s.`,
   };
+}
+
+/**
+ * Delete the browser profile.
+ *
+ * The profile holds a signed-in Slack session — a longer-lived credential
+ * than `workspaces.json`, since `login-auto` can re-mint working tokens from
+ * it with no interaction. `auth logout` therefore has to clear it too, or the
+ * command reports a logout it did not perform.
+ */
+export async function clearBrowserProfile(profileDir?: string): Promise<void> {
+  await rm(profileDir ?? defaultProfileDir(), { recursive: true, force: true });
 }
 
 /**

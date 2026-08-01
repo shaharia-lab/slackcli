@@ -13,6 +13,8 @@ import chalk from 'chalk';
 import { parseCurlCommand, CurlParseError, looksLikeCurlCommand } from '../lib/curl-parser.ts';
 import { readClipboard } from '../lib/clipboard.ts';
 import { readInteractiveInput, isInteractiveTerminal, hasPipedInput } from '../lib/interactive-input.ts';
+import { clearBrowserProfile } from '../lib/browser-launcher.ts';
+import { isSlackWorkspaceUrl } from '../lib/browser-auth.ts';
 
 export function createAuthCommand(): Command {
   const auth = new Command('auth')
@@ -89,6 +91,14 @@ export function createAuthCommand(): Command {
       const timeoutSeconds = Number.parseInt(options.timeout, 10);
       if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
         error('--timeout must be a positive number of seconds');
+        process.exit(1);
+      }
+
+      // Checked here as well as at the launcher: this value becomes browser
+      // argv, and it is the host the session cookie would be sent to.
+      if (options.workspaceUrl && !isSlackWorkspaceUrl(options.workspaceUrl)) {
+        error('--workspace-url must be an https URL on a slack.com host');
+        console.log(chalk.dim('   e.g. https://myteam.slack.com'));
         process.exit(1);
       }
 
@@ -197,9 +207,20 @@ export function createAuthCommand(): Command {
   auth
     .command('logout')
     .description('Logout from all workspaces')
-    .action(async () => {
+    .option('--keep-browser-session', 'Leave the login-auto browser profile signed in')
+    .action(async (options) => {
       try {
         await clearAllWorkspaces();
+
+        // The browser profile is a credential store in its own right: while it
+        // exists, `login-auto` re-mints valid tokens with no interaction. A
+        // logout that left it behind would report a logout it did not perform.
+        if (options.keepBrowserSession) {
+          warning('Browser session kept — "auth login-auto" can still sign in without prompting.');
+        } else {
+          await clearBrowserProfile();
+        }
+
         success('Logged out from all workspaces');
       } catch (err: any) {
         error('Failed to logout', err.message);

@@ -163,6 +163,16 @@ async function readDevToolsPort(profileDir: string): Promise<number | null> {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Escape a string for use in a POSIX extended regular expression (ERE).
+ *
+ * `pkill -f` treats its pattern as an ERE, so a custom SLACKCLI_BROWSER_PROFILE
+ * containing `.`, `+`, etc. would otherwise widen the match.
+ */
+export function escapeEre(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Kill helper processes still bound to this profile.
  *
  * Every Chrome helper carries `--user-data-dir=<profileDir>` on its command
@@ -177,7 +187,9 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export function sweepProfileHelpers(profileDir: string): void {
   if (process.platform === 'win32') return;
   try {
-    spawnSync('pkill', ['-9', '-f', `user-data-dir=${profileDir}`], { stdio: 'ignore' });
+    spawnSync('pkill', ['-9', '-f', `user-data-dir=${escapeEre(profileDir)}`], {
+      stdio: 'ignore',
+    });
   } catch {
     // Best effort; the browser's own shutdown is the primary path.
   }

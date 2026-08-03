@@ -88,8 +88,12 @@ export function createAuthCommand(): Command {
     .option('--headless', 'Run without a visible window (only works if already signed in)')
     .option('--timeout <seconds>', 'How long to wait for sign-in', '300')
     .action(async (options) => {
-      const timeoutSeconds = Number.parseInt(options.timeout, 10);
-      if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+      const timeoutSeconds = Number(options.timeout);
+      if (
+        !Number.isFinite(timeoutSeconds) ||
+        !Number.isInteger(timeoutSeconds) ||
+        timeoutSeconds <= 0
+      ) {
         error('--timeout must be a positive number of seconds');
         process.exit(1);
       }

@@ -6,6 +6,7 @@ import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import {
   findBrowser,
   defaultProfileDir,
+  escapeEre,
   isSafeStartUrl,
   launchBrowser,
   clearBrowserProfile,
@@ -147,6 +148,20 @@ describe('isSafeStartUrl (launcher gate)', () => {
 
   it('accepts an https URL', () => {
     expect(isSafeStartUrl('https://app.slack.com/client')).toBe(true);
+  });
+});
+
+describe('escapeEre', () => {
+  it('escapes regex metacharacters so pkill -f matches literally', () => {
+    expect(escapeEre('/tmp/foo.bar+baz(qux)')).toBe(
+      '/tmp/foo\\.bar\\+baz\\(qux\\)'
+    );
+  });
+
+  it('leaves a plain path unchanged', () => {
+    expect(escapeEre('/home/user/slackcli-profile')).toBe(
+      '/home/user/slackcli-profile'
+    );
   });
 });
 

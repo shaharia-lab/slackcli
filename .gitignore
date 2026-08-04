@@ -53,3 +53,7 @@ docs/internal/
 secrets/
 credentials/
 *.secret
+
+# Nix
+result
+result-*

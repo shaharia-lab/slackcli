@@ -136,4 +136,29 @@ describe('parseMrkdwn', () => {
       }],
     }]);
   });
+
+  it('does not pair underscores across two unrelated URLs', () => {
+    const text =
+      'https://example.com/a/merge_requests/1 and https://example.com/b/merge_requests/2';
+    expect(elements(text)).toEqual([{ type: 'text', text }]);
+  });
+
+  it('does not treat an underscore inside a single identifier as emphasis', () => {
+    expect(elements('see file_name.txt for details')).toEqual([
+      { type: 'text', text: 'see file_name.txt for details' },
+    ]);
+  });
+
+  it('still parses _italic_ when a later word also contains an underscore', () => {
+    expect(elements('_this_ is about file_name.txt')).toEqual([
+      { type: 'text', text: 'this', style: { italic: true } },
+      { type: 'text', text: ' is about file_name.txt' },
+    ]);
+  });
+
+  it('does not open emphasis on a marker directly after a word character', () => {
+    expect(elements('snake_case_name stays literal')).toEqual([
+      { type: 'text', text: 'snake_case_name stays literal' },
+    ]);
+  });
 });

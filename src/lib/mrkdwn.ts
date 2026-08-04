@@ -32,6 +32,10 @@ const MARKERS: [string, keyof RichTextStyle][] = [
   ['~', 'strike'],
 ];
 
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && /[A-Za-z0-9]/.test(ch);
+}
+
 function parseInline(text: string): RichTextElement[] {
   const elements: RichTextElement[] = [];
 
@@ -42,8 +46,26 @@ function parseInline(text: string): RichTextElement[] {
     for (const [marker, styleKey] of MARKERS) {
       if (text[i] !== marker) continue;
 
-      // Look for the closing marker
-      const end = text.indexOf(marker, i + 1);
+      // A marker immediately preceded by a word character (the "_" in "merge_requests")
+      // never opens a span. Without this, the underscore in one URL or identifier pairs
+      // with the underscore in a completely unrelated one later in the message, and
+      // everything between the two gets consumed as styled text.
+      if (isWordChar(text[i - 1])) continue;
+
+      // Look for a closing marker that also isn't mid-word, skipping past any candidate
+      // that fails that check (e.g. the "_" inside "file_name") instead of stopping at
+      // the first occurrence.
+      let searchFrom = i + 1;
+      let end = -1;
+      while (searchFrom < text.length) {
+        const candidate = text.indexOf(marker, searchFrom);
+        if (candidate === -1) break;
+        if (!isWordChar(text[candidate + 1])) {
+          end = candidate;
+          break;
+        }
+        searchFrom = candidate + 1;
+      }
       if (end === -1) continue;
 
       const inner = text.substring(i + 1, end);

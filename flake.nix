@@ -24,11 +24,9 @@
       ...
     }:
     let
-      inherit (nixpkgs) lib;
-      packageJson = lib.importJSON ./package.json;
       eachSystem =
         build:
-        lib.genAttrs (import systems) (
+        nixpkgs.lib.genAttrs (import systems) (
           system:
           build (
             import nixpkgs {
@@ -40,38 +38,11 @@
     in
     {
       packages = eachSystem (pkgs: {
-        default = pkgs.stdenv.mkDerivation {
-          pname = packageJson.name;
-          inherit (packageJson) version;
-
-          src = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./bun.lock
-              ./package.json
-              ./tsconfig.json
-              ./scripts
-              ./src
-            ];
-          };
-
-          nativeBuildInputs = [ pkgs.bun2nix.hook ];
-          bunDeps = pkgs.bun2nix.fetchBunDeps { bunNix = ./bun.nix; };
-
-          buildPhase = "bun run build";
-          installPhase = "install -Dm755 dist/${packageJson.name} $out/bin/${packageJson.name}";
-          dontFixup = true;
-        };
+        default = pkgs.callPackage ./nix/package.nix { };
       });
 
       devShells = eachSystem (pkgs: {
-        default = pkgs.mkShell {
-          packages = [
-            pkgs.bun
-            pkgs.bun2nix
-            pkgs.pre-commit
-          ];
-        };
+        default = pkgs.callPackage ./nix/dev.nix { };
       });
     };
 }

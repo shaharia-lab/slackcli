@@ -87,6 +87,28 @@ Include documentation updates in the same pull request as the code changes.
 
 Write clear, descriptive commit messages. Use the imperative mood (e.g., "Add pagination to list endpoints" not "Added pagination").
 
+### Signed Commits (required)
+
+`main` is protected by a ruleset that requires **every commit to be signed and verified**, with no bypass actors. A pull request containing even one unsigned commit cannot be merged by anyone, including maintainers — so please configure signing before you start.
+
+```bash
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+Then add the **same public key** to your GitHub account as a *Signing Key* (Settings → SSH and GPG keys → New SSH key → Key type: **Signing Key**). An authentication key alone will not make commits show as Verified. See [Telling Git about your signing key](https://docs.github.com/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key).
+
+If you already pushed unsigned commits, re-sign them in place:
+
+```bash
+git fetch origin main
+git rebase --exec 'git commit --amend --no-edit -S' origin/main
+git push --force-with-lease
+```
+
+The `Signed Commits` workflow posts (and keeps updated) a comment on any pull request with unverified commits, so you will hear about this on your first push rather than at merge time.
+
 ## For AI Agent Contributors
 
 AI-generated contributions are welcome and go through the same process as human contributions:

@@ -16,6 +16,10 @@ name: Signed Commits
 
 on:
   pull_request_target:
+    # Scoped to the protected branches, matching ci.yml and test.yml. The
+    # comment asserts that the base branch requires signed commits, so it must
+    # not fire for a base branch where that is untrue.
+    branches: [ main, master ]
     types: [opened, synchronize, reopened]
 
 # Least-privilege default token for every job in this workflow.
@@ -142,14 +146,16 @@ jobs:
 
             const body = unsigned.length > 0 ? warning : resolved;
 
+            // GitHub may hand comment bodies back with CRLF line endings, so a
+            // raw === would report "changed" on every push and re-edit an
+            // identical comment forever.
+            const same = (a, b) => a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n');
+
             if (unsigned.length === 0 && !existing) {
               // Nothing to say and nothing stale to clean up.
               core.info('All commits verified; no existing comment to update.');
-              return;
-            }
-
-            if (existing) {
-              if (existing.body === body) {
+            } else if (existing) {
+              if (same(existing.body, body)) {
                 core.info('Existing comment is already up to date.');
               } else {
                 await github.rest.issues.updateComment({

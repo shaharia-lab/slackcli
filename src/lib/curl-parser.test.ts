@@ -47,7 +47,8 @@ const CURL_CHROME_151_URL_FLAG = `curl --url 'https://chrometeam.slack.com/api/c
   -H 'origin: https://app.slack.com' \\
   --data-raw $'------WebKitFormBoundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-chrome151-test\\r\\n------WebKitFormBoundary--\\r\\n'`;
 
-// --url with an = separator, and an enterprise domain
+// curl itself rejects --url=value, but hand-edited commands use it — accept it defensively.
+// Enterprise domain, double-quoted URL.
 const CURL_URL_FLAG_EQUALS = `curl --url="https://chromeorg.enterprise.slack.com/api/users.list" \\
   -b 'd=xoxd-url-equals-token' \\
   --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-url-equals-test\\r\\n------Boundary--\\r\\n'`;
@@ -83,10 +84,16 @@ describe('parseCurlCommand', () => {
       expect(result.workspaceUrl).toBe('https://chrometeam.slack.com');
     });
 
-    it('should extract workspace from --url=value format', () => {
+    it('should extract workspace from the --url=value spelling', () => {
       const result = parseCurlCommand(CURL_URL_FLAG_EQUALS);
       expect(result.workspaceName).toBe('chromeorg');
       expect(result.workspaceUrl).toBe('https://chromeorg.enterprise.slack.com');
+    });
+
+    it('should prefer the --url target over a Slack URL in an earlier header', () => {
+      const curlWithDecoyHeader = `curl -H 'referer: https://decoyteam.slack.com/' --url 'https://realteam.slack.com/api/test' -b 'd=xoxd-decoy-test' --data-raw '{"token":"xoxc-decoy-test"}'`;
+      const result = parseCurlCommand(curlWithDecoyHeader);
+      expect(result.workspaceName).toBe('realteam');
     });
 
     it('should throw CurlParseError for missing workspace URL', () => {

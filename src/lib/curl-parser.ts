@@ -29,7 +29,11 @@ export function extractSlackWorkspaceName(url: string): string {
  */
 export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   // Extract workspace URL — domain can be myorg.slack.com or myorg.enterprise.slack.com
-  const urlMatch = curlInput.match(/curl\s+'?(https?:\/\/([\w.-]+)\.slack\.com[^'"\s]*)/);
+  // The URL is either positional (curl 'https://...') or behind the --url flag
+  // (curl --url 'https://...'), which Chrome 151+ DevTools emits for "Copy as cURL".
+  const urlMatch = curlInput.match(
+    /(?:curl\s+|--url(?:\s+|=))['"]?(https?:\/\/([\w.-]+)\.slack\.com[^'"\s]*)/
+  );
   if (!urlMatch) {
     throw new CurlParseError('workspace', 'Could not find Slack workspace URL in cURL command');
   }

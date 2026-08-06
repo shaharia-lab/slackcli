@@ -236,12 +236,6 @@ export async function getWorkspace(identifier?: string): Promise<WorkspaceConfig
   return resolveWorkspace(data, identifier)?.config ?? null;
 }
 
-// Get all workspaces
-export async function getAllWorkspaces(): Promise<WorkspaceConfig[]> {
-  const data = await loadWorkspaces();
-  return Object.values(data.workspaces);
-}
-
 // Get all workspaces paired with their profile keys.
 export async function getAllWorkspaceEntries(): Promise<ResolvedWorkspace[]> {
   const data = await loadWorkspaces();

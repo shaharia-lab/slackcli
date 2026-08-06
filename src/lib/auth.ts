@@ -2,6 +2,14 @@ import { SlackClient } from './slack-client.ts';
 import { addWorkspace, getWorkspace } from './workspaces.ts';
 import type { StandardAuthConfig, BrowserAuthConfig, WorkspaceConfig } from '../types/index.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
+import {
+  captureSlackTokens,
+  openBrowserSession,
+  SLACK_CLIENT_URL,
+  isSlackWorkspaceUrl,
+  type CaptureFailure,
+} from './browser-auth.ts';
+import type { BrowserSessionFailure } from './browser-auth.ts';
 
 // Authenticate with standard token
 export async function authenticateStandard(
@@ -77,6 +85,108 @@ export async function authenticateBrowser(
   } catch (error: any) {
     throw new Error(`Authentication failed: ${error.message}`);
   }
+}
+
+export type AutoLoginFailure = BrowserSessionFailure | CaptureFailure;
+
+export interface AutoLoginResult {
+  saved: WorkspaceConfig[];
+  failed: Array<{ workspaceUrl: string; error: string }>;
+}
+
+export interface AutoLoginOptions {
+  headless?: boolean;
+  workspaceUrl?: string;
+  timeoutMs?: number;
+  onProgress?: (line: string) => void;
+}
+
+/** Thrown when the browser capture never produced tokens. Carries the reason
+ *  so the command layer can print guidance specific to what went wrong. */
+export class AutoLoginError extends Error {
+  public reason: AutoLoginFailure;
+
+  constructor(reason: AutoLoginFailure, message: string) {
+    super(message);
+    this.name = 'AutoLoginError';
+    this.reason = reason;
+  }
+}
+
+/**
+ * Log in by capturing tokens from a browser the user signs into.
+ *
+ * Verification and persistence deliberately route through
+ * `authenticateBrowser` — the same path `login-browser` and `parse-curl` use
+ * — so a workspace enrolled this way is indistinguishable from one added by
+ * hand, and there is exactly one place that decides a token is valid.
+ *
+ * Per-workspace failures are collected rather than thrown: with several
+ * workspaces captured at once, one stale token must not discard the rest.
+ */
+export async function authenticateAuto(
+  options: AutoLoginOptions = {}
+): Promise<AutoLoginResult> {
+  const onProgress = options.onProgress ?? (() => {});
+
+  const opened = await openBrowserSession({
+    headless: options.headless ?? false,
+    startUrl: options.workspaceUrl ?? SLACK_CLIENT_URL,
+  });
+  if (!opened.ok) {
+    throw new AutoLoginError(opened.reason, opened.message);
+  }
+
+  let capture;
+  try {
+    capture = await captureSlackTokens(opened.session, {
+      headless: options.headless ?? false,
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.workspaceUrl ? { startUrl: options.workspaceUrl } : {}),
+      onProgress,
+    });
+  } finally {
+    // The browser holds a live session; close it whether or not we got what
+    // we came for.
+    await opened.stop();
+  }
+
+  if (!capture.ok) {
+    throw new AutoLoginError(capture.reason, capture.message);
+  }
+
+  const saved: WorkspaceConfig[] = [];
+  const failed: AutoLoginResult['failed'] = [];
+
+  for (const workspace of capture.workspaces) {
+    // Last gate before the session cookie is sent anywhere. The extractors
+    // already filter, but this is the line that decides where a live
+    // credential travels, so it does not delegate that check.
+    if (!isSlackWorkspaceUrl(workspace.workspaceUrl)) {
+      failed.push({
+        workspaceUrl: workspace.workspaceUrl,
+        error: 'Refused: not an https slack.com workspace URL',
+      });
+      continue;
+    }
+
+    try {
+      const config = await authenticateBrowser(
+        capture.xoxd,
+        workspace.xoxc,
+        workspace.workspaceUrl,
+        workspace.teamName
+      );
+      saved.push(config);
+    } catch (err: any) {
+      failed.push({
+        workspaceUrl: workspace.workspaceUrl,
+        error: err?.message ?? 'Unknown error',
+      });
+    }
+  }
+
+  return { saved, failed };
 }
 
 // Get authenticated client for workspace

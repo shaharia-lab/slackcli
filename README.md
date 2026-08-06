@@ -13,6 +13,7 @@ A fast, developer-friendly command-line interface tool for interacting with Slac
 ## Features
 
 - 🔐 **Dual Authentication Support**: Standard Slack tokens (xoxb/xoxp) or browser tokens (xoxd/xoxc)
+- 🪄 **Automatic Browser Login**: sign into Slack in a browser and the tokens are captured for you
 - 🎯 **Easy Token Extraction**: Automatically parse tokens from browser cURL commands
 - 🏢 **Multi-Workspace Management**: Manage multiple Slack workspaces with ease
 - 💬 **Conversation Management**: List channels, read messages, send messages
@@ -96,9 +97,39 @@ Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps) and obtai
 slackcli auth login --token=xoxb-YOUR-TOKEN --workspace-name="My Team"
 ```
 
-### 2. Browser Session Tokens (Quick Setup)
+### 2. Automatic Browser Login (Easiest)
 
-Extract tokens from your browser session. No Slack app creation required!
+Sign into Slack in a browser and let SlackCLI capture the tokens. No Slack app, no DevTools, no copy-paste.
+
+```bash
+slackcli auth login-auto
+```
+
+A browser window opens on Slack. Sign in as you normally would, and SlackCLI enrols **every workspace you are signed into** — one sign-in covers them all.
+
+| Option | Purpose |
+|---|---|
+| `--workspace-url <url>` | Open a specific workspace instead of the Slack home |
+| `--timeout <seconds>` | How long to wait for sign-in (default `300`) |
+| `--headless` | No visible window — only works once you are already signed in |
+| `SLACKCLI_BROWSER` | Path to a browser, if yours is not auto-detected |
+| `SLACKCLI_BROWSER_PROFILE` | Override the profile directory |
+
+**Requirements:** Chrome, Edge, Chromium, or Brave installed. Nothing is downloaded and no extra dependency is installed — SlackCLI drives the browser you already have.
+
+**Why you sign in again the first time.** SlackCLI runs the browser against its own profile in `~/.config/slackcli/browser-profile`, separate from your everyday browsing. It has to: since Chrome 136 the browser refuses remote debugging against the default profile, so your existing session cannot be reused. The profile persists, so **only the first run needs interaction** — after that the window opens and closes on its own.
+
+**Security notes.**
+
+- Token values are never printed.
+- **The browser profile is a credential store.** While it exists, `login-auto` can re-mint working tokens with no prompt. `slackcli auth logout` therefore deletes it along with `workspaces.json`; pass `--keep-browser-session` to keep it signed in.
+- Only `https://` URLs on a `slack.com` host are ever paired with your session cookie — a URL read from the browser that points anywhere else is refused.
+- While the browser is open it exposes a DevTools port on loopback that any local process could connect to. SlackCLI closes the browser as soon as capture finishes, and also on `Ctrl-C` or termination.
+- Credentials land in `~/.config/slackcli/workspaces.json` (mode `0600`); the profile directory is `0700` on macOS and Linux (Windows uses ACL defaults).
+
+### 3. Browser Session Tokens (Manual)
+
+Extract tokens from your browser session by hand. No Slack app creation required!
 
 ```bash
 # Step 1: Get extraction guide
@@ -122,7 +153,7 @@ slackcli auth login-browser \
    - `xoxd` token from Cookie header (d=xoxd-...)
    - `xoxc` token from request payload ("token":"xoxc-...")
 
-### 3. Easy Method: Parse cURL Command (Recommended for Browser Tokens)
+### 4. Parse cURL Command
 
 The easiest way to extract browser tokens is to copy a Slack API request as cURL and let SlackCLI parse it automatically!
 
@@ -151,6 +182,12 @@ This automatically extracts:
 ### Authentication Commands
 
 ```bash
+# Sign in via a browser; tokens are captured automatically
+slackcli auth login-auto
+
+# Refresh tokens later without any interaction (profile stays signed in)
+slackcli auth login-auto --headless
+
 # List all authenticated workspaces
 slackcli auth list
 
@@ -160,8 +197,11 @@ slackcli auth set-default T1234567
 # Remove a workspace
 slackcli auth remove T1234567
 
-# Logout from all workspaces
+# Logout from all workspaces (also clears the login-auto browser profile)
 slackcli auth logout
+
+# Logout but keep the browser signed in
+slackcli auth logout --keep-browser-session
 ```
 
 ### Conversation Commands

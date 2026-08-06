@@ -32,6 +32,27 @@ const MARKERS: [string, keyof RichTextStyle][] = [
   ['~', 'strike'],
 ];
 
+// Combining marks count as word characters so a decomposed "é" (e + U+0301)
+// behaves the same as its precomposed form.
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
+
+function isWordCodePoint(cp: number | undefined): boolean {
+  return cp !== undefined && WORD_CHAR.test(String.fromCodePoint(cp));
+}
+
+// Both helpers work on whole code points; indexing by UTF-16 unit would hand a
+// lone surrogate to the regex and misclassify every astral letter.
+function wordCharBefore(text: string, i: number): boolean {
+  if (i <= 0) return false;
+  const prev = text.charCodeAt(i - 1);
+  const isTrailSurrogate = prev >= 0xdc00 && prev <= 0xdfff;
+  return isWordCodePoint(text.codePointAt(isTrailSurrogate && i >= 2 ? i - 2 : i - 1));
+}
+
+function wordCharAfter(text: string, i: number): boolean {
+  return isWordCodePoint(text.codePointAt(i + 1));
+}
+
 function parseInline(text: string): RichTextElement[] {
   const elements: RichTextElement[] = [];
 
@@ -42,9 +63,19 @@ function parseInline(text: string): RichTextElement[] {
     for (const [marker, styleKey] of MARKERS) {
       if (text[i] !== marker) continue;
 
-      // Look for the closing marker
+      // Only "_" requires word boundaries; Slack applies *bold*, ~strike~ and `code`
+      // mid-word. Without this, the underscore in one URL or identifier pairs with the
+      // underscore in a completely unrelated one later in the message, and everything
+      // between the two gets consumed as italic.
+      const needsBoundary = marker === '_';
+      if (needsBoundary && wordCharBefore(text, i)) continue;
+
       const end = text.indexOf(marker, i + 1);
       if (end === -1) continue;
+      // A mid-word "_" (the one in "file_name") does not close a span. Leave the text
+      // literal rather than searching on for a later candidate, which would swallow
+      // everything in between.
+      if (needsBoundary && wordCharAfter(text, end)) continue;
 
       const inner = text.substring(i + 1, end);
       // Don't match empty content or content that starts/ends with space

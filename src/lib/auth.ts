@@ -11,11 +11,19 @@ import {
 } from './browser-auth.ts';
 import type { BrowserSessionFailure } from './browser-auth.ts';
 
+// Result of a successful login: the stored config plus the profile key it was
+// saved under (which may be user-chosen, the team_id, or auto-generated).
+export interface AuthResult {
+  config: WorkspaceConfig;
+  profileKey: string;
+}
+
 // Authenticate with standard token
 export async function authenticateStandard(
   token: string,
-  workspaceName: string
-): Promise<WorkspaceConfig> {
+  workspaceName: string,
+  profile?: string
+): Promise<AuthResult> {
   // Create a temporary config to test the token
   const tempConfig: StandardAuthConfig = {
     workspace_id: 'temp',
@@ -35,12 +43,13 @@ export async function authenticateStandard(
       ...tempConfig,
       workspace_id: authTest.team_id,
       workspace_name: workspaceName || authTest.team,
+      user_id: authTest.user_id,
     };
 
     // Save the workspace
-    await addWorkspace(config);
+    const profileKey = await addWorkspace(config, profile);
 
-    return config;
+    return { config, profileKey };
   } catch (error: any) {
     throw new Error(`Authentication failed: ${error.message}`);
   }
@@ -51,8 +60,9 @@ export async function authenticateBrowser(
   xoxdToken: string,
   xoxcToken: string,
   workspaceUrl: string,
-  workspaceName?: string
-): Promise<WorkspaceConfig> {
+  workspaceName?: string,
+  profile?: string
+): Promise<AuthResult> {
   // Extract workspace name from URL if not provided
   const defaultName = extractSlackWorkspaceName(workspaceUrl);
 
@@ -76,12 +86,13 @@ export async function authenticateBrowser(
       ...tempConfig,
       workspace_id: authTest.team_id,
       workspace_name: workspaceName || authTest.team,
+      user_id: authTest.user_id,
     };
 
     // Save the workspace
-    await addWorkspace(config);
+    const profileKey = await addWorkspace(config, profile);
 
-    return config;
+    return { config, profileKey };
   } catch (error: any) {
     throw new Error(`Authentication failed: ${error.message}`);
   }
@@ -171,7 +182,9 @@ export async function authenticateAuto(
     }
 
     try {
-      const config = await authenticateBrowser(
+      // login-auto enrols every captured workspace at once, so a single
+      // --profile can't map to it; these keep the default team_id keying.
+      const { config } = await authenticateBrowser(
         capture.xoxd,
         workspace.xoxc,
         workspace.workspaceUrl,

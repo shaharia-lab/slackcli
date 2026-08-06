@@ -38,12 +38,22 @@ export function formatTimestamp(ts: string): string {
 }
 
 // Format workspace info
-export function formatWorkspace(config: WorkspaceConfig, isDefault: boolean = false): string {
+export function formatWorkspace(
+  config: WorkspaceConfig,
+  isDefault: boolean = false,
+  profileKey?: string,
+): string {
   const defaultBadge = isDefault ? chalk.green('(default)') : '';
   const authType = config.auth_type === 'browser' ? '🌐 Browser' : '🔑 Standard';
 
+  // Only surface the profile line when it adds information beyond the ID (i.e. a
+  // named or auto-generated key), keeping single-identity output unchanged.
+  const profileLine = profileKey && profileKey !== config.workspace_id
+    ? `\n  Profile: ${chalk.cyan(profileKey)}`
+    : '';
+
   return `${chalk.bold(config.workspace_name)} ${defaultBadge}
-  ID: ${config.workspace_id}
+  ID: ${config.workspace_id}${profileLine}
   Auth: ${authType}`;
 }
 

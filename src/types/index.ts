@@ -8,6 +8,12 @@ export type ConversationType = 'public_channel' | 'private_channel' | 'mpim' | '
 export interface StandardAuthConfig {
   workspace_id: string;
   workspace_name: string;
+  // Unique, user-selected profile name for this record. Optional and additive:
+  // legacy records without it are keyed by workspace_id and keep working.
+  profile?: string;
+  // Authenticated user/bot id (from auth.test). Distinguishes a token refresh of
+  // the same identity from a genuinely new identity within the same team.
+  user_id?: string;
   auth_type: 'standard';
   token: string;
   token_type: TokenType;
@@ -17,6 +23,8 @@ export interface BrowserAuthConfig {
   workspace_id: string;
   workspace_name: string;
   workspace_url: string;
+  profile?: string;
+  user_id?: string;
   auth_type: 'browser';
   xoxd_token: string;
   xoxc_token: string;
@@ -138,6 +146,7 @@ export interface MessageDraftOptions {
 export interface AuthLoginOptions {
   token: string;
   workspaceName: string;
+  profile?: string;
 }
 
 export interface AuthLoginBrowserOptions {
@@ -145,6 +154,7 @@ export interface AuthLoginBrowserOptions {
   xoxc: string;
   workspaceUrl: string;
   workspaceName?: string;
+  profile?: string;
 }
 
 // Saved items

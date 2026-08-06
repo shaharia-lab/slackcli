@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { authenticateStandard, authenticateBrowser, authenticateAuto, AutoLoginError } from '../lib/auth.ts';
 import {
-  getAllWorkspaces,
+  getAllWorkspaceEntries,
   setDefaultWorkspace,
   removeWorkspace,
   clearAllWorkspaces,
@@ -26,18 +26,21 @@ export function createAuthCommand(): Command {
     .description('Login with standard Slack app token (xoxb-* or xoxp-*)')
     .requiredOption('--token <token>', 'Slack bot or user token')
     .requiredOption('--workspace-name <name>', 'Workspace name for identification')
+    .option('--profile <name>', 'Store under a named profile (keeps multiple identities for one workspace)')
     .action(async (options) => {
       const spinner = ora('Authenticating...').start();
 
       try {
-        const config = await authenticateStandard(
+        const { config, profileKey } = await authenticateStandard(
           options.token,
-          options.workspaceName
+          options.workspaceName,
+          options.profile
         );
 
         spinner.succeed('Authentication successful!');
         success(`Authenticated as workspace: ${config.workspace_name}`);
         info(`Workspace ID: ${config.workspace_id}`);
+        info(`Profile: ${profileKey}`);
         if (config.auth_type === 'standard') {
           info(`Token Type: ${config.token_type}`);
         }
@@ -56,20 +59,23 @@ export function createAuthCommand(): Command {
     .requiredOption('--xoxc <token>', 'Browser API token (xoxc-*)')
     .requiredOption('--workspace-url <url>', 'Workspace URL (e.g., https://myteam.slack.com)')
     .option('--workspace-name <name>', 'Optional workspace name for identification')
+    .option('--profile <name>', 'Store under a named profile (keeps multiple identities for one workspace)')
     .action(async (options) => {
       const spinner = ora('Authenticating...').start();
 
       try {
-        const config = await authenticateBrowser(
+        const { config, profileKey } = await authenticateBrowser(
           options.xoxd,
           options.xoxc,
           options.workspaceUrl,
-          options.workspaceName
+          options.workspaceName,
+          options.profile
         );
 
         spinner.succeed('Authentication successful!');
         success(`Authenticated as workspace: ${config.workspace_name}`);
         info(`Workspace ID: ${config.workspace_id}`);
+        info(`Profile: ${profileKey}`);
         if (config.auth_type === 'browser') {
           info(`Workspace URL: ${config.workspace_url}`);
         }
@@ -156,20 +162,20 @@ export function createAuthCommand(): Command {
     .description('List all authenticated workspaces')
     .action(async () => {
       try {
-        const workspaces = await getAllWorkspaces();
-        const defaultId = await getDefaultWorkspaceId();
+        const entries = await getAllWorkspaceEntries();
+        const defaultKey = await getDefaultWorkspaceId();
 
-        if (workspaces.length === 0) {
+        if (entries.length === 0) {
           info('No authenticated workspaces found.');
           info('Run "slackcli auth login" or "slackcli auth login-browser" to authenticate.');
           return;
         }
 
-        console.log(chalk.bold(`\n📋 Authenticated Workspaces (${workspaces.length}):\n`));
+        console.log(chalk.bold(`\n📋 Authenticated Workspaces (${entries.length}):\n`));
 
-        workspaces.forEach((ws, idx) => {
-          const isDefault = ws.workspace_id === defaultId;
-          console.log(`${idx + 1}. ${formatWorkspace(ws, isDefault)}\n`);
+        entries.forEach(({ key, config }, idx) => {
+          const isDefault = key === defaultKey;
+          console.log(`${idx + 1}. ${formatWorkspace(config, isDefault, key)}\n`);
         });
       } catch (err: any) {
         error('Failed to list workspaces', err.message);
@@ -181,11 +187,11 @@ export function createAuthCommand(): Command {
   auth
     .command('set-default')
     .description('Set default workspace')
-    .argument('<workspace-id>', 'Workspace ID to set as default')
-    .action(async (workspaceId) => {
+    .argument('<workspace>', 'Profile name, workspace ID, or workspace name')
+    .action(async (identifier) => {
       try {
-        await setDefaultWorkspace(workspaceId);
-        success(`Set ${workspaceId} as default workspace`);
+        await setDefaultWorkspace(identifier);
+        success(`Set ${identifier} as default workspace`);
       } catch (err: any) {
         error('Failed to set default workspace', err.message);
         process.exit(1);
@@ -196,11 +202,11 @@ export function createAuthCommand(): Command {
   auth
     .command('remove')
     .description('Remove a workspace')
-    .argument('<workspace-id>', 'Workspace ID to remove')
-    .action(async (workspaceId) => {
+    .argument('<workspace>', 'Profile name, workspace ID, or workspace name')
+    .action(async (identifier) => {
       try {
-        await removeWorkspace(workspaceId);
-        success(`Removed workspace ${workspaceId}`);
+        await removeWorkspace(identifier);
+        success(`Removed workspace ${identifier}`);
       } catch (err: any) {
         error('Failed to remove workspace', err.message);
         process.exit(1);
@@ -349,10 +355,11 @@ export function createAuthCommand(): Command {
         if (options.login) {
           const spinner = ora('Authenticating with extracted tokens...').start();
           try {
-            const config = await authenticateBrowser(parsed.xoxd, parsed.xoxc, parsed.workspaceUrl, parsed.workspaceName);
+            const { config, profileKey } = await authenticateBrowser(parsed.xoxd, parsed.xoxc, parsed.workspaceUrl, parsed.workspaceName);
             spinner.succeed('Authentication successful!');
             success(`Authenticated as workspace: ${config.workspace_name}`);
             info(`Workspace ID: ${config.workspace_id}`);
+            info(`Profile: ${profileKey}`);
           } catch (err: any) {
             spinner.fail('Authentication failed');
             error(err.message);

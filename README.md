@@ -204,6 +204,46 @@ slackcli auth logout
 slackcli auth logout --keep-browser-session
 ```
 
+### Multiple Profiles for One Workspace
+
+By default each Slack workspace is stored once. To keep **more than one identity
+for the same workspace** — for example a browser-authenticated user for search
+and drafts alongside a bot token for unattended jobs — give each login a
+`--profile` name:
+
+```bash
+# A user identity (browser auth)
+slackcli auth login-browser \
+  --xoxd=xoxd-... --xoxc=xoxc-... \
+  --workspace-url=https://example.slack.com \
+  --profile=rafael
+
+# A bot identity in the same workspace
+slackcli auth login \
+  --token=xoxb-... \
+  --workspace-name=example \
+  --profile=automation-bot
+```
+
+Select a profile anywhere `--workspace` is accepted:
+
+```bash
+slackcli search messages "after:2026-07-01" --workspace=rafael --json
+slackcli messages send --recipient-id=C123 --message="Done" --workspace=automation-bot
+```
+
+Notes:
+
+- **Backward compatible.** Existing `workspaces.json` files and single-identity
+  setups keep working unchanged — `--profile` is optional.
+- Re-authenticating the **same** identity refreshes its stored tokens in place.
+- Logging in a **second** identity for a workspace **without** `--profile` is
+  saved under an auto-generated key (e.g. `T123-2`) instead of overwriting the
+  first. The chosen key is printed after login.
+- `auth list`, `auth set-default`, and `auth remove` accept a profile name,
+  workspace ID, or workspace name. If a bare workspace ID/name matches more than
+  one profile, SlackCLI asks you to pick a profile instead of guessing.
+
 ### Conversation Commands
 
 ```bash

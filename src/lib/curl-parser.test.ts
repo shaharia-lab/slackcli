@@ -40,6 +40,19 @@ const CURL_JSON_BODY = `curl 'https://jsonworkspace.slack.com/api/some.method' \
   -b 'd=xoxd-json-test-token' \\
   --data-raw '{"token":"xoxc-json-test-111-222","as_admin":false}'`;
 
+// Chrome 151+ "Copy as cURL" prefixes the target URL with the --url flag
+const CURL_CHROME_151_URL_FLAG = `curl --url 'https://chrometeam.slack.com/api/conversations.view?_x_id=noversion-1770041775.173' \\
+  -H 'accept: */*' \\
+  -b 'ssb_instance_id=53f4c0a9-f40a-4a88-9324-d24baa3bff28; d=xoxd-chrome151-test-token; lc=1770041685' \\
+  -H 'origin: https://app.slack.com' \\
+  --data-raw $'------WebKitFormBoundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-chrome151-test\\r\\n------WebKitFormBoundary--\\r\\n'`;
+
+// curl itself rejects --url=value, but hand-edited commands use it — accept it defensively.
+// Enterprise domain, double-quoted URL.
+const CURL_URL_FLAG_EQUALS = `curl --url="https://chromeorg.enterprise.slack.com/api/users.list" \\
+  -b 'd=xoxd-url-equals-token' \\
+  --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-url-equals-test\\r\\n------Boundary--\\r\\n'`;
+
 describe('parseCurlCommand', () => {
   describe('workspace extraction', () => {
     it('should extract workspace name and URL from standard curl command', () => {
@@ -63,6 +76,24 @@ describe('parseCurlCommand', () => {
     it('should handle single-line curl commands', () => {
       const result = parseCurlCommand(CURL_SINGLE_LINE);
       expect(result.workspaceName).toBe('singleline');
+    });
+
+    it('should extract workspace from Chrome 151+ --url flag format', () => {
+      const result = parseCurlCommand(CURL_CHROME_151_URL_FLAG);
+      expect(result.workspaceName).toBe('chrometeam');
+      expect(result.workspaceUrl).toBe('https://chrometeam.slack.com');
+    });
+
+    it('should extract workspace from the --url=value spelling', () => {
+      const result = parseCurlCommand(CURL_URL_FLAG_EQUALS);
+      expect(result.workspaceName).toBe('chromeorg');
+      expect(result.workspaceUrl).toBe('https://chromeorg.enterprise.slack.com');
+    });
+
+    it('should prefer the --url target over a Slack URL in an earlier header', () => {
+      const curlWithDecoyHeader = `curl -H 'referer: https://decoyteam.slack.com/' --url 'https://realteam.slack.com/api/test' -b 'd=xoxd-decoy-test' --data-raw '{"token":"xoxc-decoy-test"}'`;
+      const result = parseCurlCommand(curlWithDecoyHeader);
+      expect(result.workspaceName).toBe('realteam');
     });
 
     it('should throw CurlParseError for missing workspace URL', () => {
@@ -163,6 +194,8 @@ describe('parseCurlCommand', () => {
         CURL_WITH_COOKIE_FLAG,
         CURL_SINGLE_LINE,
         CURL_ENTERPRISE,
+        CURL_CHROME_151_URL_FLAG,
+        CURL_URL_FLAG_EQUALS,
       ];
 
       for (const curl of formats) {

@@ -1,0 +1,186 @@
+name: Signed Commits
+
+# Advisory check: tells contributors as early as possible when a PR contains
+# commits GitHub cannot verify. `main` is protected by a ruleset that requires
+# signed commits and has no bypass actors, so an unsigned commit makes the PR
+# unmergeable — for anyone, including admins. Surfacing it on the first push
+# means the fix (a rebase) is free, instead of invalidating an approval later.
+#
+# This job never fails the PR. The ruleset already blocks the merge; a red
+# check would add noise without adding protection.
+#
+# `pull_request_target` (not `pull_request`) is deliberate: fork PRs are the
+# case that most needs this comment, and `pull_request` hands forks a
+# read-only token. This is safe here because the job never checks out or
+# executes PR code — it only reads the GitHub API.
+
+on:
+  pull_request_target:
+    # Scoped to the protected branches, matching ci.yml and test.yml. The
+    # comment asserts that the base branch requires signed commits, so it must
+    # not fire for a base branch where that is untrue.
+    branches: [ main, master ]
+    types: [opened, synchronize, reopened]
+
+# Least-privilege default token for every job in this workflow.
+permissions:
+  contents: read
+  pull-requests: write
+
+# One run per PR; a rapid series of pushes should not race on the comment.
+concurrency:
+  group: signed-commits-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-signatures:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check commit signatures and report
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const MARKER = '<!-- signed-commits-check -->';
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const baseRef = pr.base.ref;
+
+            // The PR commits endpoint is capped at 250 commits by GitHub.
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const truncated = commits.length >= 250;
+
+            const unsigned = commits.filter((c) => !c.commit?.verification?.verified);
+            core.info(`${commits.length - unsigned.length}/${commits.length} commits verified`);
+
+            // Only ever adopt a comment this workflow could have written. A
+            // human can paste the marker into their own comment, and the
+            // default token cannot edit someone else's — that would hard-fail
+            // the job on a PR that may be perfectly fine.
+            const existing = (
+              await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: pr.number,
+                per_page: 100,
+              })
+            ).find((c) => c.user?.type === 'Bot' && c.body?.includes(MARKER));
+
+            // Commit subjects are contributor-controlled and land inside a
+            // markdown table, so neutralise anything that could break out of
+            // the cell or inject markup.
+            const cell = (text) => {
+              const raw = text.replace(/\r/g, '').trim();
+              const clipped = raw.length > 72 ? `${raw.slice(0, 71)}…` : raw;
+              return clipped.replace(/[|`<>\\]/g, '\\$&') || '(no subject)';
+            };
+
+            const list = unsigned
+              .map((c) => {
+                const subject = cell(c.commit.message.split('\n')[0]);
+                const reason = c.commit.verification?.reason ?? 'unknown';
+                return `| \`${c.sha.slice(0, 7)}\` | ${subject} | \`${reason}\` |`;
+              })
+              .join('\n');
+
+            const warning = [
+              MARKER,
+              '## :lock: Unsigned commits detected',
+              '',
+              `${unsigned.length} of ${commits.length} commit(s) in this pull request are not signed.`,
+              '',
+              '`' + baseRef + '` is protected by a ruleset that requires signed commits and has',
+              'no bypass actors, so this PR **cannot be merged** — by anyone, including',
+              'maintainers — until every commit is verified.',
+              '',
+              '| Commit | Subject | Reason |',
+              '| --- | --- | --- |',
+              list,
+              '',
+              ...(truncated
+                ? ['> :warning: This PR has 250+ commits; the list above may be incomplete.', '']
+                : []),
+              '### How to fix',
+              '',
+              'If commit signing is already configured, re-sign the existing commits:',
+              '',
+              '```bash',
+              `git fetch origin ${baseRef}`,
+              `git rebase --exec 'git commit --amend --no-edit -S' origin/${baseRef}`,
+              'git push --force-with-lease',
+              '```',
+              '',
+              '<details>',
+              '<summary>Setting up signing for the first time (SSH)</summary>',
+              '',
+              '```bash',
+              'git config --global gpg.format ssh',
+              'git config --global user.signingkey ~/.ssh/id_ed25519.pub',
+              'git config --global commit.gpgsign true',
+              '```',
+              '',
+              'Then add the **same public key** to your GitHub account as a *Signing Key*',
+              '(Settings → SSH and GPG keys → New SSH key → Key type: **Signing Key**).',
+              'An authentication key alone will not make commits show as Verified.',
+              '',
+              'Docs: [Telling Git about your signing key]' +
+                '(https://docs.github.com/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key)',
+              '',
+              '</details>',
+              '',
+              '---',
+              '<sub>This comment updates itself on every push. Nothing else is required from you.</sub>',
+            ].join('\n');
+
+            const resolved = [
+              MARKER,
+              ':white_check_mark: **All commits are signed and verified.**',
+              '',
+              `<sub>${commits.length} commit(s) checked.</sub>`,
+            ].join('\n');
+
+            const body = unsigned.length > 0 ? warning : resolved;
+
+            // GitHub may hand comment bodies back with CRLF line endings, so a
+            // raw === would report "changed" on every push and re-edit an
+            // identical comment forever.
+            const same = (a, b) => a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n');
+
+            if (unsigned.length === 0 && !existing) {
+              // Nothing to say and nothing stale to clean up.
+              core.info('All commits verified; no existing comment to update.');
+            } else if (existing) {
+              if (same(existing.body, body)) {
+                core.info('Existing comment is already up to date.');
+              } else {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existing.id,
+                  body,
+                });
+                core.info(`Updated comment ${existing.id}.`);
+              }
+            } else {
+              const { data } = await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body,
+              });
+              core.info(`Created comment ${data.id}.`);
+            }
+
+            await core.summary
+              .addHeading('Signed commits', 2)
+              .addRaw(
+                unsigned.length > 0
+                  ? `:lock: ${unsigned.length} of ${commits.length} commit(s) unsigned.`
+                  : `:white_check_mark: All ${commits.length} commit(s) verified.`,
+              )
+              .write();

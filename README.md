@@ -244,6 +244,51 @@ Notes:
   workspace ID, or workspace name. If a bare workspace ID/name matches more than
   one profile, SlackCLI asks you to pick a profile instead of guessing.
 
+### Slack Links and Timestamps
+
+Anywhere the CLI takes a channel, user, or canvas ID, you can paste the Slack URL
+instead — the form "Copy link" actually gives you:
+
+```bash
+# These are equivalent
+slackcli conversations read C1234567890
+slackcli conversations read https://myteam.slack.com/archives/C1234567890
+```
+
+| Pasted value | Understood as |
+|---|---|
+| `https://myteam.slack.com/archives/C1234567890` | channel `C1234567890` |
+| `https://myteam.slack.com/archives/D0987654321` | DM `D0987654321` |
+| `https://myteam.slack.com/team/U9876543210` | user `U9876543210` |
+| `https://myteam.slack.com/docs/T012AB/F1234567890` | canvas `F1234567890` |
+
+Timestamps work the same way — the permalink form is accepted wherever the dotted
+API form is:
+
+| Pasted value | Understood as |
+|---|---|
+| `p1234567890123456` | `1234567890.123456` |
+| `1234567890123456` | `1234567890.123456` |
+| `1234567890.123456` | unchanged |
+
+For commands that target one specific message, `--permalink` replaces the channel
+and timestamp in one go:
+
+```bash
+# Instead of this
+slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=heart
+
+# Just paste the link
+slackcli messages react --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456" --emoji=heart
+```
+
+`--permalink` is available on `messages send`, `messages react`, `messages edit`,
+`messages draft`, `conversations read`, and `conversations get`. Pass either
+`--permalink` or the explicit inputs, not both. When the link points at a threaded
+reply, `--thread-ts` consumers correctly use the *parent* message.
+
+Bare IDs and dotted timestamps keep working exactly as before.
+
 ### Conversation Commands
 
 ```bash
@@ -267,6 +312,12 @@ slackcli conversations read C1234567890 --limit=50
 
 # Get JSON output (includes ts and thread_ts for replies)
 slackcli conversations read C1234567890 --json
+
+# Read the thread a message link points at
+slackcli conversations read --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456"
+
+# Get one specific message from its link
+slackcli conversations get --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456"
 ```
 
 ### Message Commands
@@ -297,6 +348,13 @@ slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 -
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=heart
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=fire
 slackcli messages react --channel-id=C1234567890 --timestamp=1234567890.123456 --emoji=eyes
+
+# Target a message by its permalink instead of channel + timestamp
+slackcli messages react --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456" --emoji=+1
+slackcli messages edit --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456" --message="Corrected message"
+
+# Reply in the thread a link points at
+slackcli messages send --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456" --message="Great idea!"
 ```
 
 File uploads require Slack workspace permissions that allow file upload, such as `files:write` for standard Slack app tokens.
@@ -330,6 +388,9 @@ slackcli canvas read F1234567890 --raw
 
 # Read the canvas associated with a channel
 slackcli canvas read --channel=C1234567890
+
+# Read a canvas from its Slack URL
+slackcli canvas read https://myteam.slack.com/docs/T012AB/F1234567890
 ```
 
 ### Update Commands

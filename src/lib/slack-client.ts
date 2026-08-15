@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
+import { extractSlackWorkspaceName } from './curl-parser.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
@@ -464,5 +465,13 @@ export class SlackClient {
   // Check auth type
   get authType(): string {
     return this.config.auth_type;
+  }
+
+  // Workspace subdomain, used to spot links pasted from a different workspace.
+  // Only browser auth stores a workspace URL; standard auth has no reliable
+  // subdomain (its workspace_name is chosen by the user at login).
+  get workspaceHost(): string | undefined {
+    if (this.config.auth_type !== 'browser') return undefined;
+    return extractSlackWorkspaceName(this.config.workspace_url);
   }
 }

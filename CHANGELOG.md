@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Slack URLs accepted wherever an ID is taken**: paste `https://team.slack.com/archives/C123…`, `/team/U123…`, or `/docs/T…/F…` in place of a channel, user, or canvas ID (#107)
+- **Permalink-style timestamps accepted wherever a timestamp is taken**: `p1234567890123456` and `1234567890123456` normalize to `1234567890.123456` (#107)
+- **`--permalink <url>`** on `messages send`, `messages react`, `messages edit`, `messages draft`, `conversations read`, and `conversations get` — supplies channel and timestamp from a single message link, resolving a threaded reply to its parent for `--thread-ts` (#107)
+- Clear errors instead of a misleading `message_not_found`: wrong-type IDs (a user URL passed to `--channel-id`), `--permalink` combined with explicit inputs, and a warning when a pasted link belongs to a different workspace than the authenticated one (browser auth) (#107)
+
 ## [0.8.0] - 2026-08-06
 
 ### Added

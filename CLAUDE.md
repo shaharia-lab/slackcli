@@ -124,6 +124,7 @@ Two auth types coexist throughout the codebase:
 | `src/lib/formatter.ts` | Chalk-colored terminal output helpers |
 | `src/lib/mrkdwn.ts` | Slack mrkdwn to rich_text block parser for draft messages |
 | `src/lib/curl-parser.ts` | cURL command parsing for token extraction |
+| `src/lib/slack-url-parser.ts` | Slack URL / permalink / timestamp normalization for CLI inputs |
 | `src/lib/clipboard.ts` | Cross-platform clipboard (`pbpaste`/PowerShell/xclip/xsel) |
 | `src/lib/interactive-input.ts` | Multi-line terminal input (double-Enter or Ctrl+D to submit) |
 | `src/lib/saved.ts` | Enriches saved-for-later items (resolves messages & channels) |

@@ -1,12 +1,21 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatCanvasList, formatCanvasContent, writeJson } from '../lib/formatter.ts';
+import { error, formatCanvasList, formatCanvasContent, warning, writeJson } from '../lib/formatter.ts';
 import { canvasHtmlToMarkdown, isAuthPage } from '../lib/canvas-parser.ts';
+import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
+import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackCanvas, SlackUser } from '../types/index.ts';
 
 const CANVAS_ID_PATTERN = /^F[A-Z0-9]+$/i;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+// Warn when a pasted link points at a different workspace than the one we will call,
+// rather than letting Slack answer with a misleading not-found error.
+function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | undefined): void {
+  const message = workspaceMismatchWarning(linkWorkspace, client.workspaceHost);
+  if (message) warning(message);
+}
 
 export function createCanvasCommand(): Command {
   const canvas = new Command('canvas')
@@ -17,7 +26,7 @@ export function createCanvasCommand(): Command {
     .command('list')
     .description('List canvas documents in the workspace')
     .option('--limit <number>', 'Number of canvases to return', '20')
-    .option('--channel <id>', 'List canvases shared in a specific channel')
+    .option('--channel <id>', 'Channel ID or URL whose shared canvases to list')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
@@ -31,11 +40,16 @@ export function createCanvasCommand(): Command {
           process.exit(1);
         }
 
+        const channel = options.channel
+          ? normalizeIdentifier(options.channel, 'channel', '--channel')
+          : undefined;
+
         const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspaceOf(options.channel));
 
         const response = await client.listCanvases({
           limit,
-          channel: options.channel,
+          channel,
         });
 
         const files: SlackCanvas[] = response.files || [];
@@ -76,23 +90,31 @@ export function createCanvasCommand(): Command {
   canvas
     .command('read')
     .description('Read canvas content as markdown')
-    .argument('[canvas-id]', 'Canvas file ID (e.g., F1234567890)')
-    .option('--channel <id>', 'Read the canvas associated with a channel')
+    .argument('[canvas-id]', 'Canvas file ID or URL (e.g., F1234567890)')
+    .option('--channel <id>', 'Channel ID or URL whose canvas to read')
     .option('--raw', 'Output raw HTML instead of markdown', false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
-    .action(async (canvasId, options) => {
+    .action(async (canvasIdArg, options) => {
       const spinner = ora('Fetching canvas...').start();
 
       try {
+        const canvasId = canvasIdArg
+          ? normalizeIdentifier(canvasIdArg, 'file', '<canvas-id>')
+          : undefined;
+        const channel = options.channel
+          ? normalizeIdentifier(options.channel, 'channel', '--channel')
+          : undefined;
+
         const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspaceOf(canvasIdArg) ?? workspaceOf(options.channel));
 
         // Resolve canvas ID
-        let fileId = canvasId;
+        let fileId: string | null | undefined = canvasId;
 
-        if (!fileId && options.channel) {
+        if (!fileId && channel) {
           spinner.text = 'Looking up channel canvas...';
-          fileId = await client.getChannelCanvasId(options.channel);
+          fileId = await client.getChannelCanvasId(channel);
           if (!fileId) {
             spinner.fail('No canvas found for this channel');
             return;

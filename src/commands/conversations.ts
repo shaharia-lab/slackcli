@@ -2,10 +2,24 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatChannelList, formatConversationHistory, formatUnreadChannels, writeJson } from '../lib/formatter.ts';
+import { error, formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
+import {
+  normalizeTimestamp,
+  resolveMessageTarget,
+  resolveThreadTarget,
+  workspaceMismatchWarning,
+} from '../lib/slack-url-parser.ts';
+import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
+
+// Warn when a pasted link points at a different workspace than the one we will call,
+// rather than letting Slack answer with a misleading message_not_found.
+function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | undefined): void {
+  const message = workspaceMismatchWarning(linkWorkspace, client.workspaceHost);
+  if (message) warning(message);
+}
 
 export function createConversationsCommand(): Command {
   const conversations = new Command('conversations')
@@ -72,30 +86,40 @@ export function createConversationsCommand(): Command {
   conversations
     .command('read')
     .description('Read conversation history or specific thread')
-    .argument('<channel-id>', 'Channel ID to read from')
+    .argument('[channel-id]', 'Channel ID or Slack URL to read from')
     .option('--thread-ts <timestamp>', 'Thread timestamp to read specific thread')
+    .option('--permalink <url>', 'Slack link; reads that channel, or that message\'s thread (replaces <channel-id> and --thread-ts)')
     .option('--exclude-replies', 'Exclude threaded replies (only top-level messages)', false)
     .option('--limit <number>', 'Number of messages to return', '100')
     .option('--oldest <timestamp>', 'Start of time range')
     .option('--latest <timestamp>', 'End of time range')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format (includes timestamps for replies)', false)
-    .action(async (channelId, options) => {
+    .action(async (channelIdArg, options) => {
       const spinner = ora('Fetching messages...').start();
 
       try {
+        const target = resolveThreadTarget(
+          { permalink: options.permalink, channelId: channelIdArg, threadTs: options.threadTs },
+          { channel: '<channel-id>', timestamp: '--thread-ts' }
+        );
+        const channelId = target.channelId;
+        const oldest = options.oldest ? normalizeTimestamp(options.oldest, '--oldest') : undefined;
+        const latest = options.latest ? normalizeTimestamp(options.latest, '--latest') : undefined;
+
         const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, target.workspace);
 
         let response: any;
         let messages: SlackMessage[];
 
-        if (options.threadTs) {
+        if (target.threadTs) {
           // Fetch thread replies
           spinner.text = 'Fetching thread replies...';
-          response = await client.getConversationReplies(channelId, options.threadTs, {
+          response = await client.getConversationReplies(channelId, target.threadTs, {
             limit: parseInt(options.limit),
-            oldest: options.oldest,
-            latest: options.latest,
+            oldest,
+            latest,
           });
           messages = response.messages || [];
         } else {
@@ -103,8 +127,8 @@ export function createConversationsCommand(): Command {
           spinner.text = 'Fetching conversation history...';
           response = await client.getConversationHistory(channelId, {
             limit: parseInt(options.limit),
-            oldest: options.oldest,
-            latest: options.latest,
+            oldest,
+            latest,
           });
           messages = response.messages || [];
 
@@ -116,7 +140,7 @@ export function createConversationsCommand(): Command {
 
         // Channel history returns newest first, so reverse to show oldest first.
         // Thread replies already come in chronological order.
-        if (!options.threadTs) {
+        if (!target.threadTs) {
           messages.reverse();
         }
 
@@ -188,17 +212,25 @@ export function createConversationsCommand(): Command {
   conversations
     .command('get')
     .description('Get a specific message by channel ID and timestamp')
-    .argument('<channel-id>', 'Channel ID')
-    .argument('<timestamp>', 'Message timestamp')
+    .argument('[channel-id]', 'Channel ID or Slack URL')
+    .argument('[timestamp]', 'Message timestamp (1234567890.123456 or p1234567890123456)')
+    .option('--permalink <url>', 'Slack message link (replaces <channel-id> and <timestamp>)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
-    .action(async (channelId, timestamp, options) => {
+    .action(async (channelIdArg, timestampArg, options) => {
       const spinner = ora('Fetching message...').start();
 
       try {
-        const client = await getAuthenticatedClient(options.workspace);
+        const target = resolveMessageTarget(
+          { permalink: options.permalink, channelId: channelIdArg, timestamp: timestampArg },
+          { channel: '<channel-id>', timestamp: '<timestamp>' }
+        );
+        const channelId = target.channelId;
 
-        const msg = await fetchMessage(client, channelId, timestamp);
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, target.workspace);
+
+        const msg = await fetchMessage(client, channelId, target.timestamp);
 
         if (!msg) {
           spinner.fail('Message not found');

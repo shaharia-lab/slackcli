@@ -83,7 +83,20 @@ export function isSlackUrl(input: string): boolean {
 export function workspaceOf(input: string | undefined): string | undefined {
   if (!input) return undefined;
   const value = clean(input);
-  return isSlackUrl(value) ? extractSlackWorkspaceName(value) : undefined;
+  if (!isSlackUrl(value)) return undefined;
+  try {
+    return workspaceOfUrl(new URL(value));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The workspace subdomain of an already-parsed Slack URL. Reads from `origin`, which
+ * the URL parser has lowercased, so a host typed as `MyTeam.SLACK.com` still resolves.
+ */
+function workspaceOfUrl(url: URL): string {
+  return extractSlackWorkspaceName(url.origin);
 }
 
 /** Classify a bare Slack identifier by its prefix letter. */
@@ -248,7 +261,7 @@ export function parseSlackLink(input: string): ParsedPermalink {
 
   const result: ParsedPermalink = {
     channelId,
-    workspace: extractSlackWorkspaceName(value),
+    workspace: workspaceOfUrl(url),
   };
 
   const messageSegment = segments[2];
@@ -326,12 +339,12 @@ interface TargetFlags {
   timestamp: string;
 }
 
-function assertNoConflict(input: { channelId?: string; permalink?: string }, flags: TargetFlags, others: string[]): void {
-  if (!input.permalink) return;
-  const conflicting = others.filter(Boolean);
+/** `--permalink` supplies both inputs, so pairing it with either of them is ambiguous. */
+function assertNoConflict(supplied: Array<[flag: string, value: string | undefined]>): void {
+  const conflicting = supplied.filter(([, value]) => value).map(([flag]) => flag);
   if (conflicting.length > 0) {
     throw new SlackUrlParseError(
-      `--permalink already supplies ${flags.channel} and ${flags.timestamp}; pass one or the other, not both.`
+      `--permalink already supplies ${conflicting.join(' and ')}; pass one or the other, not both.`
     );
   }
 }
@@ -345,7 +358,7 @@ export function resolveMessageTarget(
   flags: TargetFlags
 ): ResolvedMessageTarget {
   if (input.permalink) {
-    assertNoConflict(input, flags, [input.channelId ?? '', input.timestamp ?? '']);
+    assertNoConflict([[flags.channel, input.channelId], [flags.timestamp, input.timestamp]]);
     const parsed = parsePermalink(input.permalink);
     return {
       channelId: parsed.channelId,
@@ -383,7 +396,7 @@ export function resolveThreadTarget(
   expected: ExpectedKind = 'channel'
 ): ResolvedThreadTarget {
   if (input.permalink) {
-    assertNoConflict(input, flags, [input.channelId ?? '', input.threadTs ?? '']);
+    assertNoConflict([[flags.channel, input.channelId], [flags.timestamp, input.threadTs]]);
     const parsed = parseSlackLink(input.permalink);
     return {
       channelId: parsed.channelId,

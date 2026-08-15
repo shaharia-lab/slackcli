@@ -230,6 +230,12 @@ describe('parseSlackLink', () => {
     expect(parsed.workspace).toBe('myorg');
   });
 
+  it('reports the real subdomain for a mixed-case host', () => {
+    expect(parseSlackLink('https://myteam.SLACK.COM/archives/C0BHFPKJMC2/p1786816800107789').workspace).toBe(
+      'myteam'
+    );
+  });
+
   it('ignores extra query parameters', () => {
     const parsed = parseSlackLink(`${TEAM_URL}/archives/${CHANNEL}/p1786816800107789?cid=${CHANNEL}&web=1`);
     expect(parsed.timestamp).toBe('1786816800.107789');
@@ -311,6 +317,13 @@ describe('workspaceOf', () => {
     expect(workspaceOf(`${ENTERPRISE_URL}/archives/${CHANNEL}`)).toBe('myorg');
   });
 
+  it('reports the real subdomain even when the host is not all lowercase', () => {
+    // The URL parser lowercases the host; a case-sensitive regex over the raw
+    // string would fall back to the literal "workspace" and warn spuriously.
+    expect(workspaceOf('https://myteam.SLACK.COM/archives/C0BHFPKJMC2')).toBe('myteam');
+    expect(workspaceOf('HTTPS://MyTeam.Slack.Com/archives/C0BHFPKJMC2')).toBe('myteam');
+  });
+
   it('reports nothing for a bare ID or a missing value', () => {
     expect(workspaceOf(CHANNEL)).toBeUndefined();
     expect(workspaceOf(undefined)).toBeUndefined();
@@ -364,19 +377,32 @@ describe('resolveMessageTarget', () => {
     expect(target.workspace).toBeUndefined();
   });
 
-  it('rejects --permalink combined with an explicit input', () => {
+  it('names only the input that actually collides with --permalink', () => {
     expect(() =>
       resolveMessageTarget(
         { permalink: `${TEAM_URL}/archives/${CHANNEL}/p1786816800107789`, channelId: CHANNEL },
         flags
       )
-    ).toThrow(/pass one or the other, not both/);
+    ).toThrow(/--permalink already supplies --channel-id; pass one or the other, not both/);
     expect(() =>
       resolveMessageTarget(
         { permalink: `${TEAM_URL}/archives/${CHANNEL}/p1786816800107789`, timestamp: '1786816800.107789' },
         flags
       )
-    ).toThrow(/pass one or the other, not both/);
+    ).toThrow(/--permalink already supplies --timestamp; pass one or the other, not both/);
+  });
+
+  it('names both inputs when both collide with --permalink', () => {
+    expect(() =>
+      resolveMessageTarget(
+        {
+          permalink: `${TEAM_URL}/archives/${CHANNEL}/p1786816800107789`,
+          channelId: CHANNEL,
+          timestamp: '1786816800.107789',
+        },
+        flags
+      )
+    ).toThrow(/already supplies --channel-id and --timestamp/);
   });
 
   it('names every missing input when neither form is complete', () => {
@@ -443,7 +469,13 @@ describe('resolveThreadTarget', () => {
         { permalink: `${TEAM_URL}/archives/${CHANNEL}`, channelId: CHANNEL },
         flags
       )
-    ).toThrow(/pass one or the other, not both/);
+    ).toThrow(/--permalink already supplies --recipient-id; pass one or the other, not both/);
+    expect(() =>
+      resolveThreadTarget(
+        { permalink: `${TEAM_URL}/archives/${CHANNEL}`, threadTs: '1786816800.107789' },
+        flags
+      )
+    ).toThrow(/--permalink already supplies --thread-ts; pass one or the other, not both/);
   });
 
   it('requires a channel when no permalink is given', () => {

@@ -19,6 +19,7 @@ These are the ways a release goes wrong. Check them, don't rediscover them.
 - **`release.yml` fails when the tag disagrees with `package.json`** (#82). The bump must be merged into `main` *before* the tag is pushed. Fixing it after the fact means bumping `main` and then deleting and re-pushing the tag.
 - **`main` requires signed commits, with no bypass actors** — an unsigned commit makes the PR unmergeable for anyone, including admins. Verify the release commit carries a signature.
 - **The repository constitution in `CLAUDE.md` applies to the release PR too**: it needs a linked GitHub issue carrying `ready-for-pr` before the PR is opened. `pr-linked-issue.yml` enforces the link as a required check.
+- **`main` requires one approving review, and an agent cannot approve its own PR.** The merge is always the maintainer's action — plan on handing the PR over rather than expecting to merge it. `dismiss_stale_reviews_on_push` is on, so any push after an approval discards it; get the branch final *before* asking for review. Do not reach for `gh pr merge --admin` to get around this.
 - **Pre-commit hooks block direct commits to `main`.** Always work on a branch.
 - **A merged PR does not guarantee a `CHANGELOG` entry.** Reconcile commits against `[Unreleased]` yourself — the mrkdwn fix in #96 landed with no entry and had to be backfilled at v0.9.0.
 - **`bun` may not be on `PATH`** in a non-interactive shell. If `bun` is not found, use `export PATH="$HOME/.bun/bin:$PATH"`.
@@ -105,7 +106,9 @@ Then wait for checks — `gh pr checks <pr>`. `Check linked open issue`, `check-
 
 **Stop here and ask the human to confirm the merge and tag.** Everything up to this point is reversible; the tag is not — it publishes public binaries and rewrites the Homebrew formula.
 
-On confirmation:
+The maintainer has to approve the PR regardless — the branch ruleset requires a review the PR's own author cannot supply — so this gate costs nothing extra.
+
+Once approved:
 
 ```bash
 gh pr merge <pr> --squash        # match the repo's existing merge style

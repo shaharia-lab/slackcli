@@ -19,7 +19,7 @@ These are the ways a release goes wrong. Check them, don't rediscover them.
 - **`release.yml` fails when the tag disagrees with `package.json`** (#82). The bump must be merged into `main` *before* the tag is pushed. Fixing it after the fact means bumping `main` and then deleting and re-pushing the tag.
 - **`main` requires signed commits, with no bypass actors** — an unsigned commit makes the PR unmergeable for anyone, including admins. Verify the release commit carries a signature.
 - **The repository constitution in `CLAUDE.md` applies to the release PR too**: it needs a linked GitHub issue carrying `ready-for-pr` before the PR is opened. `pr-linked-issue.yml` enforces the link as a required check.
-- **`main` requires one approving review, and an agent cannot approve its own PR.** The merge is always the maintainer's action — plan on handing the PR over rather than expecting to merge it. `dismiss_stale_reviews_on_push` is on, so any push after an approval discards it; get the branch final *before* asking for review. Do not reach for `gh pr merge --admin` to get around this.
+- **`main` requires one approving review, and an agent cannot approve its own PR.** So `gh pr merge` reports `BLOCKED` / `REVIEW_REQUIRED` even when every check is green. Unblocking it is the maintainer's decision, taken one of two ways — a review, or an explicit instruction to merge with `--admin`. Never pick `--admin` on your own initiative; surface the block and let the maintainer choose. `dismiss_stale_reviews_on_push` is on, so any push after an approval discards it — get the branch final *before* asking for review.
 - **Pre-commit hooks block direct commits to `main`.** Always work on a branch.
 - **A merged PR does not guarantee a `CHANGELOG` entry.** Reconcile commits against `[Unreleased]` yourself — the mrkdwn fix in #96 landed with no entry and had to be backfilled at v0.9.0.
 - **`bun` may not be on `PATH`** in a non-interactive shell. If `bun` is not found, use `export PATH="$HOME/.bun/bin:$PATH"`.
@@ -106,12 +106,12 @@ Then wait for checks — `gh pr checks <pr>`. `Check linked open issue`, `check-
 
 **Stop here and ask the human to confirm the merge and tag.** Everything up to this point is reversible; the tag is not — it publishes public binaries and rewrites the Homebrew formula.
 
-The maintainer has to approve the PR regardless — the branch ruleset requires a review the PR's own author cannot supply — so this gate costs nothing extra.
+The maintainer has to unblock the PR regardless — the branch ruleset requires a review the PR's own author cannot supply — so this gate costs nothing extra.
 
-Once approved:
+Once the maintainer has approved, or has explicitly asked for `--admin`:
 
 ```bash
-gh pr merge <pr> --squash        # match the repo's existing merge style
+gh pr merge <pr> --squash        # add --admin only when explicitly instructed
 git checkout main && git pull
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z

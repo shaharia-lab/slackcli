@@ -114,6 +114,12 @@ jobs:
         with:
           script: |
             const MARK = '<!-- stale-reminder -->';
+            // Earlier revisions used a day-specific marker. Still honoured when
+            // deduping so an item that already received its reminder under the
+            // old name is not reminded twice after this workflow changes.
+            const LEGACY_MARKS = ['<!-- stale-14d-reminder -->'];
+            const alreadyReminded = (c) =>
+              [MARK, ...LEGACY_MARKS].some((m) => (c.body || '').includes(m));
             const DAY = 24 * 60 * 60 * 1000;
             const LABEL = process.env.STALE_LABEL;
             const { owner, repo } = context.repo;
@@ -254,7 +260,7 @@ jobs:
                 const comments = await github.paginate(github.rest.issues.listComments, {
                   owner, repo, issue_number: item.number, per_page: 100,
                 });
-                if (comments.some((c) => (c.body || '').includes(MARK))) {
+                if (comments.some(alreadyReminded)) {
                   core.info(`${tag}: reminder already posted; skipping`);
                   continue;
                 }

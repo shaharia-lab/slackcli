@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-16
+
 ### Added
 - **Slack URLs accepted wherever an ID is taken**: paste `https://team.slack.com/archives/C123…`, `/team/U123…`, or `/docs/T…/F…` in place of a channel, user, or canvas ID (#107)
 - **Permalink-style timestamps accepted wherever a timestamp is taken**: `p1234567890123456` and `1234567890123456` normalize to `1234567890.123456` (#107)
 - **`--permalink <url>`** on `messages send`, `messages react`, `messages edit`, `messages draft`, `conversations read`, and `conversations get` — supplies channel and timestamp from a single message link, resolving a threaded reply to its parent for `--thread-ts` (#107)
 - Clear errors instead of a misleading `message_not_found`: wrong-type IDs (a user URL passed to `--channel-id`), `--permalink` combined with explicit inputs, and a warning when a pasted link belongs to a different workspace than the authenticated one (browser auth) (#107)
+
+### Fixed
+- **mrkdwn emphasis now requires word boundaries**: an `_` inside a URL or identifier (for example the `merge_requests` segment of a GitLab link) no longer pairs with an unrelated `_` later in the message, which previously italicised the span between them and destroyed both URLs (#103)
+  - Scoped to `_` only — Slack applies `*bold*`, `~strike~` and `` `code` `` mid-word, and those are unchanged
+  - Behaviour change: `_hello_world_` is now left fully literal, matching Slack leaving `snake_case` unformatted
 
 ## [0.8.0] - 2026-08-06
 

@@ -1,0 +1,155 @@
+name: PR must link an open issue
+
+# Every pull request must be traceable to an open issue, per the repository
+# constitution in CLAUDE.md / CONTRIBUTING.md. The check fails unless the PR has
+# at least one linked issue that is OPEN and (when `REQUIRED_ISSUE_LABELS` is
+# set) carries the triage label that marks it ready to be worked on. Links are
+# resolved via GraphQL `closingIssuesReferences`, populated by closing keywords
+# like `Fixes #123` in the PR body or by the "Development" sidebar.
+#
+# We implement this with actions/github-script rather than a third-party action
+# because the requirement is specifically an *open*-state + label check plus a
+# skip-label escape hatch and a single deduped failure comment -- more than the
+# popular link-check actions guarantee.
+#
+# NOTE: this only reports a status; making it a *required* check needs a branch
+# ruleset, which is a separate admin decision.
+#
+# Nothing here is repo-specific: owner/repo come from the workflow context and
+# both label names are `env` knobs below.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: pr-linked-issue-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Escape hatch: a PR carrying this label skips the check entirely.
+  SKIP_LABEL: no-issue-needed
+  # Comma-separated labels the linked issue must ALL carry. Empty = only require
+  # that the linked issue is open.
+  REQUIRED_ISSUE_LABELS: ready-for-pr
+
+jobs:
+  check:
+    name: Check linked open issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the PR links an open issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const MARK = '<!-- pr-linked-issue-check -->';
+            const SKIP_LABEL = process.env.SKIP_LABEL;
+            const REQUIRED = (process.env.REQUIRED_ISSUE_LABELS || '')
+              .split(',').map((s) => s.trim()).filter(Boolean);
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const number = pr.number;
+
+            async function findMarker() {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: number, per_page: 100,
+              });
+              return comments.find((c) => (c.body || '').includes(MARK));
+            }
+            // Fork PRs get a read-only token no matter what `permissions:` says,
+            // so commenting can legitimately fail. Never let that mask the
+            // check's own verdict -- warn and carry on.
+            async function upsertComment(body) {
+              try {
+                const existing = await findMarker();
+                if (existing) {
+                  await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+                } else {
+                  await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+                }
+              } catch (e) {
+                core.warning(`Could not post the status comment (fork PR?): ${e.message}`);
+              }
+            }
+            async function markResolved(reason) {
+              try {
+                const existing = await findMarker();
+                if (existing) {
+                  await github.rest.issues.updateComment({
+                    owner, repo, comment_id: existing.id, body: `${MARK}\n✅ ${reason} Thanks!`,
+                  });
+                }
+              } catch (e) {
+                core.warning(`Could not update the status comment (fork PR?): ${e.message}`);
+              }
+            }
+
+            // Escape hatch for trivial PRs.
+            const labels = (pr.labels || []).map((l) => l.name);
+            if (labels.includes(SKIP_LABEL)) {
+              core.info(`PR #${number} carries '${SKIP_LABEL}'; skipping the linked-issue check.`);
+              await markResolved(`This PR carries \`${SKIP_LABEL}\`.`);
+              return;
+            }
+
+            // closingIssuesReferences = issues linked via closing keywords or the
+            // Development sidebar. Require at least one that is currently OPEN
+            // and carries every required label.
+            const data = await github.graphql(
+              `query($owner:String!, $repo:String!, $number:Int!) {
+                repository(owner:$owner, name:$repo) {
+                  pullRequest(number:$number) {
+                    closingIssuesReferences(first: 20) {
+                      nodes { number state labels(first: 50) { nodes { name } } }
+                    }
+                  }
+                }
+              }`,
+              { owner, repo, number },
+            );
+            const linked = data.repository.pullRequest.closingIssuesReferences.nodes || [];
+            const open = linked.filter((n) => n.state === 'OPEN');
+            const labelsOf = (n) => ((n.labels || {}).nodes || []).map((l) => l.name);
+            const qualified = open.filter((n) => {
+              const has = labelsOf(n);
+              return REQUIRED.every((r) => has.includes(r));
+            });
+
+            if (qualified.length > 0) {
+              core.info(`PR #${number} links qualifying issue(s): ${qualified.map((n) => '#' + n.number).join(', ')}`);
+              await markResolved('This PR is linked to an open, triaged issue.');
+              return;
+            }
+
+            const required = REQUIRED.map((l) => `\`${l}\``).join(' and ');
+            const lines = [MARK];
+            if (open.length > 0 && REQUIRED.length > 0) {
+              // Linked and open, but not triaged yet -- a different fix from "no link".
+              lines.push(`### ⏳ The linked issue isn't labelled ${required} yet`, '');
+              lines.push(
+                `Linked open issue(s): ${open.map((n) => '#' + n.number).join(', ')}.`, '');
+              lines.push(
+                'A pull request is only welcome after the issue has been triaged and carries',
+                `the ${required} label. Please wait for a maintainer to triage it, or add the`,
+                `\`${SKIP_LABEL}\` label if this change genuinely needs no issue.`);
+            } else {
+              lines.push("### ❌ This PR isn't linked to an open issue", '');
+              lines.push('Every pull request must be traceable to an open issue. Please do one of:', '');
+              lines.push('- Add a closing keyword to the PR description, e.g. `Fixes #123` or `Closes #123`.');
+              lines.push('- Or link an issue from the **Development** section of the PR sidebar.');
+              if (REQUIRED.length > 0) {
+                lines.push(`- The linked issue must also carry the ${required} label.`);
+              }
+              lines.push(`- Or, for a change that genuinely needs no issue, add the \`${SKIP_LABEL}\` label.`);
+            }
+            lines.push('', 'This check re-runs automatically when you edit the description, push a commit, or change labels.');
+            await upsertComment(lines.join('\n'));
+            core.setFailed(
+              open.length > 0 && REQUIRED.length > 0
+                ? `Linked issue(s) are open but not labelled ${REQUIRED.join(', ')}.`
+                : 'No linked open issue found for this pull request.');

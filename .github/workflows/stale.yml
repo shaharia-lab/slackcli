@@ -1,0 +1,270 @@
+name: Stale issue & PR lifecycle
+
+# Daily inactivity automation for BOTH issues and pull requests. Each track has
+# its own thresholds (defaults shown; all tunable in `env` below), measured in
+# days of inactivity and driven off the stale-label event:
+#
+#   Issues:  7 days idle -> label + warning | 14 -> reminder | 21 -> close
+#   PRs:    14 days idle -> label + warning | 21 -> reminder | 28 -> close
+#
+# PRs get longer windows on purpose: a contributor has real work at stake and a
+# quiet PR is often waiting on maintainer review, not abandoned.
+#
+# Any genuine (non-bot) activity removes the label and resets the clock. For a
+# PR that includes pushes, reviews and review-thread comments, not just issue
+# comments (see ACTIVITY_EVENTS / eventTime below).
+#
+# WHY the split between actions/stale and the github-script step:
+# `actions/stale` decides both closing AND un-staling from `updated_at`, and
+# *any* injected comment (including our required reminder) bumps `updated_at`.
+# Letting the action own the close would therefore (a) un-stale everything the
+# day after the reminder is posted and (b) permanently reset the close window.
+# So `actions/stale` owns ONLY the marking (`days-before-close: -1`,
+# `remove-stale-when-updated: false`), and the github-script step owns the
+# reminder, the close, and un-staling -- all keyed off the label event, which no
+# comment can move.
+#
+# Nothing here is repo-specific: the owner/repo come from the workflow context
+# and every threshold, label and exemption is an `env` knob below.
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # daily at 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: stale
+  cancel-in-progress: false
+
+env:
+  # One label for both tracks -- filter with `is:pr label:Stale` in the UI.
+  # Created automatically on first use.
+  STALE_LABEL: Stale
+
+  # --- Issues -------------------------------------------------------------
+  ISSUE_EXEMPT_LABELS: pinned,epic,security
+  ISSUE_DAYS_BEFORE_STALE: '7' # days idle before the label
+  ISSUE_DAYS_AFTER_LABEL_REMIND: '7' # days AFTER the label before the reminder
+  ISSUE_DAYS_AFTER_LABEL_CLOSE: '14' # days AFTER the label before closing
+
+  # --- Pull requests ------------------------------------------------------
+  PR_EXEMPT_LABELS: pinned,security
+  PR_DAYS_BEFORE_STALE: '14'
+  PR_DAYS_AFTER_LABEL_REMIND: '7'
+  PR_DAYS_AFTER_LABEL_CLOSE: '14'
+  # Draft PRs are staled too -- they are the most common source of abandoned
+  # branches. Flip to 'true' to leave drafts alone.
+  EXEMPT_DRAFT_PRS: 'false'
+
+jobs:
+  stale:
+    name: Mark, remind & close stale issues and PRs
+    runs-on: ubuntu-latest
+    steps:
+      # Stage 1 -- mark inactive issues and PRs stale.
+      # Closing and un-staling are handled in stage 2 (see header comment).
+      - name: Mark stale issues and PRs
+        uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          # Stage 2 owns every close and every un-stale, for both tracks.
+          days-before-close: -1
+          days-before-pr-close: -1
+          remove-stale-when-updated: false
+          remove-pr-stale-when-updated: false
+
+          days-before-stale: ${{ env.ISSUE_DAYS_BEFORE_STALE }}
+          stale-issue-label: ${{ env.STALE_LABEL }}
+          exempt-issue-labels: ${{ env.ISSUE_EXEMPT_LABELS }}
+          stale-issue-message: >
+            This issue has had no activity for
+            ${{ env.ISSUE_DAYS_BEFORE_STALE }} days and is now marked
+            **${{ env.STALE_LABEL }}**. It will receive one reminder at
+            ${{ fromJSON(env.ISSUE_DAYS_BEFORE_STALE) + fromJSON(env.ISSUE_DAYS_AFTER_LABEL_REMIND) }}
+            days and be closed after
+            ${{ fromJSON(env.ISSUE_DAYS_BEFORE_STALE) + fromJSON(env.ISSUE_DAYS_AFTER_LABEL_CLOSE) }}
+            days of inactivity. Any comment or update removes the
+            `${{ env.STALE_LABEL }}` label and resets the clock.
+
+          days-before-pr-stale: ${{ env.PR_DAYS_BEFORE_STALE }}
+          stale-pr-label: ${{ env.STALE_LABEL }}
+          exempt-pr-labels: ${{ env.PR_EXEMPT_LABELS }}
+          exempt-draft-pr: ${{ env.EXEMPT_DRAFT_PRS }}
+          stale-pr-message: >
+            This pull request has had no activity for
+            ${{ env.PR_DAYS_BEFORE_STALE }} days and is now marked
+            **${{ env.STALE_LABEL }}**. It will receive one reminder at
+            ${{ fromJSON(env.PR_DAYS_BEFORE_STALE) + fromJSON(env.PR_DAYS_AFTER_LABEL_REMIND) }}
+            days and be closed after
+            ${{ fromJSON(env.PR_DAYS_BEFORE_STALE) + fromJSON(env.PR_DAYS_AFTER_LABEL_CLOSE) }}
+            days of inactivity. Pushing a commit, leaving a comment or
+            submitting a review removes the `${{ env.STALE_LABEL }}` label and
+            resets the clock. If you are waiting on a maintainer review, say so
+            here and we will exempt it.
+
+      # Stage 2 -- reminder, close and un-stale-on-activity, keyed off the
+      # label event so the reminder comment's own updated_at bump cannot
+      # corrupt the lifecycle.
+      - name: Remind, close, and un-stale
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const MARK = '<!-- stale-reminder -->';
+            const DAY = 24 * 60 * 60 * 1000;
+            const LABEL = process.env.STALE_LABEL;
+            const { owner, repo } = context.repo;
+
+            const track = (prefix, noun) => {
+              const staleAfter = Number(process.env[`${prefix}_DAYS_BEFORE_STALE`]);
+              const remindAfter = Number(process.env[`${prefix}_DAYS_AFTER_LABEL_REMIND`]);
+              const closeAfter = Number(process.env[`${prefix}_DAYS_AFTER_LABEL_CLOSE`]);
+              return {
+                noun, remindAfter, closeAfter,
+                remindTotal: staleAfter + remindAfter,
+                closeTotal: staleAfter + closeAfter,
+              };
+            };
+            const ISSUE = track('ISSUE', 'issue');
+            const PR = track('PR', 'pull request');
+
+            // Events that represent a human touching the item (used to reset the
+            // clock). The PR-only entries matter: a contributor pushing commits
+            // or a maintainer reviewing must count as activity even though
+            // neither produces an issue comment.
+            const ACTIVITY_EVENTS = new Set([
+              // shared
+              'commented', 'reopened', 'renamed', 'assigned', 'unassigned',
+              'labeled', 'unlabeled', 'cross-referenced', 'referenced',
+              'milestoned', 'demilestoned', 'converted_note_to_issue',
+              // pull requests
+              'committed', 'reviewed', 'line-commented', 'review_requested',
+              'review_request_removed', 'ready_for_review', 'convert_to_draft',
+              'converted_to_draft', 'head_ref_force_pushed', 'head_ref_restored',
+              'base_ref_changed',
+            ]);
+
+            // Timeline events are NOT uniform: `reviewed` carries submitted_at,
+            // `committed` carries no created_at at all (only commit author /
+            // committer dates), and review-thread events nest their payload
+            // under `comments`. Reading `created_at` alone silently drops every
+            // push and review, which would make a busy PR look abandoned.
+            const eventTime = (ev) => {
+              const raw = ev.created_at
+                || ev.submitted_at
+                || (ev.committer && ev.committer.date)
+                || (ev.author && ev.author.date)
+                || (ev.comments && ev.comments[0] && ev.comments[0].created_at);
+              const t = raw ? new Date(raw).getTime() : NaN;
+              return Number.isNaN(t) ? null : t;
+            };
+
+            // Likewise the actor: `committed` has no actor object, just a commit
+            // author name/email. Treat a push as human unless the commit author
+            // is itself a bot (dependabot et al).
+            const isBotEvent = (ev) => {
+              const actor = ev.actor
+                || ev.user
+                || (ev.comments && ev.comments[0] && ev.comments[0].user);
+              if (actor) return actor.type === 'Bot' || /\[bot\]$/.test(actor.login || '');
+              const name = (ev.author && ev.author.name) || (ev.committer && ev.committer.name);
+              if (name) return /\[bot\]\s*$/.test(name);
+              return true; // unattributable event -- do not treat as human activity
+            };
+
+            // One call returns both issues and PRs carrying the label.
+            const flagged = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: LABEL, per_page: 100,
+            });
+
+            for (const item of flagged) {
+              const isPR = Boolean(item.pull_request);
+              const cfg = isPR ? PR : ISSUE;
+              const tag = `#${item.number}`;
+
+              // Timeline gives us both the authoritative label moment and every
+              // subsequent activity event in one paginated call.
+              const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                owner, repo, issue_number: item.number, per_page: 100,
+              });
+
+              let staleSince = null;
+              for (const ev of timeline) {
+                if (ev.event === 'labeled' && ev.label && ev.label.name === LABEL) {
+                  const t = eventTime(ev);
+                  if (t !== null && (staleSince === null || t > staleSince)) staleSince = t;
+                }
+              }
+              if (staleSince === null) {
+                core.info(`${tag}: has the ${LABEL} label but no label event; skipping`);
+                continue;
+              }
+
+              // Genuine activity after the label -> un-stale and reset the clock.
+              const hasUserActivity = timeline.some((ev) => {
+                if (!ACTIVITY_EVENTS.has(ev.event)) return false;
+                const t = eventTime(ev);
+                if (t === null || t <= staleSince) return false;
+                if ((ev.event === 'labeled' || ev.event === 'unlabeled')
+                    && ev.label && ev.label.name === LABEL) return false;
+                return !isBotEvent(ev);
+              });
+              if (hasUserActivity) {
+                core.info(`${tag}: activity since stale -> removing the ${LABEL} label`);
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: item.number, name: LABEL,
+                }).catch((e) => { if (e.status !== 404) throw e; });
+                continue;
+              }
+
+              const ageDays = (Date.now() - staleSince) / DAY;
+
+              // Close with a final comment.
+              if (ageDays >= cfg.closeAfter) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: item.number,
+                  body: `Closing this ${cfg.noun} after ${cfg.closeTotal} days of inactivity `
+                    + `(${cfg.closeAfter} days after it was marked **${LABEL}**). `
+                    + (isPR
+                      ? 'If you would like to continue this work, push new commits and reopen '
+                        + 'it -- the branch and review history are kept.'
+                      : 'If it is still relevant, please reopen it or open a new issue with '
+                        + 'fresh context.'),
+                });
+                if (isPR) {
+                  // pulls.update, not issues.update: state_reason is issue-only.
+                  await github.rest.pulls.update({
+                    owner, repo, pull_number: item.number, state: 'closed',
+                  });
+                } else {
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: item.number,
+                    state: 'closed', state_reason: 'not_planned',
+                  });
+                }
+                core.info(`${tag}: closed ${cfg.noun} (stale ${ageDays.toFixed(1)}d)`);
+                continue;
+              }
+
+              // One reminder comment (deduped by marker).
+              if (ageDays >= cfg.remindAfter) {
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: item.number, per_page: 100,
+                });
+                if (comments.some((c) => (c.body || '').includes(MARK))) {
+                  core.info(`${tag}: reminder already posted; skipping`);
+                  continue;
+                }
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: item.number,
+                  body: `${MARK}\n⏰ Second reminder: this ${cfg.noun} has been **${LABEL}** with `
+                    + `no activity for ${cfg.remindTotal} days and will be closed automatically `
+                    + `after ${cfg.closeTotal} days of inactivity `
+                    + `(${cfg.closeTotal - cfg.remindTotal} more days) unless it is updated.`,
+                });
+                core.info(`${tag}: posted the ${cfg.remindTotal}-day reminder`);
+              }
+            }

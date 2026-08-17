@@ -11,6 +11,46 @@ permissions:
   contents: read
 
 jobs:
+  # Validate every workflow file. An invalid workflow is a STARTUP failure and
+  # therefore the easiest kind of breakage to miss: the run appears in the
+  # Actions list already failed with no logs, labelled by file path rather than
+  # its `name:`, and -- the damage that actually matters -- GitHub cannot
+  # resolve the `on:` triggers, so the file's SCHEDULED runs are never created.
+  # stale.yml shipped in exactly that state and never ran successfully once,
+  # because Actions expressions have no arithmetic operators and it used `+`.
+  #
+  # Nothing validated workflow files before, in CI or in pre-commit. This runs
+  # the SAME hook id as .pre-commit-config.yaml, against the same pinned
+  # actionlint, so the local hook and this job can never disagree.
+  workflow-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.x'
+
+      # Keyed on the config, so the hook environment (which builds actionlint)
+      # is rebuilt only when the pinned rev changes.
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      # Scoped to the one hook id on purpose: the other hooks already run as
+      # their own CI steps, and `pre-commit run --all-files` here would execute
+      # the type-check and test suites a second time.
+      - name: Lint workflows
+        run: pre-commit run actionlint --all-files
+
   test:
     runs-on: ubuntu-latest
 

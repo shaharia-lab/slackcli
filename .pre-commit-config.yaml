@@ -10,6 +10,22 @@ repos:
       - id: no-commit-to-branch
         args: [--branch, main, --branch, master]
 
+  # An invalid workflow file is a STARTUP failure: GitHub cannot parse it, so
+  # it never resolves the `on:` triggers, the run carries no logs and is
+  # labelled by file path instead of its `name:`, and its SCHEDULED runs are
+  # never created. stale.yml shipped that way and never ran once. The CI
+  # `workflow-lint` job runs this same hook id, so hook and CI cannot drift.
+  #
+  # -shellcheck= / -pyflakes= disable actionlint's optional linting of `run:`
+  # script bodies. Those binaries ship on ubuntu-latest but not on a typical
+  # dev machine, so leaving them on would make the local hook weaker than CI
+  # and hand contributors failures they cannot reproduce.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        args: [-shellcheck=, -pyflakes=]
+
   - repo: local
     hooks:
       - id: bun-type-check

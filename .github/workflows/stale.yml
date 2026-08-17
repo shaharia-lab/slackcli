@@ -66,6 +66,27 @@ jobs:
     name: Mark, remind & close stale issues and PRs
     runs-on: ubuntu-latest
     steps:
+      # Actions expressions have NO arithmetic operators: the supported set is
+      # `!`, comparisons, `&&`, `||` and functions. `${{ a + b }}` does not
+      # evaluate to a+b -- it makes the whole FILE unparseable, so the workflow
+      # never starts and its scheduled run is never created. This file had
+      # never run successfully before this step was added.
+      #
+      # The messages below quote the windows as totals ("closed after 21 days
+      # of inactivity"), matching what stage 2's own comments say, so the two
+      # components still have to be added up somewhere. Doing it in shell keeps
+      # `env` the single source of truth; hardcoding 14/21 as literals here
+      # would silently drift the moment a threshold above is retuned.
+      - name: Compute the reminder and close windows
+        id: windows
+        run: |
+          {
+            echo "issue_remind=$(( ISSUE_DAYS_BEFORE_STALE + ISSUE_DAYS_AFTER_LABEL_REMIND ))"
+            echo "issue_close=$(( ISSUE_DAYS_BEFORE_STALE + ISSUE_DAYS_AFTER_LABEL_CLOSE ))"
+            echo "pr_remind=$(( PR_DAYS_BEFORE_STALE + PR_DAYS_AFTER_LABEL_REMIND ))"
+            echo "pr_close=$(( PR_DAYS_BEFORE_STALE + PR_DAYS_AFTER_LABEL_CLOSE ))"
+          } >> "$GITHUB_OUTPUT"
+
       # Stage 1 -- mark inactive issues and PRs stale.
       # Closing and un-staling are handled in stage 2 (see header comment).
       - name: Mark stale issues and PRs
@@ -84,9 +105,9 @@ jobs:
             This issue has had no activity for
             ${{ env.ISSUE_DAYS_BEFORE_STALE }} days and is now marked
             **${{ env.STALE_LABEL }}**. It will receive one reminder at
-            ${{ fromJSON(env.ISSUE_DAYS_BEFORE_STALE) + fromJSON(env.ISSUE_DAYS_AFTER_LABEL_REMIND) }}
+            ${{ steps.windows.outputs.issue_remind }}
             days and be closed after
-            ${{ fromJSON(env.ISSUE_DAYS_BEFORE_STALE) + fromJSON(env.ISSUE_DAYS_AFTER_LABEL_CLOSE) }}
+            ${{ steps.windows.outputs.issue_close }}
             days of inactivity. Any comment or update removes the
             `${{ env.STALE_LABEL }}` label and resets the clock.
 
@@ -98,9 +119,9 @@ jobs:
             This pull request has had no activity for
             ${{ env.PR_DAYS_BEFORE_STALE }} days and is now marked
             **${{ env.STALE_LABEL }}**. It will receive one reminder at
-            ${{ fromJSON(env.PR_DAYS_BEFORE_STALE) + fromJSON(env.PR_DAYS_AFTER_LABEL_REMIND) }}
+            ${{ steps.windows.outputs.pr_remind }}
             days and be closed after
-            ${{ fromJSON(env.PR_DAYS_BEFORE_STALE) + fromJSON(env.PR_DAYS_AFTER_LABEL_CLOSE) }}
+            ${{ steps.windows.outputs.pr_close }}
             days of inactivity. Pushing a commit, leaving a comment or
             submitting a review removes the `${{ env.STALE_LABEL }}` label and
             resets the clock. If you are waiting on a maintainer review, say so

@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'bun:test';
-import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion, performUpdate } from './updater.ts';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion, performUpdate, verifyAssetDigest } from './updater.ts';
+import { createHash } from 'crypto';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import packageJson from '../../package.json';
 
 describe('isNewerVersion', () => {
@@ -88,5 +92,128 @@ describe('performUpdate', () => {
     Object.defineProperty(process, 'execPath', { value: '/Users/me/.bun/bin/bun', configurable: true });
     await expect(performUpdate()).resolves.toBeUndefined();
     Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  });
+});
+
+describe('verifyAssetDigest', () => {
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+
+  it('accepts bytes that match the published digest', () => {
+    expect(() => verifyAssetDigest('slackcli-macos-arm64', bytes, `sha256:${sha256}`)).not.toThrow();
+  });
+
+  it('accepts an uppercase hex digest', () => {
+    expect(() =>
+      verifyAssetDigest('slackcli-macos-arm64', bytes, `sha256:${sha256.toUpperCase()}`)
+    ).not.toThrow();
+  });
+
+  it('rejects bytes that do not match', () => {
+    expect(() =>
+      verifyAssetDigest('slackcli-macos-arm64', new Uint8Array([9, 9, 9]), `sha256:${sha256}`)
+    ).toThrow(/Checksum mismatch for slackcli-macos-arm64/);
+  });
+
+  // Fail closed: dropping the field must not be a way to skip the check.
+  it('rejects an asset with no digest', () => {
+    expect(() => verifyAssetDigest('slackcli-macos-arm64', bytes, undefined)).toThrow(/no digest/);
+  });
+
+  it('rejects a digest algorithm it cannot check', () => {
+    expect(() => verifyAssetDigest('slackcli-macos-arm64', bytes, 'md5:abc')).toThrow(
+      /Unsupported digest format/
+    );
+  });
+});
+
+describe('performUpdate integrity check', () => {
+  const originalExecPath = process.execPath;
+  const originalFetch = globalThis.fetch;
+  const binaryName =
+    process.platform === 'darwin'
+      ? process.arch === 'arm64'
+        ? 'slackcli-macos-arm64'
+        : 'slackcli-macos'
+      : process.platform === 'win32'
+        ? 'slackcli-windows.exe'
+        : process.arch === 'arm64'
+          ? 'slackcli-linux-arm64'
+          : 'slackcli-linux';
+
+  // A release whose asset bytes are `payload`, advertising `digest`.
+  function stubRelease(payload: Uint8Array, digest: string | undefined) {
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/releases/latest')) {
+        return new Response(
+          JSON.stringify({
+            tag_name: 'v99.0.0',
+            name: 'v99.0.0',
+            body: '',
+            assets: [
+              {
+                name: binaryName,
+                browser_download_url: 'https://example.invalid/asset',
+                ...(digest === undefined ? {} : { digest }),
+              },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(payload, { status: 200 });
+    }) as typeof fetch;
+  }
+
+  const installDirs: string[] = [];
+
+  // Stands in for the installed CLI: performUpdate renames over process.execPath,
+  // so the test points that at a throwaway file instead of the real binary.
+  async function fakeInstall() {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-installed-'));
+    installDirs.push(dir);
+    const installed = join(dir, 'slackcli');
+    await writeFile(installed, 'THE BINARY THAT IS ALREADY INSTALLED');
+    Object.defineProperty(process, 'execPath', { value: installed, configurable: true });
+    return { dir, installed };
+  }
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    for (const dir of installDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to install bytes that do not match the digest', async () => {
+    const { installed } = await fakeInstall();
+    stubRelease(new TextEncoder().encode('MALICIOUS PAYLOAD'), `sha256:${'0'.repeat(64)}`);
+
+    await expect(performUpdate()).rejects.toThrow(/Checksum mismatch/);
+    // The binary that was already there is untouched.
+    expect(await readFile(installed, 'utf-8')).toBe('THE BINARY THAT IS ALREADY INSTALLED');
+  });
+
+  it('refuses to install an asset that publishes no digest', async () => {
+    const { installed } = await fakeInstall();
+    stubRelease(new TextEncoder().encode('anything'), undefined);
+
+    await expect(performUpdate()).rejects.toThrow(/no digest/);
+    expect(await readFile(installed, 'utf-8')).toBe('THE BINARY THAT IS ALREADY INSTALLED');
+  });
+
+  it('installs bytes that match, and leaves no temp directory behind', async () => {
+    const { installed } = await fakeInstall();
+    const payload = new TextEncoder().encode('THE NEW BINARY');
+    stubRelease(payload, `sha256:${createHash('sha256').update(payload).digest('hex')}`);
+
+    const before = (await readdir(tmpdir())).filter(n => n.startsWith('slackcli-update-'));
+    await performUpdate();
+    const after = (await readdir(tmpdir())).filter(n => n.startsWith('slackcli-update-'));
+
+    expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
+    expect(after.length).toBe(before.length);
   });
 });

@@ -1,4 +1,5 @@
-import { writeFile, chmod, rename, unlink } from 'fs/promises';
+import { writeFile, chmod, rename, unlink, mkdtemp, rm } from 'fs/promises';
+import { createHash } from 'crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { tmpdir, homedir } from 'os';
 import { join } from 'path';
@@ -25,6 +26,8 @@ interface GitHubRelease {
   assets: Array<{
     name: string;
     browser_download_url: string;
+    // "sha256:<hex>", published by GitHub for every release asset.
+    digest?: string;
   }>;
 }
 
@@ -79,6 +82,38 @@ function getBinaryName(): string {
   if (platform === 'win32') return 'slackcli-windows.exe';
 
   throw new Error(`Unsupported platform: ${platform}`);
+}
+
+// Verify downloaded bytes against the digest the release published.
+//
+// Fails closed on a missing or non-sha256 digest: the party we are defending
+// against here is whoever can substitute the response, and a skip-when-absent
+// check would simply be switched off by dropping the field.
+export function verifyAssetDigest(
+  binaryName: string,
+  bytes: Uint8Array,
+  expected: string | undefined
+): void {
+  if (!expected) {
+    throw new Error(
+      `Release asset ${binaryName} has no digest to verify against — refusing to install it. ` +
+        `Download it manually and check it against checksums.txt from the release.`
+    );
+  }
+
+  const [algorithm, digest] = expected.split(':');
+
+  if (algorithm !== 'sha256' || !digest) {
+    throw new Error(`Unsupported digest format for ${binaryName}: ${expected}`);
+  }
+
+  const actual = createHash('sha256').update(bytes).digest('hex');
+
+  if (actual !== digest.toLowerCase()) {
+    throw new Error(
+      `Checksum mismatch for ${binaryName}: expected sha256:${digest}, got sha256:${actual}`
+    );
+  }
 }
 
 // Check for updates
@@ -150,18 +185,27 @@ export async function performUpdate(): Promise<void> {
   }
 
   const buffer = await response.arrayBuffer();
-  const tmpPath = join(tmpdir(), `slackcli-update-${Date.now()}`);
+  const bytes = new Uint8Array(buffer);
 
-  // Write to temp file
-  await writeFile(tmpPath, new Uint8Array(buffer));
-  await chmod(tmpPath, 0o755);
+  // Before anything touches the disk: these bytes become the running binary.
+  verifyAssetDigest(binaryName, bytes, asset.digest);
+
+  // mkdtemp creates a fresh 0700 directory and fails rather than reusing an
+  // existing path, so a same-host user cannot pre-create the file we are about
+  // to chmod 0755 and rename over the CLI itself.
+  const tmpDir = await mkdtemp(join(tmpdir(), 'slackcli-update-'));
+  const tmpPath = join(tmpDir, binaryName);
 
   // Get current binary path
   const currentBinary = process.execPath;
 
-  info(`Installing update...`);
-
   try {
+    // Write to temp file
+    await writeFile(tmpPath, bytes);
+    await chmod(tmpPath, 0o755);
+
+    info(`Installing update...`);
+
     // Backup current binary
     const backupPath = `${currentBinary}.backup`;
     await rename(currentBinary, backupPath);
@@ -178,6 +222,8 @@ export async function performUpdate(): Promise<void> {
     // Try to restore from backup if it exists
     logError(`Update failed: ${error.message}`);
     throw error;
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
   }
 }
 

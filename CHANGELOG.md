@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-21
+
+### Fixed
+- **Editing a message no longer destroys its links**: `messages edit` now sends `parse=none` on `chat.update`, so `<https://example.com|labelled link>` survives an edit instead of being rewritten to escaped literal text (#106)
+  - `chat.update` defaults `parse` to `client`, unlike `chat.postMessage`, and omitting the field overwrites the value the message was posted with — it does not inherit it
+  - A message broken by an earlier edit stays broken until it is edited again with a fixed build; mentions (`<@U…>`) were never affected
+
+### Security
+- **`update` verifies the downloaded binary before installing it**: the release asset is hashed and checked against the `sha256` digest GitHub publishes for it, before anything is written to disk (#104)
+  - Fails closed — a missing digest, or one that is not `sha256`, aborts the update and tells the user how to install by hand
+  - The download is now staged in a `mkdtemp` directory (created 0700, never reusing a path) instead of the predictable `slackcli-update-${Date.now()}` path, and is removed on every exit path
+
 ## [0.9.0] - 2026-08-16
 
 ### Added

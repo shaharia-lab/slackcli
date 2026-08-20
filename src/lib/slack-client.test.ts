@@ -127,9 +127,25 @@ describe('SlackClient.updateMessage', () => {
     expect(client.calls).toEqual([
       {
         method: 'chat.update',
-        params: { channel: 'C123', ts: '1234567890.123456', text: 'Corrected message' },
+        params: {
+          channel: 'C123',
+          ts: '1234567890.123456',
+          text: 'Corrected message',
+          parse: 'none',
+        },
       },
     ]);
     expect(response.ts).toBe('1234567890.123456');
+  });
+
+  // Without this, Slack applies the chat.update default (`client`) and stores
+  // `&lt;https://example.com|label&gt;`, which renders as literal text: every
+  // link in an edited message dies, silently, on a call that returns ok.
+  it('sends parse=none so link markup survives the edit', async () => {
+    const client = new TestSlackClient();
+
+    await client.updateMessage('C123', '1234567890.123456', 'A <https://example.com|label> B');
+
+    expect(client.calls[0]!.params.parse).toBe('none');
   });
 });

@@ -153,7 +153,10 @@ export class SlackClient {
   }
 
   async updateMessage(channel: string, ts: string, text: string): Promise<any> {
-    return this.request('chat.update', { channel, ts, text });
+    // `parse` must be explicit: chat.update defaults it to `client` (unlike
+    // chat.postMessage, which defaults to `none`), and that escapes the
+    // `<url|label>` markup in the text, so editing a message kills its links.
+    return this.request('chat.update', { channel, ts, text, parse: 'none' });
   }
 
   async uploadFileExternal(channel: string, filePath: string, options: {

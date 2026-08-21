@@ -38,6 +38,15 @@ To upgrade to the latest version:
 brew upgrade slackcli
 ```
 
+### Nix
+
+```bash
+nix run github:shaharia-lab/slackcli -- --help
+nix profile install github:shaharia-lab/slackcli
+```
+
+See [nix/README.md](nix/README.md) for flake inputs and the development shell.
+
 ### Pre-built Binaries
 
 #### Linux (x86_64)

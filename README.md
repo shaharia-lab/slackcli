@@ -2,10 +2,11 @@
 
 # SlackCLI
 
-### Your Slack workspace, from the terminal.
+### Work with one — or many — Slack workspaces, straight from your terminal.
 
-Read channels, send messages, search history, and pipe it all into `jq` —
-without building a Slack app first.
+Read channels, send messages, search history, and catch up on what you missed.
+Built to be **AI-agent friendly**, so your scripts and assistants can use Slack too.
+No Slack app to build, no admin approval to wait for.
 
 [![Release](https://img.shields.io/github/v/release/shaharia-lab/slackcli?style=flat-square&color=3fa045)](https://github.com/shaharia-lab/slackcli/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/shaharia-lab/slackcli/ci.yml?branch=main&style=flat-square&label=CI&logo=github)](https://github.com/shaharia-lab/slackcli/actions/workflows/ci.yml)
@@ -15,6 +16,16 @@ without building a Slack app first.
 [![Last commit](https://img.shields.io/github/last-commit/shaharia-lab/slackcli?style=flat-square)](https://github.com/shaharia-lab/slackcli/commits/main)
 
 **[Quickstart](#-quickstart) · [What it does](#-what-do-you-want-to-do) · [Commands](#-command-reference) · [Docs](docs/README.md) · [Contributing](#-contributing)**
+
+<br>
+
+### ⭐ Like the idea? Star the repo.
+
+SlackCLI is an independent open-source project with no company behind it.
+A star takes two seconds and is how the next person finds it.
+
+[![Star this repo](https://img.shields.io/badge/⭐_Star_SlackCLI-181717?style=for-the-badge&logo=github)](https://github.com/shaharia-lab/slackcli)
+[![Share on X](https://img.shields.io/badge/Tell_someone-000000?style=for-the-badge&logo=x&logoColor=white)](https://twitter.com/intent/tweet?text=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal%2C%20and%20let%20AI%20agents%20do%20it%20too.&url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)
 
 </div>
 
@@ -339,23 +350,20 @@ slackcli update                              # install it
 
 ---
 
-## ⭐ Star it, share it
+## ⭐ Spread the word
 
-SlackCLI is a small independent project with no company behind it. Stars are the
-entire growth engine — they are how the next person finds this instead of writing
-the same glue script for the fifth time.
+Made it this far? Then SlackCLI is probably useful to you — and the fastest way to
+keep it alive is to make it easier for the next person to find.
 
 <div align="center">
 
-**If SlackCLI saved you an afternoon, [give it a star](https://github.com/shaharia-lab/slackcli) — it takes two seconds.**
-
-[![Star this repo](https://img.shields.io/badge/⭐_Star_this_repo-181717?style=for-the-badge&logo=github)](https://github.com/shaharia-lab/slackcli)
-[![Share on X](https://img.shields.io/badge/Share_on_X-000000?style=for-the-badge&logo=x&logoColor=white)](https://twitter.com/intent/tweet?text=SlackCLI%20%E2%80%94%20drive%20your%20Slack%20workspace%20from%20the%20terminal%2C%20with%20JSON%20output%20for%20scripts%20and%20AI%20agents.&url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)
-[![Discuss](https://img.shields.io/badge/Join_the_discussion-5865F2?style=for-the-badge&logo=github)](https://github.com/shaharia-lab/slackcli/discussions)
+**[⭐ Star SlackCLI](https://github.com/shaharia-lab/slackcli)** ·
+**[💬 Say hello in Discussions](https://github.com/shaharia-lab/slackcli/discussions)** ·
+**[📣 Tell someone](https://twitter.com/intent/tweet?text=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal%2C%20and%20let%20AI%20agents%20do%20it%20too.&url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)**
 
 </div>
 
-Other things that genuinely help, in rough order of usefulness:
+In rough order of usefulness:
 
 - ⭐ **Star the repo** — the single highest-leverage thing.
 - 🐛 **Open an issue** when something breaks or a command feels wrong.

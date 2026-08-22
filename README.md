@@ -21,11 +21,10 @@ No Slack app to build, no admin approval to wait for.
 
 ### ⭐ Like the idea? Star the repo.
 
-SlackCLI is an independent open-source project with no company behind it.
-A star takes two seconds and is how the next person finds it.
+It takes two seconds, and it is how the next person finds SlackCLI.
 
-[![Star this repo](https://img.shields.io/badge/⭐_Star_SlackCLI-181717?style=for-the-badge&logo=github)](https://github.com/shaharia-lab/slackcli)
-[![Share on X](https://img.shields.io/badge/Tell_someone-000000?style=for-the-badge&logo=x&logoColor=white)](https://twitter.com/intent/tweet?text=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal%2C%20and%20let%20AI%20agents%20do%20it%20too.&url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)
+[![Star SlackCLI](https://img.shields.io/badge/⭐_Star_SlackCLI-181717?style=for-the-badge&logo=github)](https://github.com/shaharia-lab/slackcli)
+[![Share it](https://img.shields.io/badge/📣_Share_it-3fa045?style=for-the-badge)](#-spread-the-word)
 
 </div>
 
@@ -359,7 +358,17 @@ keep it alive is to make it easier for the next person to find.
 
 **[⭐ Star SlackCLI](https://github.com/shaharia-lab/slackcli)** ·
 **[💬 Say hello in Discussions](https://github.com/shaharia-lab/slackcli/discussions)** ·
-**[📣 Tell someone](https://twitter.com/intent/tweet?text=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal%2C%20and%20let%20AI%20agents%20do%20it%20too.&url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)**
+**[🐛 Report something broken](https://github.com/shaharia-lab/slackcli/issues)**
+
+<br>
+
+**Share it with one person who lives in Slack and in a terminal**
+
+[![X](https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white)](https://twitter.com/intent/tweet?text=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal%2C%20and%20let%20AI%20agents%20do%20it%20too.&url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)
+[![Bluesky](https://img.shields.io/badge/Bluesky-0285FF?style=for-the-badge&logo=bluesky&logoColor=white)](https://bsky.app/intent/compose?text=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal%2C%20and%20let%20AI%20agents%20do%20it%20too.%20https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli)
+[![Reddit](https://img.shields.io/badge/Reddit-FF4500?style=for-the-badge&logo=reddit&logoColor=white)](https://www.reddit.com/submit?url=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli&title=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal)
+[![Hacker News](https://img.shields.io/badge/Hacker_News-FF6600?style=for-the-badge&logo=ycombinator&logoColor=white)](https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2Fshaharia-lab%2Fslackcli&t=SlackCLI%20%E2%80%94%20work%20with%20one%20or%20many%20Slack%20workspaces%20straight%20from%20your%20terminal)
 
 </div>
 

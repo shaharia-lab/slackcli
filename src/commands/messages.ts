@@ -1,5 +1,6 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import ora from 'ora';
+import { readFile } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { success, error, warning } from '../lib/formatter.ts';
 import {
@@ -8,6 +9,45 @@ import {
   workspaceMismatchWarning,
 } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
+
+export async function parseBlocksInput(input: string): Promise<Array<Record<string, unknown>>> {
+  let source = input;
+  if (input.startsWith('@')) {
+    const path = input.slice(1);
+    if (!path) {
+      throw new Error('--blocks file path cannot be empty');
+    }
+    try {
+      source = await readFile(path, 'utf8');
+    } catch (err: any) {
+      throw new Error(`Cannot read blocks file ${path}: ${err.message}`);
+    }
+  }
+
+  let blocks: unknown;
+  try {
+    blocks = JSON.parse(source);
+  } catch (err: any) {
+    throw new Error(`Invalid blocks JSON: ${err.message}`);
+  }
+
+  if (!Array.isArray(blocks)) {
+    throw new Error('--blocks must contain a JSON array of Block Kit blocks');
+  }
+  for (const [index, block] of blocks.entries()) {
+    if (
+      typeof block !== 'object'
+      || block === null
+      || Array.isArray(block)
+      || typeof (block as Record<string, unknown>).type !== 'string'
+      || !(block as Record<string, unknown>).type
+    ) {
+      throw new Error(`Block at index ${index} must be an object with a non-empty string "type"`);
+    }
+  }
+
+  return blocks as Array<Record<string, unknown>>;
+}
 
 // Warn when a pasted link points at a different workspace than the one we will call,
 // rather than letting Slack answer with a misleading message_not_found.
@@ -29,6 +69,10 @@ export function createMessagesCommand(): Command {
     .option('--thread-ts <timestamp>', 'Send as reply to thread')
     .option('--permalink <url>', 'Slack message link; replies in that message\'s thread (replaces --recipient-id and --thread-ts)')
     .option('--file <path>', 'Attach a file to the message')
+    .addOption(
+      new Option('--blocks <json|@file>', 'Block Kit JSON array, inline or loaded from @file')
+        .conflicts('file')
+    )
     .option('--workspace <id|name>', 'Workspace to use')
     .action(async (options) => {
       const spinner = ora('Sending message...').start();
@@ -63,8 +107,10 @@ export function createMessagesCommand(): Command {
           return;
         }
 
+        const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
         const response = await client.postMessage(channelId, options.message, {
           thread_ts: target.threadTs,
+          blocks,
         });
 
         spinner.succeed('Message sent successfully!');

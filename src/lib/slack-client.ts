@@ -54,10 +54,12 @@ export class SlackClient {
 
     const url = `${this.config.workspace_url}/api/${method}`;
 
-    const formBody = new URLSearchParams({
-      token: this.config.xoxc_token,
-      ...params,
-    });
+    const formParams: Record<string, string> = { token: this.config.xoxc_token };
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined) continue;
+      formParams[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    }
+    const formBody = new URLSearchParams(formParams);
 
     try {
       // URL-encode the xoxd token for the cookie
@@ -145,9 +147,11 @@ export class SlackClient {
   // Post message
   async postMessage(channel: string, text: string, options: {
     thread_ts?: string;
+    blocks?: Array<Record<string, unknown>>;
   } = {}): Promise<any> {
     const params: Record<string, any> = { channel, text };
     if (options.thread_ts) params.thread_ts = options.thread_ts;
+    if (options.blocks) params.blocks = options.blocks;
 
     return this.request('chat.postMessage', params);
   }

@@ -335,6 +335,42 @@ slackcli messages send --recipient-id=C1234567890 --thread-ts=1234567890.123456 
 # Send a message with a file attachment
 slackcli messages send --recipient-id=C1234567890 --message="Here is the file" --file=./report.pdf
 
+# Send a native Block Kit table (not a Markdown or CSV code block)
+slackcli messages send \
+  --recipient-id=C1234567890 \
+  --message="Project status table" \
+  --blocks='[
+    {
+      "type": "table",
+      "column_settings": [{"is_wrapped": true}, {"align": "right"}],
+      "rows": [
+        [
+          {
+            "type": "rich_text",
+            "elements": [{"type": "rich_text_section", "elements": [{"type": "text", "text": "Project", "style": {"bold": true}}]}]
+          },
+          {
+            "type": "rich_text",
+            "elements": [{"type": "rich_text_section", "elements": [{"type": "text", "text": "Status", "style": {"bold": true}}]}]
+          }
+        ],
+        [
+          {
+            "type": "rich_text",
+            "elements": [{"type": "rich_text_section", "elements": [{"type": "link", "text": "SlackCLI", "url": "https://github.com/shaharia-lab/slackcli"}]}]
+          },
+          {"type": "raw_text", "text": "Ready"}
+        ]
+      ]
+    }
+  ]'
+
+# Send standard Markdown for Slack to render natively
+slackcli messages send \
+  --recipient-id=C1234567890 \
+  --message="Release notes" \
+  --blocks='[{"type":"markdown","text":"# Release notes\n\n- [x] Build\n- [ ] Deploy\n\nSee the [runbook](https://example.com/runbook)."}]'
+
 # Edit an existing message you posted
 slackcli messages edit --channel-id=C1234567890 --timestamp=1234567890.123456 --message="Corrected message"
 
@@ -358,6 +394,8 @@ slackcli messages send --permalink="https://myteam.slack.com/archives/C123456789
 ```
 
 File uploads require Slack workspace permissions that allow file upload, such as `files:write` for standard Slack app tokens.
+
+`--blocks` accepts a JSON array of [Block Kit blocks](https://docs.slack.dev/reference/block-kit/blocks/), including native [`table` blocks](https://docs.slack.dev/reference/block-kit/blocks/table-block/) and [`markdown` blocks](https://docs.slack.dev/reference/block-kit/blocks/markdown-block/). Native markdown blocks use standard Markdown rather than Slack mrkdwn and support features such as headings, task lists, syntax-highlighted code blocks, and Markdown tables. Pass JSON inline as above, or store the array in a file and use `--blocks=@blocks.json`. The required `--message` text is used as the notification and accessibility fallback. Structured blocks work with both standard Slack tokens and browser-session authentication. `--blocks` and `--file` cannot be used together.
 
 Editing only works on messages posted by the authenticated user or app; ephemeral messages cannot be edited.
 

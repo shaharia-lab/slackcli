@@ -19,12 +19,9 @@ No Slack app to build, no admin approval to wait for.
 
 <br>
 
-### ⭐ Like the idea? Star the repo.
+### ⭐ Like the idea? [Star the repo.](https://github.com/shaharia-lab/slackcli)
 
 It takes two seconds, and it is how the next person finds SlackCLI.
-
-[![Star SlackCLI](https://img.shields.io/badge/⭐_Star_SlackCLI-181717?style=for-the-badge&logo=github)](https://github.com/shaharia-lab/slackcli)
-[![Share it](https://img.shields.io/badge/📣_Share_it-3fa045?style=for-the-badge)](#-spread-the-word)
 
 </div>
 

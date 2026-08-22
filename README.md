@@ -10,6 +10,12 @@
 
 A fast, developer-friendly command-line interface tool for interacting with Slack workspaces. Built with TypeScript and Bun, it enables AI agents, automation tools, and developers to access Slack functionality directly from the terminal.
 
+## Demo
+
+Sign in, browse conversations, search the workspace, read a thread from a permalink, reply, react, read a canvas as Markdown, and pipe `--json` into `jq` — all from the terminal.
+
+https://github.com/user-attachments/assets/90cf1c89-2859-4b84-a731-b0ff3e1172f3
+
 ## Features
 
 - 🔐 **Dual Authentication Support**: Standard Slack tokens (xoxb/xoxp) or browser tokens (xoxd/xoxc)

@@ -1,6 +1,6 @@
 <div align="center">
 
-# SlackCLI
+<img src="assets/banner.png" alt="SlackCLI — give your AI agent access to Slack. Read, search, and reply from the terminal. No Slack app needed." width="1000">
 
 ### Work with one — or many — Slack workspaces, straight from your terminal.
 

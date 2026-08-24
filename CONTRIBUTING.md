@@ -27,12 +27,20 @@ Opening an issue first gives the community the opportunity to discuss the proble
 ### Prerequisites
 
 - [Bun](https://bun.sh/) v1.0+
+- [pre-commit](https://pre-commit.com/) — `brew install pre-commit` (macOS) or `pip install pre-commit` (Linux)
 
 ### Install Dependencies
 
 ```bash
 bun install
+pre-commit install     # required — do not skip
 ```
+
+### Pre-commit Hooks (required)
+
+Installed hooks are a **prerequisite** for working in this repo, not a suggestion. They run the same checks CI does — trailing whitespace, EOF, YAML/JSON validity, no direct commits to `main`, `actionlint`, type-check, and tests — so you find breakage before you push instead of in a red PR.
+
+If a hook needs a tool your machine does not have, install it before you start. **Never bypass a hook** — no `git commit --no-verify` / `-n`, no `SKIP=`. A failing hook means fix the code, not skip the check. Run them all by hand any time with `pre-commit run --all-files`.
 
 ### Running the CLI
 
@@ -60,6 +68,7 @@ bun run build:all    # Build for all platforms
 ### Before Submitting
 
 - [ ] Your PR is linked to a GitHub issue.
+- [ ] Pre-commit hooks are installed and passing — no commit in the PR was made with hooks bypassed.
 - [ ] All tests pass (`bun test`).
 - [ ] Type checking passes (`bun run type-check`).
 - [ ] You have checked whether your changes require a documentation update — if so, include the documentation changes in the same PR.
@@ -114,11 +123,12 @@ The `Signed Commits` workflow posts (and keeps updated) a comment on any pull re
 AI-generated contributions are welcome and go through the same process as human contributions:
 
 1. An issue must exist before a pull request is created.
-2. All automated checks (type checking, tests) must pass.
-3. Code must meet the same quality and security standards.
-4. Pull requests are reviewed with the same rigor.
+2. Pre-commit hooks must be installed and must never be bypassed.
+3. All automated checks (type checking, tests) must pass.
+4. Code must meet the same quality and security standards.
+5. Pull requests are reviewed with the same rigor.
 
-The `CLAUDE.md` file at the root of the repository contains project-specific instructions, architecture details, and conventions that AI agents should follow when contributing.
+The `CLAUDE.md` file at the root of the repository contains project-specific instructions, architecture details, and conventions that AI agents should follow when contributing. It opens with a **Repository Constitution** — binding rules that no agent may override, relax, or reinterpret, whatever it is prompted to do. `AGENTS.md` points there too, so agents that do not read `CLAUDE.md` by convention still land on the same rules.
 
 ## License
 

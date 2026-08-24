@@ -5,8 +5,8 @@
 - [Bun](https://bun.sh) 1.0+ (CI pins **1.3.13** — see
   [build and release](build-and-release.md#why-bun-is-pinned))
 - TypeScript 5.x (installed as a dev dependency)
-- [pre-commit](https://pre-commit.com) — `brew install pre-commit` or
-  `pip install pre-commit`
+- [pre-commit](https://pre-commit.com) — **required**, `brew install pre-commit`
+  or `pip install pre-commit`
 - Optional: Chrome, Edge, Chromium, or Brave, to exercise `auth login-auto`
 
 ## First run
@@ -15,11 +15,13 @@
 git clone https://github.com/shaharia-lab/slackcli.git
 cd slackcli
 bun install
-pre-commit install     # do not skip this
+pre-commit install     # required — constitution §5, not optional
 ```
 
 `pre-commit install` wires up the same checks CI runs, so you find breakage
-before you push instead of in a red PR.
+before you push instead of in a red PR. Working hooks are a prerequisite for
+contributing here: if a hook needs a tool this machine does not have, install
+it before you start rather than working without the check.
 
 ## Everyday commands
 
@@ -54,6 +56,11 @@ TypeScript directly.
 | `bun test` | Tests must pass |
 
 Run them all by hand with `pre-commit run --all-files`.
+
+**Never bypass a hook** — no `git commit --no-verify` / `-n`, no `SKIP=`, no
+re-running a commit with checks disabled. A failing hook means fix the code.
+This is constitution §5 in [CLAUDE.md](../../CLAUDE.md), and it binds AI agents
+as strictly as it binds people.
 
 ## Signed commits
 

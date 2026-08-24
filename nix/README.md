@@ -1,7 +1,7 @@
 # Nix
 
 The flake at the repository root exposes the CLI as a package and a development
-shell. Supported systems are `x86_64-linux`, `aarch64-linux` and
+shell. Supported systems are `x86_64-linux`, `aarch64-linux`, `x86_64-darwin` and
 `aarch64-darwin`.
 
 Flakes must be enabled. If they are not, add this to `/etc/nix/nix.conf` or

@@ -63,6 +63,18 @@ bun run build        # Build binary for current platform
 bun run build:all    # Build for all platforms
 ```
 
+### Nix packaging
+
+`nix/bun.nix` is a generated file that maps `bun.lock` entries to Nix fetches.
+If you change `bun.lock`, regenerate it:
+
+```bash
+nix develop -c bun2nix -o nix/bun.nix
+```
+
+This requires Nix. See [`nix/README.md`](nix/README.md) for setup details. CI
+fails if `nix/bun.nix` does not match `bun.lock`.
+
 ## Pull Request Guidelines
 
 ### Before Submitting

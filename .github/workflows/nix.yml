@@ -1,4 +1,4 @@
-name: Nix
+name: Nix Build
 
 on:
   push:
@@ -10,28 +10,26 @@ permissions:
   contents: read
 
 jobs:
-  nix:
+  nix-build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+      - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
         with:
           extra_nix_config: |
             extra-substituters = https://nix-community.cachix.org
             extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
 
-      - name: Regenerate nix/bun.nix from bun.lock
+      - name: Regenerate nix/bun.nix
         run: nix develop -c bun2nix -o nix/bun.nix
 
-      - name: Check nix/bun.nix is up to date
+      - name: Verify nix/bun.nix matches bun.lock
         run: git diff --exit-code nix/bun.nix
 
-      - name: Build package
+      - name: Build
         run: nix build -L
 
-      - name: Verify binary (--version)
+      - name: Verify binary
         run: ./result/bin/slackcli --version

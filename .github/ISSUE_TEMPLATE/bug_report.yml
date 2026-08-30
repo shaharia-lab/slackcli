@@ -1,0 +1,84 @@
+name: Bug report
+description: Something in SlackCLI does not work as documented or expected.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much as you can — a
+        reproducible report gets fixed much faster.
+
+        **Do not include tokens, cookies, or other credentials anywhere in this issue.**
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug — what you did and what went wrong.
+      placeholder: When I run `slackcli messages send ...`, it fails with ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands and steps so the bug can be reproduced. Redact tokens and workspace names as needed.
+      placeholder: |
+        1. slackcli auth login ...
+        2. slackcli conversations list
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: SlackCLI version
+      description: Output of `slackcli --version`.
+      placeholder: v0.10.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux x64
+        - Linux arm64
+        - macOS x64 (Intel)
+        - macOS arm64 (Apple Silicon)
+        - Windows x64
+    validations:
+      required: true
+  - type: dropdown
+    id: auth-type
+    attributes:
+      label: Authentication type
+      description: Which auth type is the affected workspace using?
+      options:
+        - Standard (xoxb/xoxp app token)
+        - Browser (xoxd/xoxc session tokens)
+        - Both / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output or logs
+      description: Paste any error output. **Redact tokens, cookies, and workspace-identifying data.**
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this bug has not been reported yet.
+          required: true
+        - label: I removed all tokens, cookies, and credentials from this report.
+          required: true

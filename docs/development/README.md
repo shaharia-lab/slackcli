@@ -37,9 +37,12 @@ bun run dev --help
 This repository's contribution policy is stricter than most and is binding on
 human and AI contributors alike:
 
-1. **An issue must exist first**, stating WHAT, WHY, and optionally HOW.
+1. **An issue must exist first**, filed with one of the issue templates (bug
+   report, feature request, improvement) and stating WHAT, WHY, and optionally
+   HOW. Blank issues are disabled.
 2. **The issue must carry the `ready-for-pr` label** before a PR is opened.
-3. The PR must link that issue — a workflow enforces it.
+3. The PR must link that issue and follow the PR template, checklist included —
+   a workflow enforces the link.
 4. Type-check, tests, and pre-commit hooks pass; commits are signed.
 
 Full text: [CONTRIBUTING.md](../../CONTRIBUTING.md), and the constitution at the

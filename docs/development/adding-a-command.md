@@ -2,9 +2,9 @@
 
 A worked example: adding `slackcli conversations members <channel-id>`.
 
-Before writing anything, satisfy the policy: open an issue describing WHAT, WHY
-and optionally HOW, and wait for the **`ready-for-pr`** label. See
-[CONTRIBUTING.md](../../CONTRIBUTING.md).
+Before writing anything, satisfy the policy: open an issue with the feature
+request template describing WHAT, WHY and optionally HOW, and wait for the
+**`ready-for-pr`** label. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## 1. Types first
 
@@ -137,4 +137,4 @@ review:
 - [ ] Errors: `spinner.fail(...)`, `error(message)`, `process.exit(1)`.
 - [ ] Never print a token value.
 - [ ] `bun run type-check` and `bun test` pass; commits are signed.
-- [ ] The PR links a `ready-for-pr` issue.
+- [ ] The PR links a `ready-for-pr` issue and follows the PR template.

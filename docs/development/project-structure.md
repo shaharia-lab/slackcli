@@ -17,6 +17,8 @@ slackcli/
 │   └── types/index.ts            Shared interfaces
 ├── scripts/build.ts              Compile wrapper that injects __APP_VERSION__
 ├── .github/workflows/            CI, tests, release, policy checks
+├── .github/ISSUE_TEMPLATE/       Issue forms; blank issues are disabled
+├── .github/PULL_REQUEST_TEMPLATE.md  Linked-issue reference + checklist
 ├── .pre-commit-config.yaml       Local checks mirroring CI
 ├── CLAUDE.md                     Repository constitution + architecture notes
 ├── CONTRIBUTING.md               Contribution policy

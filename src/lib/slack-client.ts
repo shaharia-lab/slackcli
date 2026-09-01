@@ -368,6 +368,39 @@ export class SlackClient {
     return this.request('conversations.info', { channel });
   }
 
+  // Get team (workspace) info. team.info works for both auth types. On an
+  // enterprise org, an optional team (T-id) scopes the lookup to one workspace;
+  // omitted, Slack returns the token's own workspace.
+  async getTeamInfo(options: { team?: string } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.team) params.team = options.team;
+    return this.request('team.info', params);
+  }
+
+  // List user groups ("subteams"). include_count returns user_count;
+  // include_disabled returns groups whose date_delete is non-zero. On an
+  // enterprise org, team_id scopes the listing to one workspace.
+  async listUsergroups(options: {
+    include_disabled?: boolean;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { include_count: true };
+    if (options.include_disabled) params.include_disabled = true;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.list', params);
+  }
+
+  // List the member user IDs of a user group.
+  async listUsergroupUsers(usergroup: string, options: {
+    include_disabled?: boolean;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup };
+    if (options.include_disabled) params.include_disabled = true;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.users.list', params);
+  }
+
   // Get unread counts (browser: client.counts, standard: conversations.list with unread data)
   async getUnreadCounts(): Promise<any> {
     if (this.config.auth_type === 'browser') {

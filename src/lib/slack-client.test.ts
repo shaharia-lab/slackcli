@@ -45,6 +45,14 @@ class TestSlackClient extends SlackClient {
       return { ok: true, channel: params.channel, ts: '1234567890.123456' };
     }
 
+    if (method === 'chat.getPermalink') {
+      return {
+        ok: true,
+        channel: params.channel,
+        permalink: 'https://example.slack.com/archives/C123/p1234567890123456',
+      };
+    }
+
     throw new Error(`Unexpected method: ${method}`);
   }
 }
@@ -152,6 +160,26 @@ describe('SlackClient.updateMessage', () => {
     await client.updateMessage('C123', '1234567890.123456', 'A <https://example.com|label> B');
 
     expect(client.calls[0]!.params.parse).toBe('none');
+  });
+});
+
+describe('SlackClient.getPermalink', () => {
+  // Slack names this parameter `message_ts`, not `ts`; sending `ts` returns a
+  // channel_not_found-style error rather than the link.
+  it('calls chat.getPermalink with message_ts and returns the link', async () => {
+    const client = new TestSlackClient();
+
+    const response = await client.getPermalink('C123', '1234567890.123456');
+
+    expect(client.calls).toEqual([
+      {
+        method: 'chat.getPermalink',
+        params: { channel: 'C123', message_ts: '1234567890.123456' },
+      },
+    ]);
+    expect(response.permalink).toBe(
+      'https://example.slack.com/archives/C123/p1234567890123456',
+    );
   });
 });
 

@@ -27,6 +27,7 @@ list for the version you have installed.
 | `search` | Search messages, channels, and people |
 | `saved` | Read your "saved for later" list |
 | `canvas` | List canvases and read them as Markdown |
+| `emoji` | List a workspace's custom emoji and inspect one |
 | `update` | Check for and install new versions |
 
 ## Pages
@@ -40,8 +41,9 @@ list for the version you have installed.
 7. [Search](search.md)
 8. [Saved items](saved.md)
 9. [Canvas](canvas.md)
-10. [Scripting and JSON output](scripting.md)
-11. [Troubleshooting](troubleshooting.md)
+10. [Emoji](emoji.md)
+11. [Scripting and JSON output](scripting.md)
+12. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 

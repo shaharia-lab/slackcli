@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import type {
   SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
+  CustomEmoji,
 } from '../types/index.ts';
 
 // Serialise a value as JSON and write it to stdout.
@@ -407,4 +408,39 @@ function truncateText(text: string | undefined, maxLen: number): string {
   if (!text) return '[no text]';
   if (text.length <= maxLen) return text;
   return text.substring(0, maxLen) + '...';
+}
+
+// Format a custom-emoji list for the terminal.
+export function formatEmojiList(emoji: CustomEmoji[]): string {
+  const aliasCount = emoji.filter(e => e.is_alias).length;
+  const realCount = emoji.length - aliasCount;
+
+  let output = chalk.bold(
+    `😀 Custom emoji (${emoji.length} — ${realCount} original, ${aliasCount} alias)\n\n`,
+  );
+
+  emoji.forEach((e) => {
+    if (e.is_alias) {
+      output += `  ${chalk.cyan(`:${e.name}:`)} ${chalk.dim(`→ :${e.alias_for}:`)}\n`;
+    } else {
+      output += `  ${chalk.cyan(`:${e.name}:`)}${e.url ? ` ${chalk.dim(e.url)}` : ''}\n`;
+    }
+  });
+
+  return output;
+}
+
+// Format a single custom emoji's details.
+export function formatEmoji(emoji: CustomEmoji): string {
+  let output = chalk.bold(`😀 :${emoji.name}:\n`);
+  if (emoji.is_alias) {
+    output += `  ${chalk.dim('Type:')} alias\n`;
+    output += `  ${chalk.dim('Alias for:')} :${emoji.alias_for}:\n`;
+  } else {
+    output += `  ${chalk.dim('Type:')} original\n`;
+    if (emoji.url) {
+      output += `  ${chalk.dim('URL:')} ${emoji.url}\n`;
+    }
+  }
+  return output;
 }

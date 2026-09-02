@@ -252,3 +252,24 @@ export interface CanvasReadOptions {
   raw?: boolean;
   workspace?: string;
 }
+
+// Custom (workspace) emoji
+export interface CustomEmoji {
+  // Emoji short name without the surrounding colons (e.g. `party-parrot`).
+  name: string;
+  // A real emoji points at an image URL; an alias points at another emoji's
+  // name. `is_alias` disambiguates, and `alias_for` names the target when true.
+  url?: string;
+  is_alias: boolean;
+  alias_for?: string;
+}
+
+export interface EmojiListOptions {
+  limit?: number;
+  aliases?: boolean;
+  workspace?: string;
+}
+
+export interface EmojiGetOptions {
+  workspace?: string;
+}

@@ -368,6 +368,12 @@ export class SlackClient {
     return this.request('conversations.info', { channel });
   }
 
+  // List the workspace's custom emoji (emoji.list works for both auth types).
+  // Returns { ok, emoji: { <name>: <image-url|"alias:<other>"> } }.
+  async listEmoji(): Promise<any> {
+    return this.request('emoji.list', {});
+  }
+
   // Get unread counts (browser: client.counts, standard: conversations.list with unread data)
   async getUnreadCounts(): Promise<any> {
     if (this.config.auth_type === 'browser') {

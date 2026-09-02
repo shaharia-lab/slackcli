@@ -1,14 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  addUsergroupMembers,
+  applyMembershipChange,
   fetchUsergroupMembers,
   isUsergroupEnabled,
   normalizeUsergroups,
+  removeUsergroupMembers,
   resolveUsergroup,
 } from './usergroups.ts';
 import type { SlackClient } from './slack-client.ts';
 
 // Minimal fake client: records every request and returns canned responses
-// keyed by method. Mirrors the SlackClient surface the read helpers call.
+// keyed by method. Mirrors the SlackClient surface the helpers call.
 function fakeClient(overrides: Partial<Record<string, (params: any) => any>> = {}): {
   client: SlackClient;
   calls: Array<{ method: string; params: any }>;
@@ -22,6 +25,10 @@ function fakeClient(overrides: Partial<Record<string, (params: any) => any>> = {
     listUsergroupUsers: (usergroup: string) => {
       calls.push({ method: 'usergroups.users.list', params: { usergroup } });
       return overrides['usergroups.users.list']?.({ usergroup }) ?? { ok: true, users: [] };
+    },
+    setUsergroupUsers: (usergroup: string, users: string) => {
+      calls.push({ method: 'usergroups.users.update', params: { usergroup, users } });
+      return overrides['usergroups.users.update']?.({ usergroup, users }) ?? { ok: true };
     },
     getUsersInfo: (ids: string[]) => {
       calls.push({ method: 'users.info', params: { ids } });
@@ -115,5 +122,63 @@ describe('fetchUsergroupMembers', () => {
     const { members } = await fetchUsergroupMembers(client, 'S1');
     expect(members).toEqual([]);
     expect(calls.some((c) => c.method === 'users.info')).toBe(false);
+  });
+});
+
+describe('applyMembershipChange', () => {
+  test('adds only new ids', () => {
+    const r = applyMembershipChange(['U1'], { add: ['U1', 'U2'] });
+    expect(r.added).toEqual(['U2']);
+    expect(r.removed).toEqual([]);
+    expect(new Set(r.next)).toEqual(new Set(['U1', 'U2']));
+    expect(r.noop).toBe(false);
+  });
+  test('removes only present ids', () => {
+    const r = applyMembershipChange(['U1', 'U2'], { remove: ['U2', 'U9'] });
+    expect(r.removed).toEqual(['U2']);
+    expect(r.next).toEqual(['U1']);
+  });
+  test('no-op when nothing changes', () => {
+    const r = applyMembershipChange(['U1'], { add: ['U1'] });
+    expect(r.noop).toBe(true);
+    expect(r.added).toEqual([]);
+  });
+});
+
+describe('addUsergroupMembers / removeUsergroupMembers (read-modify-write)', () => {
+  test('add reads current then writes the union', async () => {
+    const { client, calls } = fakeClient({
+      'usergroups.users.list': () => ({ ok: true, users: ['U1'] }),
+    });
+    const r = await addUsergroupMembers(client, 'S1', ['U2']);
+    expect(r.added).toEqual(['U2']);
+    const write = calls.find((c) => c.method === 'usergroups.users.update');
+    expect(new Set(write!.params.users.split(','))).toEqual(new Set(['U1', 'U2']));
+  });
+
+  test('add that changes nothing does not write', async () => {
+    const { client, calls } = fakeClient({
+      'usergroups.users.list': () => ({ ok: true, users: ['U1'] }),
+    });
+    const r = await addUsergroupMembers(client, 'S1', ['U1']);
+    expect(r.noop).toBe(true);
+    expect(calls.some((c) => c.method === 'usergroups.users.update')).toBe(false);
+  });
+
+  test('remove writes the reduced list', async () => {
+    const { client, calls } = fakeClient({
+      'usergroups.users.list': () => ({ ok: true, users: ['U1', 'U2'] }),
+    });
+    const r = await removeUsergroupMembers(client, 'S1', ['U2']);
+    expect(r.removed).toEqual(['U2']);
+    const write = calls.find((c) => c.method === 'usergroups.users.update');
+    expect(write!.params.users).toBe('U1');
+  });
+
+  test('refuses to empty the group', async () => {
+    const { client } = fakeClient({
+      'usergroups.users.list': () => ({ ok: true, users: ['U1'] }),
+    });
+    await expect(removeUsergroupMembers(client, 'S1', ['U1'])).rejects.toThrow(/last member/);
   });
 });

@@ -302,9 +302,9 @@ describe('SlackClient request throttling', () => {
 
   // Slack counts API volume per session, not per client object, so two clients
   // must not be able to double the rate by each holding their own limiter.
-  // This is the one test that leans on the process-wide `slackRateLimiter`; it
-  // asserts a gap between its own two calls, so earlier tests advancing the
-  // singleton's clock cannot affect it.
+  // This leans on the process-wide `slackRateLimiter`, which other tests in this
+  // file also touch. Safe because it asserts the gap between its own two calls:
+  // whatever advanced the singleton's clock earlier cannot shrink that gap.
   it('shares one limiter across clients when none is injected', async () => {
     const starts: number[] = [];
     globalThis.fetch = (async (_input, _init) => {

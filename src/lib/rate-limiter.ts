@@ -55,9 +55,12 @@ export class RateLimiter {
    * another — so keep composite calls sequential rather than nested.
    *
    * A `task` that never settles holds its slot forever and stalls everything
-   * behind it. `browserRequest()` uses a bare `fetch` with no timeout, so if a
-   * caller ever needs to survive a hung request, the timeout belongs on the
-   * request itself (an `AbortSignal`), not here.
+   * behind it, and neither Slack path is bounded today: `browserRequest()` uses
+   * a bare `fetch` with no timeout, and the `WebClient` is constructed with the
+   * SDK defaults (`timeout: 0`, `tenRetriesInAboutThirtyMinutes`), so a retrying
+   * standard call can hold a slot for ~30 minutes. The bound belongs on the
+   * request — an `AbortSignal`, or `timeout`/`retryConfig` on the `WebClient` —
+   * not here.
    */
   async run<T>(task: () => Promise<T>): Promise<T> {
     await this.acquire();

@@ -12,6 +12,9 @@ slackcli conversations list                          # everything you are in
 slackcli conversations list --types=public_channel
 slackcli conversations list --types=im               # DMs only
 slackcli conversations list --limit=200 --exclude-archived
+
+# Machine-readable
+slackcli conversations list --json
 ```
 
 | Option | Default | Purpose |
@@ -20,9 +23,11 @@ slackcli conversations list --limit=200 --exclude-archived
 | `--limit <number>` | `100` | How many to return |
 | `--exclude-archived` | off | Skip archived conversations |
 | `--cursor <cursor>` | — | Fetch the next page |
+| `--json` | off | JSON output with a resolved `users` array |
 
 DM entries are resolved to the other person's name. When more results exist, the
-exact `--cursor` command for the next page is printed.
+exact `--cursor` command for the next page is printed (human output) or set on
+`next_cursor` (`--json`; `null` on the last page).
 
 ## `conversations read`
 

@@ -5,9 +5,9 @@ hand.
 
 ## `--json`
 
-Every read command supports `--json`: `conversations read`, `conversations get`,
-`conversations unread`, `search messages`, `search channels`, `search people`,
-`saved list`, `canvas list`, `canvas read`.
+Every read command supports `--json`: `conversations list`, `conversations read`,
+`conversations get`, `conversations unread`, `search messages`, `search channels`,
+`search people`, `saved list`, `canvas list`, `canvas read`.
 
 The writing commands support it too — `messages send`, `messages edit`, and
 `messages draft` — where it returns the identity of what was just written
@@ -23,6 +23,10 @@ slackcli conversations read C1234567890 --json | jq '.messages[].text'
 ### Shapes
 
 ```bash
+# Conversations, with a resolved users array so DM ids are not opaque
+slackcli conversations list --json | jq '.conversations[] | {id, name}'
+slackcli conversations list --json | jq '.next_cursor'
+
 # Messages, with a resolved users array so IDs are not opaque
 slackcli conversations read C123 --json | jq '.messages[] | {ts, user, text}'
 slackcli conversations read C123 --json | jq '.users[] | {id, real_name}'

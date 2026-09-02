@@ -72,16 +72,16 @@ describe('RateLimiter', () => {
   });
 
   it('paces tasks queued after an idle period without an extra delay', async () => {
-    const limiter = new RateLimiter({ maxConcurrent: 2, minIntervalMs: 25 });
+    const limiter = new RateLimiter({ maxConcurrent: 2, minIntervalMs: 60 });
 
     await limiter.run(async () => undefined);
-    await sleep(40);
+    await sleep(80);
 
     const before = Date.now();
     await limiter.run(async () => undefined);
 
     // The interval already elapsed while idle, so the next call must not wait again.
-    expect(Date.now() - before).toBeLessThan(25);
+    expect(Date.now() - before).toBeLessThan(60);
   });
 
   it('does not delay anything when minIntervalMs is 0', async () => {

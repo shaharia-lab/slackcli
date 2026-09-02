@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { SlackClient } from './slack-client.ts';
-import { RateLimiter } from './rate-limiter.ts';
+import { RateLimiter, SLACK_MIN_REQUEST_INTERVAL_MS } from './rate-limiter.ts';
 
 class TestSlackClient extends SlackClient {
   public readonly calls: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -296,6 +296,33 @@ describe('SlackClient request throttling', () => {
     for (let i = 1; i < starts.length; i += 1) {
       expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(20);
     }
+  });
+
+  // Slack counts API volume per session, not per client object, so two clients
+  // must not be able to double the rate by each holding their own limiter.
+  it('shares one limiter across clients when none is injected', async () => {
+    const starts: number[] = [];
+    globalThis.fetch = (async (_input, _init) => {
+      starts.push(Date.now());
+      return Response.json({ ok: true, user: { id: 'U1' } });
+    }) as typeof fetch;
+
+    const config = {
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    } as const;
+
+    const first = new SlackClient({ ...config });
+    const second = new SlackClient({ ...config });
+
+    await Promise.all([first.getUserInfo('U1'), second.getUserInfo('U2')]);
+
+    expect(starts).toHaveLength(2);
+    expect(starts[1]! - starts[0]!).toBeGreaterThanOrEqual(SLACK_MIN_REQUEST_INTERVAL_MS - 5);
   });
 
   it('releases the slot when a request fails, so later calls still run', async () => {

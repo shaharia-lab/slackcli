@@ -48,6 +48,11 @@ export class RateLimiter {
   /**
    * Runs `task` once a slot is free and the minimum interval has elapsed.
    * Rejections propagate unchanged, and the slot is always released.
+   *
+   * `task` must not itself wait on another `run()` of the same limiter: it would
+   * hold its slot while queueing behind itself and deadlock at `maxConcurrent`.
+   * `SlackClient` satisfies this — no method awaits one `request()` inside
+   * another — so keep composite calls sequential rather than nested.
    */
   async run<T>(task: () => Promise<T>): Promise<T> {
     await this.acquire();

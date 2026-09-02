@@ -7,11 +7,13 @@ hand.
 
 Every read command supports `--json`: `conversations list`, `conversations read`,
 `conversations get`, `conversations unread`, `search messages`, `search channels`,
-`search people`, `saved list`, `canvas list`, `canvas read`.
+`search people`, `saved list`, `canvas list`, `canvas read`, `team info`,
+`usergroups list`, `usergroups read`, `emoji list`, `emoji get`.
 
-The writing commands support it too — `messages send`, `messages edit`, and
-`messages draft` — where it returns the identity of what was just written
-instead of the human success line.
+The writing commands support it too — `messages send`, `messages edit`,
+`messages draft`, and the `usergroups` write verbs (`create`, `update`, `add`,
+`remove`, `enable`, `disable`) — where it returns the identity of what was just
+written instead of the human success line.
 
 JSON goes to **stdout**. Progress spinners, warnings, error messages, and the
 update-available notice go to **stderr**, so a pipe normally carries only data:
@@ -142,6 +144,10 @@ done
   timeouts in a scheduled job.
 - **The update notice.** SlackCLI may append a one-line "update available" notice
   after a command. It goes to stderr and never contaminates `--json` on stdout.
+- **`usergroups` writes need `--yes`.** `create`, `update`, `add`, `remove`,
+  `enable`, and `disable` refuse to run with a non-zero exit when stdin is not a
+  terminal and `--yes` is absent, so an unattended job must pass `--yes`
+  explicitly. See [User groups](usergroups.md).
 - **Credentials.** `~/.config/slackcli/workspaces.json` holds live tokens at mode
   `0600`. Give a CI job its own bot-token profile rather than copying a personal
   browser session around.

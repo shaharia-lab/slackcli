@@ -115,3 +115,84 @@ export async function fetchUsergroupMembers(
 
   return { ids, members };
 }
+
+// Slack's usergroups.users.update replaces the WHOLE member list. To add or
+// remove specific users we read the current list, apply the change, and write
+// the result back. This computes the next membership without mutating.
+export function applyMembershipChange(
+  current: string[],
+  change: { add?: string[]; remove?: string[] },
+): { next: string[]; added: string[]; removed: string[]; noop: boolean } {
+  const set = new Set(current);
+  const added: string[] = [];
+  const removed: string[] = [];
+
+  for (const id of change.add ?? []) {
+    if (!set.has(id)) {
+      set.add(id);
+      added.push(id);
+    }
+  }
+  for (const id of change.remove ?? []) {
+    if (set.has(id)) {
+      set.delete(id);
+      removed.push(id);
+    }
+  }
+
+  return {
+    next: Array.from(set),
+    added,
+    removed,
+    noop: added.length === 0 && removed.length === 0,
+  };
+}
+
+// Add users to a group (read-modify-write). Returns the change summary plus the
+// group's user list after the write. Refuses to write an empty membership —
+// Slack rejects usergroups.users.update with no users, and an accidental
+// emptying is a footgun we don't want a bare `remove` to hit silently.
+export async function addUsergroupMembers(
+  client: SlackClient,
+  usergroupId: string,
+  addIds: string[],
+  options: LibOptions = {},
+): Promise<{ added: string[]; removed: string[]; next: string[]; noop: boolean }> {
+  return mutateMembers(client, usergroupId, { add: addIds }, options);
+}
+
+export async function removeUsergroupMembers(
+  client: SlackClient,
+  usergroupId: string,
+  removeIds: string[],
+  options: LibOptions = {},
+): Promise<{ added: string[]; removed: string[]; next: string[]; noop: boolean }> {
+  return mutateMembers(client, usergroupId, { remove: removeIds }, options);
+}
+
+async function mutateMembers(
+  client: SlackClient,
+  usergroupId: string,
+  change: { add?: string[]; remove?: string[] },
+  options: LibOptions,
+): Promise<{ added: string[]; removed: string[]; next: string[]; noop: boolean }> {
+  options.onProgress?.('Reading current membership...');
+  const currentResp = await client.listUsergroupUsers(usergroupId, { team_id: options.teamId });
+  const current: string[] = currentResp?.users ?? [];
+
+  const result = applyMembershipChange(current, change);
+  if (result.noop) {
+    return { added: [], removed: [], next: current, noop: true };
+  }
+
+  if (result.next.length === 0) {
+    throw new Error(
+      'Refusing to remove the last member: Slack does not allow a user group with no members. ' +
+        'Disable the group instead (usergroups disable).',
+    );
+  }
+
+  options.onProgress?.('Updating membership...');
+  await client.setUsergroupUsers(usergroupId, result.next.join(','), { team_id: options.teamId });
+  return { added: result.added, removed: result.removed, next: result.next, noop: false };
+}

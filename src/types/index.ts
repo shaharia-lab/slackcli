@@ -312,6 +312,27 @@ export interface UsergroupReadOptions {
   workspace?: string;
 }
 
+export interface UsergroupCreateOptions {
+  handle?: string;
+  description?: string;
+  channels?: string;
+  team?: string;
+  workspace?: string;
+}
+
+export interface UsergroupUpdateOptions {
+  name?: string;
+  handle?: string;
+  description?: string;
+  team?: string;
+  workspace?: string;
+}
+
+export interface UsergroupMembersOptions {
+  team?: string;
+  workspace?: string;
+}
+
 // Custom (workspace) emoji
 export interface CustomEmoji {
   // Emoji short name without the surrounding colons (e.g. `party-parrot`).

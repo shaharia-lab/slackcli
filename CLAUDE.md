@@ -152,7 +152,7 @@ Browser tokens can be captured two ways: pasting a cURL command from DevTools (`
 | `src/lib/saved.ts` | Enriches saved-for-later items (resolves messages & channels) |
 | `src/lib/unread.ts` | Fetches and resolves unread channel data |
 | `src/lib/emoji.ts` | Normalizes the custom-emoji map (originals vs. aliases) |
-| `src/lib/usergroups.ts` | Normalizes user groups and resolves members to names |
+| `src/lib/usergroups.ts` | Normalizes user groups, resolves members, read-modify-write membership |
 | `src/lib/updater.ts` | Self-update via GitHub releases |
 | `src/lib/canvas-parser.ts` | Slack Canvas HTML to Markdown converter (zero deps, Quip-based HTML) |
 | `src/lib/rate-limiter.ts` | Process-wide concurrency cap + minimum interval applied to every Slack API call |

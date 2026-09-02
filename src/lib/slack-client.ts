@@ -431,6 +431,63 @@ export class SlackClient {
     return this.request('usergroups.users.list', params);
   }
 
+  // Create a user group. On an enterprise org, team_id (a workspace T-id) is
+  // REQUIRED — Slack rejects org-context creates without it.
+  async createUsergroup(name: string, options: {
+    handle?: string;
+    description?: string;
+    channels?: string;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { name, include_count: true };
+    if (options.handle) params.handle = options.handle;
+    if (options.description) params.description = options.description;
+    if (options.channels) params.channels = options.channels;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.create', params);
+  }
+
+  // Update a user group's name, handle, and/or description.
+  async updateUsergroup(usergroup: string, options: {
+    name?: string;
+    handle?: string;
+    description?: string;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, include_count: true };
+    if (options.name !== undefined) params.name = options.name;
+    if (options.handle !== undefined) params.handle = options.handle;
+    if (options.description !== undefined) params.description = options.description;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.update', params);
+  }
+
+  // Replace a user group's full member list. Slack's usergroups.users.update
+  // is a WHOLE-LIST set operation, not an incremental add/remove — callers that
+  // want add/remove semantics must read the current list, modify it, and pass
+  // the result here. `users` is a comma-separated list of user IDs.
+  async setUsergroupUsers(usergroup: string, users: string, options: {
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, users, include_count: true };
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.users.update', params);
+  }
+
+  // Enable (restore) a disabled user group.
+  async enableUsergroup(usergroup: string, options: { team_id?: string } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, include_count: true };
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.enable', params);
+  }
+
+  // Disable (archive) a user group.
+  async disableUsergroup(usergroup: string, options: { team_id?: string } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, include_count: true };
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.disable', params);
+  }
+
   // List the workspace's custom emoji (emoji.list works for both auth types).
   // Returns { ok, emoji: { <name>: <image-url|"alias:<other>"> } }.
   async listEmoji(): Promise<any> {

@@ -4,18 +4,26 @@ import { readFile, stat } from 'node:fs/promises';
 import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
+import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
   file_id?: string;
 }
 
+export interface SlackClientOptions {
+  /** Overrides the process-wide limiter. Intended for tests. */
+  rateLimiter?: RateLimiter;
+}
+
 export class SlackClient {
   private config: WorkspaceConfig;
   private webClient?: WebClient;
+  private rateLimiter: RateLimiter;
 
-  constructor(config: WorkspaceConfig) {
+  constructor(config: WorkspaceConfig, options: SlackClientOptions = {}) {
     this.config = config;
+    this.rateLimiter = options.rateLimiter ?? slackRateLimiter;
 
     // Only use WebClient for standard auth
     if (config.auth_type === 'standard') {
@@ -24,12 +32,21 @@ export class SlackClient {
   }
 
   // Make API request (handles both auth types)
+  //
+  // Every Slack API call in the codebase funnels through here, so this is where
+  // the traffic is paced: callers like `getUsersInfo()`, `enrichSavedItems()` and
+  // the unread resolver fan out one call per user/channel, and an unthrottled
+  // burst trips Slack's `unexpected_api_call_volume` anomaly detection (#147).
+  // The limiter applies to both auth types — the anomaly is about volume, not
+  // about which transport produced it.
   async request(method: string, params: Record<string, any> = {}): Promise<any> {
-    if (this.config.auth_type === 'standard') {
-      return this.standardRequest(method, params);
-    } else {
-      return this.browserRequest(method, params);
-    }
+    return this.rateLimiter.run(() => {
+      if (this.config.auth_type === 'standard') {
+        return this.standardRequest(method, params);
+      } else {
+        return this.browserRequest(method, params);
+      }
+    });
   }
 
   // Standard token request (using @slack/web-api)

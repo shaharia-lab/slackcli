@@ -118,11 +118,19 @@ with what you ran.
   it — download the binary manually and check it against `checksums.txt` from
   the release.
 
-## Rate limits
+## Rate limits and slow commands
 
-`conversations unread` and `saved list` resolve names one entity at a time and
-can hit Slack's rate limits on a large workspace. Narrow the request
-(`--types`, `--limit`) or retry after a pause.
+slackcli paces its own traffic: it keeps at most 2 Slack API calls in flight and
+leaves at least 200ms between calls, for both app tokens and browser sessions.
+Bursting past that is what trips Slack's `unexpected_api_call_volume` anomaly
+detection, which on Enterprise Grid can sign the session out.
+
+The visible cost is that commands resolving many names one entity at a time —
+`conversations unread`, `saved list` — take noticeably longer on a large
+workspace. The spinner keeps running; it is throttling, not hanging. Narrow the
+request (`--types`, `--limit`) to make it finish sooner.
+
+If Slack itself rate-limits you anyway, retry after a pause.
 
 ## Still stuck?
 

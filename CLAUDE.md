@@ -137,7 +137,7 @@ Browser tokens can be captured two ways: pasting a cURL command from DevTools (`
 | Module | Purpose |
 |---|---|
 | `src/lib/auth.ts` | Orchestrates login flows and returns configured `SlackClient` |
-| `src/lib/slack-client.ts` | Slack API abstraction (standard via SDK, browser via fetch) |
+| `src/lib/slack-client.ts` | Slack API abstraction (standard via SDK, browser via fetch); every call is paced by the shared rate limiter |
 | `src/lib/browser-auth.ts` | Captures `xoxc`/`xoxd` tokens from a live browser session (powers `auth login-auto`) |
 | `src/lib/browser-launcher.ts` | Locates/launches a Chromium-family browser with CDP enabled, using a dedicated slackcli profile |
 | `src/lib/cdp-client.ts` | Minimal zero-dependency Chrome DevTools Protocol client over Bun's WebSocket |
@@ -155,6 +155,7 @@ Browser tokens can be captured two ways: pasting a cURL command from DevTools (`
 | `src/lib/usergroups.ts` | Normalizes user groups and resolves members to names |
 | `src/lib/updater.ts` | Self-update via GitHub releases |
 | `src/lib/canvas-parser.ts` | Slack Canvas HTML to Markdown converter (zero deps, Quip-based HTML) |
+| `src/lib/rate-limiter.ts` | Process-wide concurrency cap + minimum interval applied to every Slack API call |
 
 ### Type Definitions
 

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { SlackClient } from './slack-client.ts';
+import { RateLimiter } from './rate-limiter.ts';
 
 class TestSlackClient extends SlackClient {
   public readonly calls: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -229,5 +230,92 @@ describe('SlackClient.postMessage', () => {
     expect(body?.get('channel')).toBe('C123');
     expect(body?.get('text')).toBe('Status table');
     expect(body?.get('blocks')).toBe(JSON.stringify(blocks));
+  });
+});
+
+describe('SlackClient request throttling', () => {
+  // A fast stand-in for the process-wide limiter: same shape, test-sized numbers.
+  const testLimiter = () => new RateLimiter({ maxConcurrent: 2, minIntervalMs: 25 });
+
+  it('paces browser-session requests and caps their concurrency', async () => {
+    const starts: number[] = [];
+    let inFlight = 0;
+    let peakConcurrent = 0;
+
+    globalThis.fetch = (async (_input, _init) => {
+      starts.push(Date.now());
+      inFlight += 1;
+      peakConcurrent = Math.max(peakConcurrent, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      return Response.json({ ok: true, user: { id: 'U1' } });
+    }) as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    }, { rateLimiter: testLimiter() });
+
+    await Promise.all(['U1', 'U2', 'U3', 'U4'].map((id) => client.getUserInfo(id)));
+
+    expect(starts).toHaveLength(4);
+    expect(peakConcurrent).toBeLessThanOrEqual(2);
+    for (let i = 1; i < starts.length; i += 1) {
+      // 5ms of slack for platform timer jitter.
+      expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  it('paces standard-token requests too', async () => {
+    const starts: number[] = [];
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    }, { rateLimiter: testLimiter() });
+
+    // The WebClient talks to Slack over the network; swap its transport for a stub
+    // so the test exercises the limiter around `standardRequest`, not the SDK.
+    (client as unknown as { webClient: { apiCall: (method: string) => Promise<unknown> } }).webClient = {
+      apiCall: async () => {
+        starts.push(Date.now());
+        return { ok: true };
+      },
+    };
+
+    await Promise.all(['U1', 'U2', 'U3'].map((id) => client.getUserInfo(id)));
+
+    expect(starts).toHaveLength(3);
+    for (let i = 1; i < starts.length; i += 1) {
+      expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  it('releases the slot when a request fails, so later calls still run', async () => {
+    let call = 0;
+    globalThis.fetch = (async (_input, _init) => {
+      call += 1;
+      if (call === 1) throw new Error('network down');
+      return Response.json({ ok: true, user: { id: 'U2' } });
+    }) as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    }, { rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }) });
+
+    await expect(client.getUserInfo('U1')).rejects.toThrow('network down');
+    await expect(client.getUserInfo('U2')).resolves.toMatchObject({ ok: true });
   });
 });

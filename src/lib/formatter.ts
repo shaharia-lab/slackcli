@@ -3,6 +3,7 @@ import type {
   SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
   SlackTeam, SlackUsergroup, UsergroupMember,
+  CustomEmoji,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
 
@@ -446,6 +447,26 @@ export function formatUsergroupList(groups: SlackUsergroup[]): string {
   return output;
 }
 
+// Format a custom-emoji list for the terminal.
+export function formatEmojiList(emoji: CustomEmoji[]): string {
+  const aliasCount = emoji.filter(e => e.is_alias).length;
+  const realCount = emoji.length - aliasCount;
+
+  let output = chalk.bold(
+    `😀 Custom emoji (${emoji.length} — ${realCount} original, ${aliasCount} alias)\n\n`,
+  );
+
+  emoji.forEach((e) => {
+    if (e.is_alias) {
+      output += `  ${chalk.cyan(`:${e.name}:`)} ${chalk.dim(`→ :${e.alias_for}:`)}\n`;
+    } else {
+      output += `  ${chalk.cyan(`:${e.name}:`)}${e.url ? ` ${chalk.dim(e.url)}` : ''}\n`;
+    }
+  });
+
+  return output;
+}
+
 // Format a single user group with its resolved members
 export function formatUsergroup(group: SlackUsergroup, members: UsergroupMember[]): string {
   const handle = group.handle ? chalk.cyan(`@${group.handle}`) : chalk.dim('(no handle)');
@@ -467,5 +488,20 @@ export function formatUsergroup(group: SlackUsergroup, members: UsergroupMember[
     });
   }
 
+  return output;
+}
+
+// Format a single custom emoji's details.
+export function formatEmoji(emoji: CustomEmoji): string {
+  let output = chalk.bold(`😀 :${emoji.name}:\n`);
+  if (emoji.is_alias) {
+    output += `  ${chalk.dim('Type:')} alias\n`;
+    output += `  ${chalk.dim('Alias for:')} :${emoji.alias_for}:\n`;
+  } else {
+    output += `  ${chalk.dim('Type:')} original\n`;
+    if (emoji.url) {
+      output += `  ${chalk.dim('URL:')} ${emoji.url}\n`;
+    }
+  }
   return output;
 }

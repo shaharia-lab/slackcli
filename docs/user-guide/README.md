@@ -29,6 +29,7 @@ list for the version you have installed.
 | `usergroups` | List, read, and manage user groups ("subteams") |
 | `saved` | Read your "saved for later" list |
 | `canvas` | List canvases and read them as Markdown |
+| `emoji` | List a workspace's custom emoji and inspect one |
 | `update` | Check for and install new versions |
 
 ## Pages
@@ -44,8 +45,9 @@ list for the version you have installed.
 9. [User groups](usergroups.md)
 10. [Saved items](saved.md)
 11. [Canvas](canvas.md)
-12. [Scripting and JSON output](scripting.md)
-13. [Troubleshooting](troubleshooting.md)
+12. [Emoji](emoji.md)
+13. [Scripting and JSON output](scripting.md)
+14. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 

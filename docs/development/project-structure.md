@@ -45,7 +45,7 @@ They hold no Slack API knowledge.
 
 | Module | Responsibility |
 |---|---|
-| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type. |
+| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter. |
 | `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. |
@@ -55,6 +55,7 @@ They hold no Slack API knowledge.
 | `slack-url-parser.ts` | Slack URL / permalink / timestamp normalisation. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks (drafts). |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
+| `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types. |

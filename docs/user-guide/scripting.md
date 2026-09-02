@@ -106,9 +106,12 @@ done
 - **Token freshness.** Browser tokens die with the browser session. Refresh them
   non-interactively with `slackcli auth login-auto --headless`, which works once
   the profile has been signed in once.
-- **Rate limits.** Commands that resolve many users or channels
-  (`conversations unread`, `saved list` on a long list) make one API call per
-  entity and can hit Slack's rate limits on a big workspace.
+- **Throttling.** slackcli keeps at most 2 Slack API calls in flight and leaves
+  at least 200ms between them, so it does not trip Slack's
+  `unexpected_api_call_volume` anomaly detection. Commands that resolve many
+  users or channels (`conversations unread`, `saved list` on a long list) make
+  one API call per entity, so budget wall-clock time for them and set generous
+  timeouts in a scheduled job.
 - **The update notice.** SlackCLI may append a one-line "update available" notice
   after a command. It goes to stderr and never contaminates `--json` on stdout.
 - **Credentials.** `~/.config/slackcli/workspaces.json` holds live tokens at mode

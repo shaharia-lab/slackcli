@@ -9,6 +9,8 @@ import { createEmojiCommand } from './commands/emoji.ts';
 import { createUpdateCommand } from './commands/update.ts';
 import { createSavedCommand } from './commands/saved.ts';
 import { createSearchCommand } from './commands/search.ts';
+import { createTeamCommand } from './commands/team.ts';
+import { createUsergroupsCommand } from './commands/usergroups.ts';
 import { notifyIfUpdateAvailable } from './lib/updater.ts';
 import { getAppVersion } from './version.ts';
 
@@ -27,6 +29,8 @@ program.addCommand(createEmojiCommand());
 program.addCommand(createMessagesCommand());
 program.addCommand(createSavedCommand());
 program.addCommand(createSearchCommand());
+program.addCommand(createTeamCommand());
+program.addCommand(createUsergroupsCommand());
 program.addCommand(createUpdateCommand());
 
 // Show update notification after command output if a newer version is cached

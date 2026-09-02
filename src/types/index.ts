@@ -253,6 +253,65 @@ export interface CanvasReadOptions {
   workspace?: string;
 }
 
+// Team (workspace) info — from team.info. Only the fields worth surfacing at
+// the CLI; the raw response carries many more.
+export interface SlackTeam {
+  id: string;
+  name: string;
+  domain?: string;
+  email_domain?: string;
+  url?: string;
+  is_verified?: boolean;
+  icon?: Record<string, unknown>;
+}
+
+export interface TeamInfoOptions {
+  workspace?: string;
+}
+
+// User Group ("subteam") — Slack's own name for a named group of users.
+// Modeled on the usergroups.list shape (include_count + include_disabled).
+export interface SlackUsergroup {
+  id: string;
+  team_id?: string;
+  name: string;
+  handle?: string;
+  description?: string;
+  is_external?: boolean;
+  is_usergroup?: boolean;
+  is_subteam?: boolean;
+  // Unix seconds; date_delete === 0 means the group is enabled/active.
+  date_create?: number;
+  date_update?: number;
+  date_delete?: number;
+  created_by?: string;
+  user_count?: number;
+  channel_count?: number;
+  // Present when the group's membership is returned inline (include_users).
+  users?: string[];
+}
+
+// A resolved member of a user group: the id plus best-effort name resolution.
+export interface UsergroupMember {
+  id: string;
+  name?: string;
+  real_name?: string;
+  display_name?: string;
+  is_bot?: boolean;
+  deleted?: boolean;
+}
+
+export interface UsergroupListOptions {
+  includeDisabled?: boolean;
+  team?: string;
+  workspace?: string;
+}
+
+export interface UsergroupReadOptions {
+  team?: string;
+  workspace?: string;
+}
+
 // Custom (workspace) emoji
 export interface CustomEmoji {
   // Emoji short name without the surrounding colons (e.g. `party-parrot`).

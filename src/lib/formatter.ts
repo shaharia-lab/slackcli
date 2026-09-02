@@ -2,8 +2,10 @@ import chalk from 'chalk';
 import type {
   SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
+  SlackTeam, SlackUsergroup, UsergroupMember,
   CustomEmoji,
 } from '../types/index.ts';
+import { isUsergroupEnabled } from './usergroups.ts';
 
 // Serialise a value as JSON and write it to stdout.
 //
@@ -410,6 +412,41 @@ function truncateText(text: string | undefined, maxLen: number): string {
   return text.substring(0, maxLen) + '...';
 }
 
+// ─── Team (workspace) & user groups ───────────────────────────────────────
+
+// Format team (workspace) info
+export function formatTeamInfo(team: SlackTeam): string {
+  let output = chalk.bold(`🏢 ${team.name}\n\n`);
+  output += `  ${chalk.dim('ID:')}     ${team.id}\n`;
+  if (team.domain) output += `  ${chalk.dim('Domain:')} ${team.domain}.slack.com\n`;
+  if (team.email_domain) output += `  ${chalk.dim('Email:')}  @${team.email_domain}\n`;
+  if (team.url) output += `  ${chalk.dim('URL:')}    ${team.url}\n`;
+  if (team.is_verified) output += `  ${chalk.green('✓ Verified')}\n`;
+  return output;
+}
+
+// Format a list of user groups
+export function formatUsergroupList(groups: SlackUsergroup[]): string {
+  if (groups.length === 0) {
+    return chalk.dim('No user groups found.\n');
+  }
+
+  let output = chalk.bold(`👥 User Groups (${groups.length})\n\n`);
+
+  groups.forEach((g, idx) => {
+    const handle = g.handle ? chalk.cyan(`@${g.handle}`) : chalk.dim('(no handle)');
+    const count = typeof g.user_count === 'number' ? chalk.dim(`${g.user_count} members`) : '';
+    const disabled = isUsergroupEnabled(g) ? '' : chalk.yellow(' [disabled]');
+    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(g.name)} ${handle} ${chalk.dim(`(${g.id})`)} ${count}${disabled}\n`;
+    if (g.description) {
+      output += `     ${chalk.dim(g.description)}\n`;
+    }
+    output += '\n';
+  });
+
+  return output;
+}
+
 // Format a custom-emoji list for the terminal.
 export function formatEmojiList(emoji: CustomEmoji[]): string {
   const aliasCount = emoji.filter(e => e.is_alias).length;
@@ -426,6 +463,30 @@ export function formatEmojiList(emoji: CustomEmoji[]): string {
       output += `  ${chalk.cyan(`:${e.name}:`)}${e.url ? ` ${chalk.dim(e.url)}` : ''}\n`;
     }
   });
+
+  return output;
+}
+
+// Format a single user group with its resolved members
+export function formatUsergroup(group: SlackUsergroup, members: UsergroupMember[]): string {
+  const handle = group.handle ? chalk.cyan(`@${group.handle}`) : chalk.dim('(no handle)');
+  const disabled = isUsergroupEnabled(group) ? chalk.green(' [enabled]') : chalk.yellow(' [disabled]');
+
+  let output = chalk.bold(`👥 ${group.name}`) + ` ${handle}${disabled}\n\n`;
+  output += `  ${chalk.dim('ID:')}      ${group.id}\n`;
+  if (group.description) output += `  ${chalk.dim('About:')}   ${group.description}\n`;
+  output += `  ${chalk.dim('Members:')} ${members.length}\n`;
+
+  if (members.length > 0) {
+    output += '\n';
+    members.forEach((m, idx) => {
+      const display = m.display_name || m.name || m.id;
+      const real = m.real_name && m.real_name !== display ? ` (${m.real_name})` : '';
+      const bot = m.is_bot ? chalk.dim(' [bot]') : '';
+      const gone = m.deleted ? chalk.dim(' [deactivated]') : '';
+      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${display}`)}${chalk.dim(real)} ${chalk.dim(`(${m.id})`)}${bot}${gone}\n`;
+    });
+  }
 
   return output;
 }

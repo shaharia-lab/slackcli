@@ -112,7 +112,7 @@ bun run build:all          # All platforms
 
 ### Entry Point & Command Structure
 
-`src/index.ts` registers eight Commander.js command groups: `auth`, `canvas`, `conversations`, `emoji`, `messages`, `saved`, `search`, `update`. Each group is implemented in `src/commands/` and delegates to `src/lib/` modules.
+`src/index.ts` registers the Commander.js command groups `auth`, `canvas`, `conversations`, `emoji`, `messages`, `saved`, `search`, `team`, `usergroups`, and `update`. Each group is implemented in `src/commands/` and delegates to `src/lib/` modules.
 
 ### Dual Authentication
 
@@ -152,6 +152,7 @@ Browser tokens can be captured two ways: pasting a cURL command from DevTools (`
 | `src/lib/saved.ts` | Enriches saved-for-later items (resolves messages & channels) |
 | `src/lib/unread.ts` | Fetches and resolves unread channel data |
 | `src/lib/emoji.ts` | Normalizes the custom-emoji map (originals vs. aliases) |
+| `src/lib/usergroups.ts` | Normalizes user groups and resolves members to names |
 | `src/lib/updater.ts` | Self-update via GitHub releases |
 | `src/lib/canvas-parser.ts` | Slack Canvas HTML to Markdown converter (zero deps, Quip-based HTML) |
 

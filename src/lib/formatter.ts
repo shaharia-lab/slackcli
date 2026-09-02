@@ -224,9 +224,10 @@ export function info(message: string): void {
   console.log(chalk.blue('ℹ️'), message);
 }
 
-// Warning message
+// Warning message. Written to stderr so diagnostics never contaminate stdout —
+// with --json, stdout must carry exactly one parseable object (see writeJson).
 export function warning(message: string): void {
-  console.log(chalk.yellow('⚠️'), message);
+  console.error(chalk.yellow('⚠️'), message);
 }
 
 // Format saved items list

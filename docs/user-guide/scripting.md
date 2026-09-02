@@ -13,17 +13,12 @@ The writing commands support it too — `messages send`, `messages edit`, and
 `messages draft` — where it returns the identity of what was just written
 instead of the human success line.
 
-JSON goes to **stdout**. Progress spinners, error messages, and the
+JSON goes to **stdout**. Progress spinners, warnings, error messages, and the
 update-available notice go to **stderr**, so a pipe normally carries only data:
 
 ```bash
 slackcli conversations read C1234567890 --json | jq '.messages[].text'
 ```
-
-One caveat: the workspace-mismatch **warning** is currently written to stdout,
-not stderr. It only fires when you pass a `--permalink` or Slack URL whose
-subdomain does not match the workspace being called, so it cannot appear in a
-pipeline that passes plain IDs or targets the right workspace.
 
 ### Shapes
 

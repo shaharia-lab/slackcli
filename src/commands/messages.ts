@@ -239,13 +239,18 @@ export function createMessagesCommand(): Command {
     .option('--channel-id <id>', 'Channel ID or URL where the message is')
     .option('--timestamp <ts>', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
-    .requiredOption('--message <text>', 'New message text content')
+    .option('--message <text>', 'New message text content')
+    .addOption(
+      new Option('--message-file <path>', 'Read the new message text from a UTF-8 file')
+        .conflicts('message')
+    )
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output the updated message as JSON', false)
     .action(async (options) => {
       const spinner = ora('Updating message...').start();
 
       try {
+        const message = await resolveMessageText(options);
         const target = resolveMessageTarget(
           { permalink: options.permalink, channelId: options.channelId, timestamp: options.timestamp },
           { channel: '--channel-id', timestamp: '--timestamp' }
@@ -257,7 +262,7 @@ export function createMessagesCommand(): Command {
         const response = await client.updateMessage(
           target.channelId,
           target.timestamp,
-          options.message,
+          message,
         );
 
         spinner.succeed('Message updated successfully!');

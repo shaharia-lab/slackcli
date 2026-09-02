@@ -166,7 +166,8 @@ order to edit it.
 }
 ```
 
-`messages edit` takes no `--message-file`; `--message` stays required.
+`--message-file` works here exactly as it does on `messages send` — the new
+body comes from a UTF-8 file, mutually exclusive with `--message`.
 
 ## `messages react`
 

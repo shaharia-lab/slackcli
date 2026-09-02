@@ -60,8 +60,8 @@ describe('messages command', () => {
   // --channel-id / --timestamp are no longer Commander-mandatory because --permalink
   // can supply both; the requirement is enforced in resolveMessageTarget instead
   // (see slack-url-parser.test.ts), which is what lets either form be used.
-  it('leaves only --message mandatory on edit so --permalink can replace the rest', () => {
-    expect(mandatoryOptions('edit')).toEqual(['--message']);
+  it('leaves edit with no mandatory option so --permalink and --message-file can replace the rest', () => {
+    expect(mandatoryOptions('edit')).toEqual([]);
   });
 
   it('leaves only --emoji mandatory on react so --permalink can replace the rest', () => {
@@ -72,17 +72,16 @@ describe('messages command', () => {
   // --message-file can supply the same value; "exactly one of the two" is
   // enforced by resolveMessageText instead (tested below). This mirrors what
   // --permalink already did to --channel-id / --timestamp on edit and react.
-  // edit keeps --message mandatory: it takes no --message-file.
-  it('leaves send and draft with no mandatory option so --message-file can replace --message', () => {
+  it('leaves the writing subcommands with no mandatory option so --message-file can replace --message', () => {
     expect(mandatoryOptions('send')).toEqual([]);
     expect(mandatoryOptions('draft')).toEqual([]);
-    expect(mandatoryOptions('edit')).toEqual(['--message']);
+    expect(mandatoryOptions('edit')).toEqual([]);
   });
 
-  it('offers --message-file on send and draft only', () => {
+  it('offers --message-file on the writing subcommands but not on react', () => {
     expect(longOptions('send')).toContain('--message-file');
     expect(longOptions('draft')).toContain('--message-file');
-    expect(longOptions('edit')).not.toContain('--message-file');
+    expect(longOptions('edit')).toContain('--message-file');
     expect(longOptions('react')).not.toContain('--message-file');
   });
 
@@ -94,15 +93,16 @@ describe('messages command', () => {
   });
 
   it('rejects --message-file with --message rather than silently picking one', async () => {
-    for (const name of ['send', 'draft']) {
+    for (const name of ['send', 'draft', 'edit']) {
       const command = createMessagesCommand();
       command.commands.find((candidate) => candidate.name() === name)!
         .exitOverride()
         .configureOutput({ writeErr: () => {} });
 
+      const targetFlag = name === 'edit' ? '--channel-id=C123' : '--recipient-id=C123';
       await expect(command.parseAsync([
         name,
-        '--recipient-id=C123',
+        targetFlag,
         '--message=inline',
         '--message-file=body.txt',
       ], { from: 'user' })).rejects.toThrow(

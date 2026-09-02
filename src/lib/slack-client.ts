@@ -4,18 +4,26 @@ import { readFile, stat } from 'node:fs/promises';
 import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
+import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
   file_id?: string;
 }
 
+export interface SlackClientOptions {
+  /** Overrides the process-wide limiter. Intended for tests. */
+  rateLimiter?: RateLimiter;
+}
+
 export class SlackClient {
   private config: WorkspaceConfig;
   private webClient?: WebClient;
+  private rateLimiter: RateLimiter;
 
-  constructor(config: WorkspaceConfig) {
+  constructor(config: WorkspaceConfig, options: SlackClientOptions = {}) {
     this.config = config;
+    this.rateLimiter = options.rateLimiter ?? slackRateLimiter;
 
     // Only use WebClient for standard auth
     if (config.auth_type === 'standard') {
@@ -24,12 +32,21 @@ export class SlackClient {
   }
 
   // Make API request (handles both auth types)
+  //
+  // Every Slack API call in the codebase funnels through here, so this is where
+  // the traffic is paced: callers like `getUsersInfo()`, `enrichSavedItems()` and
+  // the unread resolver fan out one call per user/channel, and an unthrottled
+  // burst trips Slack's `unexpected_api_call_volume` anomaly detection (#147).
+  // The limiter applies to both auth types — the anomaly is about volume, not
+  // about which transport produced it.
   async request(method: string, params: Record<string, any> = {}): Promise<any> {
-    if (this.config.auth_type === 'standard') {
-      return this.standardRequest(method, params);
-    } else {
-      return this.browserRequest(method, params);
-    }
+    return this.rateLimiter.run(() => {
+      if (this.config.auth_type === 'standard') {
+        return this.standardRequest(method, params);
+      } else {
+        return this.browserRequest(method, params);
+      }
+    });
   }
 
   // Standard token request (using @slack/web-api)
@@ -366,6 +383,45 @@ export class SlackClient {
   // Get conversation info
   async getConversationInfo(channel: string): Promise<any> {
     return this.request('conversations.info', { channel });
+  }
+
+  // Get team (workspace) info. team.info works for both auth types. On an
+  // enterprise org, an optional team (T-id) scopes the lookup to one workspace;
+  // omitted, Slack returns the token's own workspace.
+  async getTeamInfo(options: { team?: string } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.team) params.team = options.team;
+    return this.request('team.info', params);
+  }
+
+  // List user groups ("subteams"). include_count returns user_count;
+  // include_disabled returns groups whose date_delete is non-zero. On an
+  // enterprise org, team_id scopes the listing to one workspace.
+  async listUsergroups(options: {
+    include_disabled?: boolean;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { include_count: true };
+    if (options.include_disabled) params.include_disabled = true;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.list', params);
+  }
+
+  // List the member user IDs of a user group.
+  async listUsergroupUsers(usergroup: string, options: {
+    include_disabled?: boolean;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup };
+    if (options.include_disabled) params.include_disabled = true;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.users.list', params);
+  }
+
+  // List the workspace's custom emoji (emoji.list works for both auth types).
+  // Returns { ok, emoji: { <name>: <image-url|"alias:<other>"> } }.
+  async listEmoji(): Promise<any> {
+    return this.request('emoji.list', {});
   }
 
   // Get unread counts (browser: client.counts, standard: conversations.list with unread data)

@@ -34,6 +34,7 @@ export function createConversationsCommand(): Command {
     .option('--exclude-archived', 'Exclude archived conversations', false)
     .option('--cursor <cursor>', 'Pagination cursor for next page of results')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
+    .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
       const spinner = ora('Fetching conversations...').start();
 
@@ -68,6 +69,39 @@ export function createConversationsCommand(): Command {
         }
 
         spinner.succeed(`Found ${channels.length} conversations`);
+
+        // Slack returns next_cursor as '' rather than omitting it when there is no
+        // next page; normalize to null so JSON consumers get a real sentinel.
+        const jsonNextCursor = nextCursor || null;
+
+        if (options.json) {
+          writeJson({
+            conversation_count: channels.length,
+            conversations: channels.map(ch => ({
+              id: ch.id,
+              name: ch.name,
+              user: ch.user,
+              is_channel: ch.is_channel,
+              is_group: ch.is_group,
+              is_im: ch.is_im,
+              is_mpim: ch.is_mpim,
+              is_private: ch.is_private,
+              is_archived: ch.is_archived,
+              is_member: ch.is_member,
+              num_members: ch.num_members,
+              topic: ch.topic?.value,
+              purpose: ch.purpose?.value,
+            })),
+            users: Array.from(users.values()).map(u => ({
+              id: u.id,
+              name: u.name,
+              real_name: u.real_name,
+              email: u.profile?.email,
+            })),
+            next_cursor: jsonNextCursor,
+          });
+          return;
+        }
 
         console.log('\n' + formatChannelList(channels, users));
 

@@ -5,9 +5,9 @@ hand.
 
 ## `--json`
 
-Every read command supports `--json`: `conversations read`, `conversations get`,
-`conversations unread`, `search messages`, `search channels`, `search people`,
-`saved list`, `canvas list`, `canvas read`.
+Every read command supports `--json`: `conversations list`, `conversations read`,
+`conversations get`, `conversations unread`, `search messages`, `search channels`,
+`search people`, `saved list`, `canvas list`, `canvas read`.
 
 JSON goes to **stdout**. Progress spinners, error messages, and the
 update-available notice go to **stderr**, so a pipe normally carries only data:
@@ -24,6 +24,10 @@ pipeline that passes plain IDs or targets the right workspace.
 ### Shapes
 
 ```bash
+# Conversations, with a resolved users array so DM ids are not opaque
+slackcli conversations list --json | jq '.conversations[] | {id, name}'
+slackcli conversations list --json | jq '.next_cursor'
+
 # Messages, with a resolved users array so IDs are not opaque
 slackcli conversations read C123 --json | jq '.messages[] | {ts, user, text}'
 slackcli conversations read C123 --json | jq '.users[] | {id, real_name}'

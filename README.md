@@ -171,8 +171,9 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 
 ## 🤖 Built to be scripted
 
-Every command that returns data speaks `--json`, so SlackCLI drops straight into shell
-pipelines, cron jobs, CI steps, and AI agent toolchains.
+Every command that returns data speaks `--json`, and so do the commands that write —
+`messages send`, `edit`, and `draft` echo back what they just wrote. SlackCLI drops
+straight into shell pipelines, cron jobs, CI steps, and AI agent toolchains.
 
 ```bash
 # Who is talking about the outage, and when?
@@ -184,6 +185,10 @@ slackcli conversations unread --json | jq '[.unread_channels[] | {name, unread_c
 
 # Read a thread, summarise it elsewhere, reply with the result
 slackcli conversations read --permalink="$LINK" --json | jq '.messages[].text'
+
+# Post, then keep the handle so a later step can edit or react
+sent=$(slackcli messages send --recipient-id=C123 --message="Deploying…" --json)
+slackcli messages react --permalink="$(jq -r .permalink <<<"$sent")" --emoji=eyes
 ```
 
 No Slack app, no OAuth dance, no webhook server — just a binary and a token.
@@ -300,6 +305,8 @@ slackcli messages send --recipient-id=C1234567890 --message="Hello team!"
 slackcli messages send --permalink="$LINK" --message="On it"      # replies in-thread
 slackcli messages send --recipient-id=C123 --file=./report.pdf --message="Latest numbers"
 slackcli messages send --recipient-id=C123 --blocks=@blocks.json
+slackcli messages send --recipient-id=C123 --message-file=./release-notes.md
+slackcli messages send --recipient-id=C123 --message="Done" --json   # {channel_id, ts, permalink}
 slackcli messages react --permalink="$LINK" --emoji=+1
 slackcli messages edit --channel-id=C123 --timestamp=1234567890.123456 --message="Corrected"
 slackcli messages draft --recipient-id=C123 --message="Draft for later"

@@ -16,6 +16,12 @@ export interface SlackClientOptions {
   rateLimiter?: RateLimiter;
 }
 
+// files.completeUploadExternal echoes the files it attached. Only the id is
+// relied on, so the shape stays deliberately narrow.
+export interface ExternalUploadCompleteResponse {
+  files?: Array<{ id?: string; title?: string }>;
+}
+
 export class SlackClient {
   private config: WorkspaceConfig;
   private webClient?: WebClient;
@@ -173,6 +179,13 @@ export class SlackClient {
     return this.request('chat.postMessage', params);
   }
 
+  // Resolve the shareable link for a message. Callers treat this as optional
+  // metadata: it is a second API call after a message is already delivered, so
+  // a failure here must never turn a successful send into a failed one.
+  async getPermalink(channel: string, messageTs: string): Promise<any> {
+    return this.request('chat.getPermalink', { channel, message_ts: messageTs });
+  }
+
   async updateMessage(channel: string, ts: string, text: string): Promise<any> {
     // `parse` must be explicit: chat.update defaults it to `client` (unlike
     // chat.postMessage, which defaults to `none`), and that escapes the
@@ -183,7 +196,7 @@ export class SlackClient {
   async uploadFileExternal(channel: string, filePath: string, options: {
     initial_comment?: string;
     thread_ts?: string;
-  } = {}): Promise<unknown> {
+  } = {}): Promise<ExternalUploadCompleteResponse> {
     const fileStats = await stat(filePath).catch((error: unknown) => {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
         throw new Error(`File not found: ${filePath}`);

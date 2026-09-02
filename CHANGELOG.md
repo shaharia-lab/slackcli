@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Slack API calls are throttled**: every request now goes through a process-wide rate limiter — at most 2 in flight, with at least 200ms between calls — for both standard and browser-session authentication (#147)
+  - Unthrottled bursts (one `users.info` per user, one `conversations.info` per channel) could trip Slack's `unexpected_api_call_volume` anomaly detection, which on Enterprise Grid signs the browser session out
+  - Commands that resolve many names (`saved list`, `conversations unread`) are correspondingly slower on large workspaces; the spinner keeps running while they are paced
+
 ## [0.10.0] - 2026-08-29
 
 ### Added

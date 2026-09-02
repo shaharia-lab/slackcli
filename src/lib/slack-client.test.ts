@@ -246,7 +246,9 @@ describe('SlackClient request throttling', () => {
       starts.push(Date.now());
       inFlight += 1;
       peakConcurrent = Math.max(peakConcurrent, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      // Must outlive the limiter's interval, or requests never overlap and the
+      // concurrency assertion below passes vacuously.
+      await new Promise((resolve) => setTimeout(resolve, 60));
       inFlight -= 1;
       return Response.json({ ok: true, user: { id: 'U1' } });
     }) as typeof fetch;
@@ -263,7 +265,7 @@ describe('SlackClient request throttling', () => {
     await Promise.all(['U1', 'U2', 'U3', 'U4'].map((id) => client.getUserInfo(id)));
 
     expect(starts).toHaveLength(4);
-    expect(peakConcurrent).toBeLessThanOrEqual(2);
+    expect(peakConcurrent).toBe(2);
     for (let i = 1; i < starts.length; i += 1) {
       // 5ms of slack for platform timer jitter.
       expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(20);
@@ -300,6 +302,9 @@ describe('SlackClient request throttling', () => {
 
   // Slack counts API volume per session, not per client object, so two clients
   // must not be able to double the rate by each holding their own limiter.
+  // This is the one test that leans on the process-wide `slackRateLimiter`; it
+  // asserts a gap between its own two calls, so earlier tests advancing the
+  // singleton's clock cannot affect it.
   it('shares one limiter across clients when none is injected', async () => {
     const starts: number[] = [];
     globalThis.fetch = (async (_input, _init) => {

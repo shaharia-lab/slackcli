@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="SlackCLI — give your AI agent access to Slack. Read, search, and reply from the terminal. No Slack app needed." width="1000">
+<img src="assets/banner.png" alt="SlackCLI — the Slack CLI for humans and AI agents. Read, send, search and reply across one or many Slack workspaces from the terminal. No Slack app needed." width="1000">
 
-### Work with one — or many — Slack workspaces, straight from your terminal.
+### The Slack CLI for humans and AI agents. Read, send, search and reply across one — or many — Slack workspaces, straight from your terminal.
 
 Read channels, send messages, search history, and catch up on what you missed.
 Built to be **AI-agent friendly**, so your scripts and assistants can use Slack too.

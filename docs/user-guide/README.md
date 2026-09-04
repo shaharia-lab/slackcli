@@ -29,6 +29,7 @@ list for the version you have installed.
 | `usergroups` | List, read, and manage user groups ("subteams") |
 | `saved` | Read your "saved for later" list |
 | `canvas` | List canvases and read them as Markdown |
+| `files` | Inspect, read, and download Slack-hosted files |
 | `emoji` | List a workspace's custom emoji and inspect one |
 | `update` | Check for and install new versions |
 
@@ -45,9 +46,10 @@ list for the version you have installed.
 9. [User groups](usergroups.md)
 10. [Saved items](saved.md)
 11. [Canvas](canvas.md)
-12. [Emoji](emoji.md)
-13. [Scripting and JSON output](scripting.md)
-14. [Troubleshooting](troubleshooting.md)
+12. [Files](files.md)
+13. [Emoji](emoji.md)
+14. [Scripting and JSON output](scripting.md)
+15. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 
@@ -55,6 +57,6 @@ list for the version you have installed.
 falls back to your default workspace when you omit it. See
 [workspaces and profiles](workspaces.md).
 
-**Paste Slack URLs instead of IDs** — anywhere a channel, user, message, or
-canvas ID is expected. See
+**Paste Slack URLs instead of IDs** — anywhere a channel, user, message, canvas,
+or file ID is expected. See
 [Slack links and timestamps](links-and-timestamps.md).

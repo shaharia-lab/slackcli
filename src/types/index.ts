@@ -76,6 +76,14 @@ export interface SlackFile {
   mimetype?: string;
   filetype?: string;
   size?: number;
+  created?: number;
+  timestamp?: number;
+  user?: string;
+  pretty_type?: string;
+  is_public?: boolean;
+  public_url_shared?: boolean;
+  plain_text?: string;
+  simplified_html?: string;
   url_private?: string;
   url_private_download?: string;
   permalink?: string;

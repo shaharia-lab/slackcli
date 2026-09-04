@@ -95,7 +95,10 @@ export function workspaceOf(input: string | undefined): string | undefined {
  * The workspace subdomain of an already-parsed Slack URL. Reads from `origin`, which
  * the URL parser has lowercased, so a host typed as `MyTeam.SLACK.com` still resolves.
  */
-function workspaceOfUrl(url: URL): string {
+function workspaceOfUrl(url: URL): string | undefined {
+  // Private download URLs use files.slack.com, which does not identify the
+  // originating workspace. Avoid treating "files" as a workspace name.
+  if (url.hostname.toLowerCase() === 'files.slack.com') return undefined;
   return extractSlackWorkspaceName(url.origin);
 }
 
@@ -151,6 +154,15 @@ function identifierFromUrl(url: string): string | null {
   // /docs/<team>/<file> — canvas documents
   if (area === 'docs' && second) return second;
 
+  // /files/<user>/<file>[/name] — file permalinks
+  if (area === 'files' && second) return second;
+
+  // /files-pri/<team>-<file>[/download]/<name> — private file URLs
+  if (area === 'files-pri' && first) {
+    const match = first.match(/^[A-Z0-9]+-(F[A-Z0-9]+)$/i);
+    if (match) return match[1];
+  }
+
   return null;
 }
 
@@ -173,7 +185,8 @@ export function normalizeIdentifier(input: string, expected: ExpectedKind, flag:
   if (!id) {
     throw new SlackUrlParseError(
       `${flag} could not read an ID out of this Slack URL: ${value}. ` +
-        `Supported forms are /archives/<channel>, /team/<user>, and /docs/<team>/<file>.`
+        `Supported forms are /archives/<channel>, /team/<user>, /docs/<team>/<file>, ` +
+        `/files/<user>/<file>, and /files-pri/<team>-<file>.`
     );
   }
 

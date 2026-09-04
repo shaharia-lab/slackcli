@@ -521,23 +521,65 @@ export class SlackClient {
     return this.request('files.info', { file: fileId });
   }
 
-  // Download file content with auth, size guard, and auth page detection
-  async downloadFile(url: string, maxBytes: number = 10 * 1024 * 1024): Promise<string> {
-    const headers: Record<string, string> = {};
+  // Fetch a Slack-hosted file with the configured authentication. Returning the
+  // response lets callers either buffer textual content or stream binary bytes.
+  async fetchFile(url: string): Promise<Response> {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error('Download failed: invalid Slack file URL');
+    }
+    if (parsedUrl.protocol !== 'https:' || !parsedUrl.hostname.toLowerCase().endsWith('.slack.com')) {
+      throw new Error('Download failed: URL is not hosted by Slack');
+    }
+
+    const authHeaders: Record<string, string> = {};
 
     if (this.config.auth_type === 'standard') {
-      headers['Authorization'] = `Bearer ${this.config.token}`;
+      authHeaders['Authorization'] = `Bearer ${this.config.token}`;
     } else if (this.config.auth_type === 'browser') {
       const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-      headers['Cookie'] = `d=${encodedXoxdToken}`;
-      headers['Origin'] = 'https://app.slack.com';
+      authHeaders['Cookie'] = `d=${encodedXoxdToken}`;
+      authHeaders['Origin'] = 'https://app.slack.com';
     }
 
-    const response = await fetch(url, { headers });
+    let currentUrl = parsedUrl;
+    for (let redirects = 0; redirects <= 5; redirects += 1) {
+      const isSlackHost = currentUrl.hostname.toLowerCase().endsWith('.slack.com');
+      const response = await fetch(currentUrl, {
+        headers: isSlackHost ? authHeaders : {},
+        redirect: 'manual',
+      });
 
-    if (!response.ok) {
-      throw new Error(`Download failed: HTTP ${response.status}`);
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        await response.body?.cancel();
+        if (!location) throw new Error('Download failed: redirect had no destination');
+        try {
+          currentUrl = new URL(location, currentUrl);
+        } catch {
+          throw new Error('Download failed: redirect destination is invalid');
+        }
+        if (currentUrl.protocol !== 'https:') {
+          throw new Error('Download failed: redirect destination is not secure');
+        }
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Download failed: HTTP ${response.status}`);
+      }
+
+      return response;
     }
+
+    throw new Error('Download failed: too many redirects');
+  }
+
+  // Download file content with auth and a size guard.
+  async downloadFile(url: string, maxBytes: number = 10 * 1024 * 1024): Promise<string> {
+    const response = await this.fetchFile(url);
 
     // Early exit when Content-Length is known and exceeds limit
     const contentLength = response.headers.get('content-length');

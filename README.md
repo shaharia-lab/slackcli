@@ -161,6 +161,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Find a channel or a person | `slackcli search people "ada"` | [search](docs/user-guide/search.md) |
 | Work through "saved for later" | `slackcli saved list --state=to_do` | [saved items](docs/user-guide/saved.md) |
 | Read a Canvas as Markdown | `slackcli canvas read F123` | [canvas](docs/user-guide/canvas.md) |
+| Inspect or download a Slack file | `slackcli files info F123` | [files](docs/user-guide/files.md) |
 | Upload a file with a message | `slackcli messages send --file=./report.pdf …` | [messages](docs/user-guide/messages.md) |
 | Post rich Block Kit content | `slackcli messages send --blocks=@blocks.json …` | [messages](docs/user-guide/messages.md) |
 | Script it / feed an AI agent | `… --json \| jq` | [scripting & JSON](docs/user-guide/scripting.md) |
@@ -335,7 +336,7 @@ slackcli search people "ada@example.com"
 </details>
 
 <details>
-<summary><code>saved</code> · <code>canvas</code> · <code>update</code></summary>
+<summary><code>saved</code> · <code>canvas</code> · <code>files</code> · <code>update</code></summary>
 
 <br>
 
@@ -343,11 +344,14 @@ slackcli search people "ada@example.com"
 slackcli saved list --state=to_do            # saved | to_do | completed
 slackcli canvas list --channel=C1234567890
 slackcli canvas read F1234567890             # Canvas -> Markdown
+slackcli files info F1234567890
+slackcli files read F1234567890              # email plain_text or original text
+slackcli files download F1234567890 --output ./report.pdf
 slackcli update check                        # is there a newer version?
 slackcli update                              # install it
 ```
 
-📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md)
+📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md) · [files](docs/user-guide/files.md)
 
 </details>
 

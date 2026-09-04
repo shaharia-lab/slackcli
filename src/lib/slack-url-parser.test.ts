@@ -98,6 +98,22 @@ describe('normalizeIdentifier', () => {
       expect(normalizeIdentifier(`${TEAM_URL}/docs/T012AB/F0123ABCD`, 'file', '<canvas-id>')).toBe('F0123ABCD');
     });
 
+    it('extracts a file ID from a file permalink', () => {
+      expect(
+        normalizeIdentifier(`${TEAM_URL}/files/U012ABCDEFG/F0123ABCD/report.txt`, 'file', '<file-id-or-url>')
+      ).toBe('F0123ABCD');
+    });
+
+    it('extracts a file ID from a private download URL', () => {
+      expect(
+        normalizeIdentifier(
+          'https://files.slack.com/files-pri/T012AB-F0123ABCD/download/report.txt',
+          'file',
+          '<file-id-or-url>',
+        )
+      ).toBe('F0123ABCD');
+    });
+
     it('handles enterprise grid hosts', () => {
       expect(normalizeIdentifier(`${ENTERPRISE_URL}/archives/${CHANNEL}`, 'channel', '--channel-id')).toBe(CHANNEL);
     });
@@ -327,6 +343,10 @@ describe('workspaceOf', () => {
   it('reports nothing for a bare ID or a missing value', () => {
     expect(workspaceOf(CHANNEL)).toBeUndefined();
     expect(workspaceOf(undefined)).toBeUndefined();
+  });
+
+  it('reports no workspace for shared private-file hosts', () => {
+    expect(workspaceOf('https://files.slack.com/files-pri/T012AB-F0123ABCD/report.txt')).toBeUndefined();
   });
 });
 

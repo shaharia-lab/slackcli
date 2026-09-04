@@ -9,6 +9,7 @@ slackcli/
 │   │   ├── auth.ts
 │   │   ├── canvas.ts
 │   │   ├── conversations.ts
+│   │   ├── files.ts
 │   │   ├── messages.ts
 │   │   ├── saved.ts
 │   │   ├── search.ts
@@ -36,6 +37,7 @@ They hold no Slack API knowledge.
 | `auth.ts` | `login`, `login-browser`, `login-auto`, `list`, `set-default`, `remove`, `logout`, `extract-tokens`, `parse-curl` |
 | `canvas.ts` | `list`, `read` |
 | `conversations.ts` | `list`, `read`, `get`, `unread` |
+| `files.ts` | `info`, `read`, `download` |
 | `messages.ts` | `send`, `react`, `edit`, `draft` |
 | `saved.ts` | `list` |
 | `search.ts` | `messages`, `channels`, `people` |

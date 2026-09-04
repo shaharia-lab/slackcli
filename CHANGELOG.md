@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Claude Code plugin**: `plugins/slackcli/` ships a `/slackcli` skill that installs the binary if it is missing (after asking), checks or proposes authentication, and then drives the workspace with a bundled command reference. Install with `/plugin marketplace add shaharia-lab/slackcli` then `/plugin install slackcli@slackcli`
+- **Claude Code plugin**: `plugins/slackcli/` ships a `/slackcli` skill that installs the binary if it is missing (after asking), checks or proposes authentication, and then drives the workspace with a bundled command reference. Install with `/plugin marketplace add shaharia-lab/slackcli` then `/plugin install slackcli@slackcli` (#162)
 
 ### Fixed
 - **Slack API calls are throttled**: every request now goes through a process-wide rate limiter — at most 2 in flight, with at least 200ms between calls — for both standard and browser-session authentication (#147)

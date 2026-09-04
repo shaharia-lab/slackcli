@@ -47,7 +47,11 @@ slackcli auth list        # always exits 0
   user named one). Exit 1 with `invalid_auth` / `not_authed` / `token_revoked`
   means stale credentials: for a `Browser` profile try
   `slackcli auth login-auto --headless` first, else propose authentication.
-  Other errors are not auth problems; report and continue.
+  `unknown command` means the binary predates `team info`: probe with
+  `slackcli conversations list --limit=1` instead and, once authenticated,
+  offer `slackcli update` (Homebrew: `brew upgrade slackcli`), since the
+  reference in phase 3 describes the latest release. Other errors are not
+  auth problems; report and continue.
 - Several workspaces and the request does not say which: ask, or use the
   default and say so.
 

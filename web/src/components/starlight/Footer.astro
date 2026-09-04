@@ -1,0 +1,27 @@
+---
+/**
+ * Starlight's footer, plus one link.
+ *
+ * Withdrawing consent has to be as easy as giving it, and the site's own
+ * <Foot /> - which carries that link - renders on the landing page and the blog
+ * only. Starlight builds its own document, so without this override a visitor
+ * who accepted on the landing page and then read the docs would have no way
+ * back to the question from where they were standing.
+ *
+ * It is an override rather than a `social` entry or a config option because
+ * Starlight has neither for this. The click is handled by the delegated
+ * listener in consentBannerSnippet(), which is why the anchor carries an
+ * attribute rather than a handler.
+ */
+import Default from '@astrojs/starlight/components/Footer.astro';
+import { gtmId } from '../../../site.config.mjs';
+
+// No container id, no banner, so nothing would answer the click.
+const gtm = gtmId();
+---
+<Default><slot /></Default>
+{gtm && (
+  <p class="cc-foot">
+    <a href="#" data-cookie-settings>Cookies</a>
+  </p>
+)}

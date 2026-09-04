@@ -1,0 +1,173 @@
+<!doctype html>
+<!--
+  Source for public/og.png, the one image every share of this site renders.
+
+  Rendered by scripts/render-og.mjs with headless Chrome at exactly 1200x630,
+  which is the size Facebook, LinkedIn, Slack and X all size their large card
+  from. Re-render after editing:
+
+      npm run build:og
+
+  Three rules shape the composition:
+
+  1. **Everything that means anything lives inside the centre 600x600.** That
+     is the square a 1:1 crop keeps, and WhatsApp among others takes one.
+     Outside it is ground and grid only, so the image degrades to the same mark
+     whatever a consumer does to its sides.
+  2. **The only text is the name and one command.** The sibling Agento card
+     carries no text at all, on the grounds that a share consumer reformats
+     everything and small wording is unreadable. That reasoning holds for a
+     sentence and not for these two: at the sizes Slack and X actually render a
+     card, a six-word monospace line is still legible, and it is the single
+     thing that says what this project is. The title and description are
+     carried as their own meta tags and are deliberately NOT repeated here.
+  3. **The terminal is the product.** The card is the same object the landing
+     page leads with, drawn once at rest.
+
+  Colours and metrics are literals rather than tokens, because this file is
+  rendered standalone with no stylesheet behind it. Keep them in step with
+  @shaharia-lab/agento-code's LIGHT palette by hand; a share card does not
+  follow anybody's dark mode.
+
+  The two @font-face rules read out of node_modules by relative path, which a
+  file:// page may only do because render-og.mjs passes Chrome
+  --allow-file-access-from-files. Without the fonts the card still renders, in
+  a fallback serif and mono, which is wrong rather than broken.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face {
+        font-family: 'Instrument Serif';
+        font-style: normal;
+        font-weight: 400;
+        src: url('../node_modules/@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'JetBrains Mono';
+        font-style: normal;
+        font-weight: 100 800;
+        src: url('../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+      }
+
+      :root {
+        --paper: #f0eee6;
+        --raised: #f7f5ee;
+        --sunken: #e6e3d9;
+        --ink: #0b0c07;
+        --ink-soft: #5a574d;
+        --accent: #1f7a4c;
+        --code-bg: #0b0c07;
+        --code-fg: #efece2;
+        --code-comment: #8a8779;
+        --code-accent: #6fd8a0;
+        --faint: #d8d5c9;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1200px; height: 630px; }
+      body {
+        background: var(--paper);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* Full-bleed hairline grid. Purely ground: it carries no meaning, so a
+         crop through it costs nothing, and it keeps the wide format from
+         reading as an oversized margin around a small mark. */
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(to right, var(--faint) 1.5px, transparent 1.5px),
+          linear-gradient(to bottom, var(--faint) 1.5px, transparent 1.5px);
+        background-size: 60px 60px;
+        background-position: -1px -1px;
+      }
+
+      .stage {
+        position: relative;
+        width: 600px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 34px;
+      }
+
+      .wordmark {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        font-family: 'Instrument Serif', Georgia, serif;
+        font-size: 76px;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        color: var(--ink);
+      }
+      .wordmark__dot {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--accent);
+        border: 4px solid var(--ink);
+      }
+
+      /* The same terminal the landing page leads with, at rest. */
+      .term {
+        width: 600px;
+        border: 4px solid var(--ink);
+        border-radius: 4px;
+        box-shadow: 14px 14px 0 var(--ink);
+        background: var(--code-bg);
+        overflow: hidden;
+      }
+      .term__bar {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 12px 16px;
+        background: var(--sunken);
+        border-bottom: 3px solid var(--ink);
+      }
+      .term__dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--paper);
+        border: 2px solid var(--ink);
+      }
+      .term__body {
+        padding: 20px 22px 22px;
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 19px;
+        line-height: 1.75;
+        color: var(--code-fg);
+        white-space: pre;
+      }
+      .p { color: var(--code-accent); font-weight: 700; }
+      .k { color: #ffffff; font-weight: 700; }
+      .d { color: var(--code-comment); }
+      .u { color: #9ec5ff; }
+      .s { color: var(--code-accent); }
+    </style>
+  </head>
+  <body>
+    <div class="grid"></div>
+
+    <div class="stage">
+      <div class="wordmark"><span class="wordmark__dot"></span>SlackCLI</div>
+
+      <div class="term">
+        <div class="term__bar">
+          <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+        </div>
+        <div class="term__body"><span class="p">$</span> <span class="k">slackcli</span> conversations unread
+<span class="u">#incidents</span><span class="d">        4 unread</span>
+<span class="u">#engineering</span><span class="d">      2 unread</span></div>
+      </div>
+    </div>
+  </body>
+</html>

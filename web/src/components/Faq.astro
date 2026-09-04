@@ -1,0 +1,34 @@
+---
+/**
+ * The landing FAQ.
+ *
+ * The questions and answers come from ../../faq.config.mjs, because the landing
+ * page also emits them as `FAQPage` structured data and the two must not drift.
+ * See that file for why the answers are written out rather than linked.
+ */
+import { url } from '../../site.config.mjs';
+import { FAQ } from '../../faq.config.mjs';
+---
+
+<section class="section" id="faq">
+  <div class="sheet panel">
+    <div class="eyebrow">
+      Frequently asked
+      <span class="eyebrow__end"><a href={url('/docs/')}>All documentation &#8599;</a></span>
+    </div>
+    <div class="rows">
+      {FAQ.map((item, i) => (
+        <details class="faq" open={i === 0}>
+          <summary class="faq__q">
+            <span class="faq__chev" aria-hidden="true">&#9656;</span>
+            <span>{item.q}</span>
+          </summary>
+          <div class="faq__a">
+            <p>{item.a}</p>
+            <a class="faq__more" href={url(item.more.path)}>{item.more.label} &#8599;</a>
+          </div>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>

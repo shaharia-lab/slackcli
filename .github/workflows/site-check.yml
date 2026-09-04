@@ -1,0 +1,60 @@
+name: Site check
+
+# Builds the site on any pull request that could break it, and checks every
+# internal link in the output.
+#
+# The link check earns its place here more than it would on most sites. The
+# pages under docs/ are written to be read on GitHub, so they cross-link by
+# relative path and heading anchor (`build-and-release.md#why-bun-is-pinned`),
+# and web/scripts/sync-docs.mjs rewrites those into site routes at build time.
+# Renaming a heading, moving a file between docs/user-guide and docs/development,
+# or adding a page without listing it in web/docs.manifest.mjs all break links
+# that still render as perfectly ordinary text.
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'web/**'
+      - 'package.json'
+      - '.github/workflows/site-check.yml'
+
+# Every action is pinned to a full commit SHA, and only GitHub-owned actions are
+# used. Both are policy on this organisation: `sha_pinning_required` is on, and
+# `allowed_actions` is a selected allowlist. A workflow that breaks either fails
+# at startup with "This run likely failed because of a workflow file issue" and
+# no job logs, so check the policy before adding an action here.
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      # No PUBLIC_GTM_ID, deliberately: a pull request build must not carry the
+      # analytics tag or the consent banner. See the note in pages.yml.
+      - name: Build
+        working-directory: web
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run build
+
+      # A script rather than a link-checking action: this organisation allows
+      # only GitHub-owned actions plus a named allowlist, so a third-party
+      # checker would mean widening that policy for a docs job. See
+      # web/scripts/check-links.mjs for what it does and does not check.
+      - name: Check links
+        working-directory: web
+        run: npm run check:links

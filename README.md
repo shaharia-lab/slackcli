@@ -424,6 +424,7 @@ Everything lives in [`docs/`](docs/README.md).
 - [Saved items](docs/user-guide/saved.md)
 - [Canvas](docs/user-guide/canvas.md)
 - [Scripting & JSON output](docs/user-guide/scripting.md)
+- [Claude Code plugin](docs/user-guide/claude-code-plugin.md)
 - [Troubleshooting](docs/user-guide/troubleshooting.md)
 
 </td>

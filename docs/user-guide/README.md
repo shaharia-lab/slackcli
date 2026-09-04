@@ -49,7 +49,8 @@ list for the version you have installed.
 12. [Files](files.md)
 13. [Emoji](emoji.md)
 14. [Scripting and JSON output](scripting.md)
-15. [Troubleshooting](troubleshooting.md)
+15. [Claude Code plugin](claude-code-plugin.md)
+16. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 

@@ -131,6 +131,84 @@ describe('SlackClient.uploadFileExternal', () => {
   });
 });
 
+describe('SlackClient.fetchFile', () => {
+  it('uses bearer authentication for standard tokens', async () => {
+    let headers: Headers | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      headers = new Headers(init?.headers);
+      return new Response(new Uint8Array([0, 255, 1]), { status: 200 });
+    }) as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    });
+
+    const response = await client.fetchFile('https://files.slack.com/files-pri/T123-F123/report.bin');
+
+    expect(headers?.get('Authorization')).toBe('Bearer xoxb-test');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([0, 255, 1]));
+  });
+
+  it('uses the browser session cookie for browser authentication', async () => {
+    let headers: Headers | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      headers = new Headers(init?.headers);
+      return new Response('report', { status: 200 });
+    }) as typeof fetch;
+
+    const client = new TestSlackClient();
+    await client.fetchFile('https://files.slack.com/files-pri/T123-F123/report.txt');
+
+    expect(headers?.get('Cookie')).toBe('d=xoxd-test');
+    expect(headers?.get('Origin')).toBe('https://app.slack.com');
+    expect(headers?.has('Authorization')).toBe(false);
+  });
+
+  it('does not send credentials to a non-Slack URL', async () => {
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response('unexpected');
+    }) as unknown as typeof fetch;
+
+    const client = new TestSlackClient();
+
+    await expect(client.fetchFile('https://example.com/private-file')).rejects.toThrow(
+      'URL is not hosted by Slack',
+    );
+    expect(fetched).toBe(false);
+  });
+
+  it('does not forward browser credentials to a redirected download host', async () => {
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({ url: String(input), headers: new Headers(init?.headers) });
+      if (requests.length === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'https://downloads.example.com/signed/file.txt' },
+        });
+      }
+      return new Response('report', { status: 200 });
+    }) as typeof fetch;
+
+    const client = new TestSlackClient();
+    const response = await client.fetchFile('https://files.slack.com/files-pri/T123-F123/report.txt');
+
+    expect(await response.text()).toBe('report');
+    expect(requests).toHaveLength(2);
+    expect(requests[0]!.headers.get('Cookie')).toBe('d=xoxd-test');
+    expect(requests[1]!.url).toBe('https://downloads.example.com/signed/file.txt');
+    expect(requests[1]!.headers.has('Cookie')).toBe(false);
+    expect(requests[1]!.headers.has('Origin')).toBe(false);
+    expect(requests[1]!.headers.has('Authorization')).toBe(false);
+  });
+});
+
 describe('SlackClient.updateMessage', () => {
   it('calls chat.update with the channel, timestamp, and new text', async () => {
     const client = new TestSlackClient();

@@ -1,0 +1,28 @@
+{
+  "name": "slackcli",
+  "owner": {
+    "name": "Shaharia Lab",
+    "url": "https://github.com/shaharia-lab"
+  },
+  "metadata": {
+    "description": "Claude Code plugins published from the SlackCLI repository",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "slackcli",
+      "source": "./plugins/slackcli",
+      "description": "Drive Slack from Claude Code with the slackcli binary: installs it if missing, checks authentication, then reads, sends, searches, and manages a workspace",
+      "version": "1.0.0",
+      "author": {
+        "name": "Shaharia Lab",
+        "url": "https://github.com/shaharia-lab"
+      },
+      "homepage": "https://github.com/shaharia-lab/slackcli",
+      "repository": "https://github.com/shaharia-lab/slackcli",
+      "license": "MIT",
+      "keywords": ["slack", "cli", "messaging", "automation"],
+      "category": "productivity"
+    }
+  ]
+}

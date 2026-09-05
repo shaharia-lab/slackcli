@@ -1,0 +1,380 @@
+---
+/**
+ * The hero's product shot.
+ *
+ * SlackCLI has no window to photograph, so the shot is the tool itself: one
+ * real session, replayed. It carries the whole pitch before anybody scrolls -
+ * sign in with no Slack app, catch up on what you missed, search, reply, pipe
+ * it into jq - which is why it sits above the fold rather than in a features
+ * section.
+ *
+ * Two rules shape the implementation, and both are about what happens when the
+ * script does not run:
+ *
+ *   1. **The transcript is authored into the HTML in full.** The animation
+ *      REVEALS lines and RETYPES commands that are already in the DOM; it never
+ *      creates them. With JavaScript off, a failed hydration, or a crawler
+ *      reading the page, the session is a complete, styled, selectable
+ *      transcript. It is also real text rather than an image, which is the
+ *      other half of why it is built this way: the commands on it are the terms
+ *      somebody searches for.
+ *   2. **Hiding is opt-in.** `data-live` is stamped on the container by the
+ *      script itself, and only that attribute activates the rules that hide
+ *      pending lines. A stylesheet that hid them by default would leave a blank
+ *      rectangle for every visitor the script never reaches.
+ *
+ * Commands are authored as TOKENS rather than strings so the highlighting can
+ * be typed along with the text: the typist appends characters to the current
+ * token's span and opens a new one at each boundary, so a flag turns green as
+ * it is typed rather than the whole line recolouring when it lands.
+ */
+
+/** A run of text with an optional class from the code palette in site.css. */
+type Tok = { t: string; c?: string };
+type Line =
+  | { cmd: Tok[]; hold?: number }
+  | { out: Tok[]; delay?: number }
+  | { gap: true };
+
+/**
+ * The session. Every command here is one a reader can paste, and every line of
+ * output is the shape SlackCLI actually prints; the ids and names are the only
+ * invented part. Keep it that way - a demo that shows output the tool does not
+ * produce is the fastest way to lose the person it convinced.
+ */
+const SESSION: Line[] = [
+  { cmd: [{ t: 'slackcli', c: 'k' }, { t: ' auth login-auto' }], hold: 260 },
+  { out: [{ t: 'Opening your browser. Sign in to Slack as you normally would.', c: 'd' }], delay: 380 },
+  { out: [{ t: '✓', c: 's' }, { t: ' 3 workspaces enrolled ', c: 'd' }, { t: '· default: acme', c: 'd' }], delay: 620 },
+  { gap: true },
+
+  { cmd: [{ t: 'slackcli', c: 'k' }, { t: ' conversations unread' }], hold: 300 },
+  { out: [{ t: '#incidents', c: 'u' }, { t: '        4 unread   ', c: 'd' }, { t: 'last 14:24', c: 'd' }], delay: 300 },
+  { out: [{ t: '#engineering', c: 'u' }, { t: '      2 unread   ', c: 'd' }, { t: 'last 13:58', c: 'd' }], delay: 90 },
+  { out: [{ t: '@ada', c: 'u' }, { t: '              1 unread   ', c: 'd' }, { t: 'last 13:41', c: 'd' }], delay: 90 },
+  { gap: true },
+
+  {
+    cmd: [
+      { t: 'slackcli', c: 'k' },
+      { t: ' search messages ' },
+      { t: '"deploy failed"', c: 's' },
+      { t: ' --in=incidents' },
+    ],
+    hold: 320,
+  },
+  { out: [{ t: 'ada       14:22  ', c: 'd' }, { t: 'deploy failed on prod-eu, rolling back now' }], delay: 420 },
+  { out: [{ t: 'marcus    14:24  ', c: 'd' }, { t: 'same signature as the incident on the 4th' }], delay: 110 },
+  { gap: true },
+
+  {
+    cmd: [
+      { t: 'slackcli', c: 'k' },
+      { t: ' messages send --permalink=' },
+      { t: '"$LINK"', c: 's' },
+      { t: ' --message=' },
+      { t: '"On it, taking a look"', c: 's' },
+    ],
+    hold: 300,
+  },
+  { out: [{ t: '✓', c: 's' }, { t: ' replied in ', c: 'd' }, { t: '#incidents', c: 'u' }, { t: '  ts 1741356241.004500', c: 'd' }], delay: 460 },
+  { gap: true },
+
+  {
+    cmd: [
+      { t: 'slackcli', c: 'k' },
+      { t: ' conversations unread --json | ' },
+      { t: 'jq', c: 'k' },
+      { t: ' ' },
+      { t: "'.unread_channels[].name'", c: 's' },
+    ],
+    hold: 260,
+  },
+  { out: [{ t: '"incidents"', c: 's' }], delay: 380 },
+  { out: [{ t: '"engineering"', c: 's' }], delay: 70 },
+];
+
+---
+
+<figure class="term" data-term>
+  <div class="term__bar">
+    <span class="term__dot"></span><span class="term__dot"></span><span class="term__dot"></span>
+    <span class="term__name">zsh &middot; slackcli</span>
+    <button class="term__replay" type="button" data-term-replay hidden>
+      <span aria-hidden="true">&#8635;</span> Replay
+    </button>
+  </div>
+
+  <div class="term__body" data-term-body>
+    {SESSION.map((line) => {
+      if ('gap' in line) return <span class="term__l" data-pending></span>;
+      if ('out' in line) {
+        return (
+          <span class="term__l" data-pending data-delay={String(line.delay ?? 120)}>
+            {line.out.map((tk) => (tk.c ? <span class={tk.c}>{tk.t}</span> : <span>{tk.t}</span>))}
+          </span>
+        );
+      }
+      return (
+        <span
+          class="term__l"
+          data-pending
+          data-cmd={JSON.stringify(line.cmd)}
+          data-hold={String(line.hold ?? 250)}
+        >
+          <span class="p">$</span>{' '}
+          <span data-term-text>
+            {line.cmd.map((tk) => (tk.c ? <span class={tk.c}>{tk.t}</span> : <span>{tk.t}</span>))}
+          </span>
+        </span>
+      );
+    })}
+  </div>
+
+  <figcaption class="term__cap">
+    A real session. <b>No Slack app, no admin approval, no webhook server.</b>
+  </figcaption>
+</figure>
+
+<script is:inline>
+  /* The replay engine.
+   *
+   * It only ever changes `data-pending`, the contents of the `[data-term-text]`
+   * span on a command line, and the cursor class. Everything else on the
+   * element was rendered by Astro, so a failure at any point leaves a readable
+   * transcript rather than an empty box.
+   *
+   * It is driven by requestAnimationFrame over an accumulated clock rather than
+   * a chain of setTimeout calls, and that is not a stylistic preference. A
+   * background tab clamps setTimeout to a floor of one second and then throttles
+   * it harder, which turned a 16ms-per-character typist into roughly one
+   * character every three seconds: somebody who opened this page in a background
+   * tab came back to a hero still spelling the first word. rAF simply does not
+   * fire in a hidden tab, so the animation pauses and resumes where it was.
+   *
+   * The frame delta is clamped so a long pause cannot arrive as one enormous
+   * step that jumps the session to its end, and every frame renders the state
+   * for a time rather than advancing it, so a dropped frame corrects itself on
+   * the next one instead of accumulating drift.
+   */
+  (() => {
+    const term = document.querySelector('[data-term]');
+    if (!term) return;
+
+    const body = term.querySelector('[data-term-body]');
+    const replay = term.querySelector('[data-term-replay]');
+    const lines = [...term.querySelectorAll('.term__l')];
+    if (!body || !lines.length) return;
+
+    /* Milliseconds per character. A real person is bursty and a fixed rate
+       reads as a machine, so this is the average and the jitter is applied per
+       line when the timeline is built. */
+    const MS_PER_CHAR = 17;
+
+    /* The authored contents of every command line, captured before the first
+       run empties them, so a rerun restores from here rather than from whatever
+       the previous run left behind. */
+    const authored = new Map();
+    for (const line of lines) {
+      const text = line.querySelector('[data-term-text]');
+      if (text) authored.set(line, text.innerHTML);
+    }
+
+    /**
+     * The timeline: for each line, the moment it appears and, for a command,
+     * how long it takes to type. Built once. Every render is a pure function of
+     * a time and this array.
+     */
+    let clock = 0;
+    const timeline = lines.map((line) => {
+      const entry = { line, at: clock, tokens: null, chars: 0, typeMs: 0, drawn: -1 };
+
+      if (line.hasAttribute('data-cmd')) {
+        try {
+          entry.tokens = JSON.parse(line.getAttribute('data-cmd') || '[]');
+        } catch {
+          entry.tokens = null; // fall back to the authored markup
+        }
+        if (entry.tokens) {
+          entry.chars = entry.tokens.reduce((n, tk) => n + [...tk.t].length, 0);
+          entry.typeMs = entry.chars * MS_PER_CHAR;
+        }
+        clock += entry.typeMs + (Number(line.getAttribute('data-hold')) || 250);
+      } else {
+        clock += Number(line.getAttribute('data-delay')) || 0;
+      }
+      return entry;
+    });
+    const TOTAL = clock;
+
+    /** Paint the first `n` characters of a command line, tokens and all. */
+    function drawChars(entry, n) {
+      if (entry.drawn === n) return;
+      entry.drawn = n;
+
+      const host = entry.line.querySelector('[data-term-text]');
+      if (!host) return;
+
+      if (!entry.tokens) {
+        host.innerHTML = authored.get(entry.line) || '';
+        return;
+      }
+
+      host.textContent = '';
+      let left = n;
+      for (const tk of entry.tokens) {
+        if (left <= 0) break;
+        const chars = [...tk.t];
+        const take = chars.slice(0, left).join('');
+        left -= chars.length;
+        const span = document.createElement('span');
+        if (tk.c) span.className = tk.c;
+        span.textContent = take;
+        host.appendChild(span);
+      }
+    }
+
+    /** The whole state of the terminal at `time` milliseconds into the run. */
+    function render(time) {
+      let scroll = false;
+      for (const entry of timeline) {
+        const visible = time >= entry.at;
+        const wasHidden = entry.line.hasAttribute('data-pending');
+
+        if (!visible) {
+          if (!wasHidden) entry.line.setAttribute('data-pending', '');
+          entry.line.classList.remove('term__cur');
+          if (entry.tokens) drawChars(entry, 0);
+          continue;
+        }
+
+        if (wasHidden) {
+          entry.line.removeAttribute('data-pending');
+          scroll = true;
+        }
+
+        if (!entry.tokens && !entry.line.hasAttribute('data-cmd')) continue;
+
+        const typed = entry.typeMs
+          ? Math.min(entry.chars, Math.floor((time - entry.at) / MS_PER_CHAR))
+          : entry.chars;
+        if (typed !== entry.drawn) scroll = true;
+        drawChars(entry, typed);
+
+        /* The cursor rides the line being typed, and leaves when it is done. */
+        entry.line.classList.toggle('term__cur', typed < entry.chars);
+      }
+
+      /* Follow the output the way a terminal does. Pending lines are display:
+         none rather than hidden, so scrollHeight is the height of what has
+         actually been printed and this lands on the real bottom. */
+      if (scroll) body.scrollTop = body.scrollHeight;
+    }
+
+    /** Show the whole transcript exactly as authored, with nothing hidden. */
+    function revealAll() {
+      for (const entry of timeline) {
+        entry.line.removeAttribute('data-pending');
+        entry.line.classList.remove('term__cur');
+        const text = entry.line.querySelector('[data-term-text]');
+        if (text && authored.has(entry.line)) text.innerHTML = authored.get(entry.line);
+        entry.drawn = entry.chars;
+      }
+    }
+
+    let raf = 0;
+    let acc = 0;
+    let last = 0;
+
+    function frame(now) {
+      /* Clamped, so a tab that was hidden for a minute resumes rather than
+         fast-forwarding through the whole session in one step. */
+      const dt = last ? Math.min(now - last, 100) : 0;
+      last = now;
+      acc += dt;
+
+      render(acc);
+
+      if (acc < TOTAL) {
+        raf = requestAnimationFrame(frame);
+      } else {
+        raf = 0;
+        if (replay) replay.hidden = false;
+      }
+    }
+
+    function play() {
+      if (raf) cancelAnimationFrame(raf);
+      term.setAttribute('data-live', '');
+      if (replay) replay.hidden = true;
+      acc = 0;
+      last = 0;
+      render(0);
+      body.scrollTop = 0;
+      raf = requestAnimationFrame(frame);
+    }
+
+    /* Somebody who asked for less motion gets the finished transcript and no
+       button, not an animation they did not ask for. The check is live: a
+       visitor who turns the preference on mid-session stops the replay where it
+       is and restores the whole session. */
+    const still = matchMedia('(prefers-reduced-motion: reduce)');
+    const settle = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      term.removeAttribute('data-live');
+      revealAll();
+      if (replay) replay.hidden = true;
+    };
+    still.addEventListener('change', (e) => e.matches && settle());
+
+    if (still.matches) {
+      settle();
+      return;
+    }
+
+    if (replay) replay.addEventListener('click', play);
+
+    /* Nothing is hidden and nothing is cleared until a run can actually make
+       progress, and that guard is the whole reason this is not simply wired to
+       the observer.
+       *
+       * `data-live` hides the pending lines and the first frame empties the
+       * command text, so if the run then never advances, the terminal is left
+       * showing bare `$` prompts: a broken-looking hero rather than a
+       * transcript. A hidden tab does exactly that, because rAF does not fire
+       * in one at all. So a run needs two conditions, not one:
+       *
+       *   - the terminal is on screen (the observer), so a deep link straight
+       *     to #install does not burn the session where nobody is looking; and
+       *   - the page is visible, so the frames that clear the text are the same
+       *     frames that start refilling it.
+       *
+       * Until both hold, the authored transcript stands as rendered, which is
+       * the same thing a visitor with no JavaScript sees. */
+    let onScreen = false;
+    let started = false;
+
+    function maybeStart() {
+      if (started || !onScreen || document.visibilityState !== 'visible') return;
+      started = true;
+      play();
+    }
+
+    document.addEventListener('visibilitychange', maybeStart);
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            io.disconnect();
+            onScreen = true;
+            maybeStart();
+          }
+        }
+      },
+      { threshold: 0.35 }
+    );
+    io.observe(term);
+  })();
+</script>

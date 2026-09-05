@@ -1,0 +1,99 @@
+name: Site
+
+# Publishes the landing page, the documentation and the blog to GitHub Pages.
+#
+# It runs on a release as well as on a push, and that is not redundant: the
+# landing page and the install section bake in the latest release's version, its
+# asset sizes and its checksums URL (web/scripts/fetch-release.mjs). Without the
+# release trigger the site would advertise the previous version until somebody
+# happened to push a docs change.
+#
+# The site is served from its own apex domain, https://slackcli.dev, so it
+# publishes at the root and no route carries a path prefix. The address is
+# stated once, in web/site.config.mjs; the domain, its DNS and the Pages
+# custom-domain setting live in shaharia-lab/infrastructure. Nothing here needs
+# to know either.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'web/**'
+      - 'package.json'
+      - '.github/workflows/pages.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Every action is pinned to a full commit SHA, and only GitHub-owned actions are
+# used. Both are policy on this organisation: `sha_pinning_required` is on, and
+# `allowed_actions` is a selected allowlist. A workflow that breaks either fails
+# at startup with "This run likely failed because of a workflow file issue" and
+# no job logs, which is a slow thing to diagnose, so check the policy before
+# adding an action here.
+#
+# **Pinning this file is not enough, because the rule applies transitively.** A
+# composite action's own `uses:` lines are resolved on the runner and checked
+# against the same policy, so a composite that references its dependency by tag
+# is refused however carefully we pinned the composite itself. All three Pages
+# actions below are on versions that SHA-pin their own dependencies; check
+# `action.yml` at the tag before bumping any of them.
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a queued run is superseded rather than racing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: Build
+        working-directory: web
+        # The token lifts the release API's unauthenticated rate limit. The
+        # build falls back to the version in package.json without it, so a rate
+        # limit degrades the download list rather than failing the run.
+        #
+        # PUBLIC_GTM_ID is a repository variable, not a secret: a container id
+        # is visible in the page source of every site that loads one. Unset, the
+        # build emits no analytics and no cookie banner at all, which is what
+        # keeps the tag off fork builds and off `npm run dev`; see gtmId() in
+        # web/site.config.mjs. Only this workflow publishes, so only this
+        # workflow passes it, and the site-check job builds without it
+        # deliberately.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PUBLIC_GTM_ID: ${{ vars.PUBLIC_GTM_ID }}
+        run: npm run build
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

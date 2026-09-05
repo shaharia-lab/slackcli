@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Project website**: `web/` builds an Astro site published to GitHub Pages at <https://slackcli.dev>, with a landing page, the full documentation and a blog (#164)
+  - The documentation half is generated from `docs/` at build time by `web/scripts/sync-docs.mjs`, so the repository stays the single source and nothing is maintained twice
+  - Styled with `@shaharia-lab/agento-code`, the design system shared by every Shaharia Lab project site
+  - The version, the per-platform binaries, their sizes and the checksums link all come from the GitHub Releases API at build time, so nothing about a download is written by hand
+  - Two workflows: `Site check` builds every pull request that touches `docs/` or `web/` and verifies every internal link and heading anchor, and `Site` deploys on a push to `main` and on every published release
+  - No analytics unless the build is given a `PUBLIC_GTM_ID`, and no cookie banner without it
 - **Claude Code plugin**: `plugins/slackcli/` ships a `/slackcli` skill that installs the binary if it is missing (after asking), checks or proposes authentication, and then drives the workspace with a bundled command reference. Install with `/plugin marketplace add shaharia-lab/slackcli` then `/plugin install slackcli@slackcli` (#162)
 
 ### Fixed

@@ -38,6 +38,7 @@ Start here if you want to *work on* SlackCLI.
 | [Testing](development/testing.md) | Test layout, conventions, and how to write a good one |
 | [Build and release](development/build-and-release.md) | Version injection, CI, tagging, Homebrew tap |
 | [Adding a command](development/adding-a-command.md) | A worked example, end to end |
+| [Website](development/website.md) | The Astro site in `web/`, and how docs become pages |
 
 ## Contributing
 

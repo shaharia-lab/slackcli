@@ -15,7 +15,7 @@ No Slack app to build, no admin approval to wait for.
 [![License](https://img.shields.io/github/license/shaharia-lab/slackcli?style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/shaharia-lab/slackcli?style=flat-square)](https://github.com/shaharia-lab/slackcli/commits/main)
 
-**[Quickstart](#-quickstart) · [What it does](#-what-do-you-want-to-do) · [Commands](#-command-reference) · [Docs](docs/README.md) · [Contributing](#-contributing)**
+**[Website](https://slackcli.dev) · [Quickstart](#-quickstart) · [What it does](#-what-do-you-want-to-do) · [Commands](#-command-reference) · [Docs](docs/README.md) · [Contributing](#-contributing)**
 
 <br>
 

@@ -20,6 +20,7 @@ bun run dev --help
 | [Testing](testing.md) | Layout, conventions, and how to write a test that belongs here |
 | [Build and release](build-and-release.md) | Version injection, CI, tagging, Homebrew tap |
 | [Adding a command](adding-a-command.md) | A worked example, end to end |
+| [Website](website.md) | The Astro site in `web/`, and how docs become pages |
 
 ## The short version
 

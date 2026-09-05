@@ -1,0 +1,88 @@
+---
+import { getCollection } from 'astro:content';
+import Page from '../../layouts/Page.astro';
+import JsonLd from '../../components/JsonLd.astro';
+import { url, abs, SITE, SITE_NAME, ORG } from '../../../site.config.mjs';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+);
+const [featured, ...rest] = posts.some((p) => p.data.featured)
+  ? [posts.find((p) => p.data.featured)!, ...posts.filter((p) => !p.data.featured)]
+  : posts;
+
+const fmt = (d: Date, long = false) =>
+  d.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: long ? 'long' : 'short',
+    year: 'numeric',
+  });
+
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'Blog',
+  '@id': `${SITE}${url('/blog/')}#blog`,
+  name: 'SlackCLI - Notes from the terminal',
+  url: abs('/blog/'),
+  isPartOf: { '@type': 'WebSite', '@id': `${SITE}${url('/')}#website`, name: SITE_NAME },
+  publisher: { '@type': 'Organization', name: ORG.name, url: ORG.url },
+  blogPost: posts.map((post) => ({
+    '@type': 'BlogPosting',
+    headline: post.data.title,
+    description: post.data.description,
+    datePublished: post.data.date.toISOString(),
+    url: abs(`/blog/${post.id}/`),
+    author: { '@type': 'Person', name: post.data.author },
+  })),
+};
+---
+
+<Page
+  title="Notes from the terminal - SlackCLI"
+  description="How SlackCLI works, why it is built the way it is, and what shipped in each release."
+  current="blog"
+>
+  <JsonLd slot="head" schema={schema} />
+
+  <div class="shell blog">
+    <h1 class="blog__title">Notes from the terminal.</h1>
+    <p class="blog__sub">
+      How SlackCLI works, why it is built the way it is, and the decisions that were harder than
+      they looked.
+    </p>
+
+    {featured && (
+      <a class="post post--feature" href={url(`/blog/${featured.id}/`)}>
+        <div class="post__meta">
+          <span class="pill">Latest</span>
+          <span class="post__date">{fmt(featured.data.date, true)}</span>
+        </div>
+        <h3>{featured.data.title}</h3>
+        <p>{featured.data.description}</p>
+        <div class="post__tags">
+          {featured.data.tags.map((t) => <span class="pill pill--plain">{t}</span>)}
+        </div>
+      </a>
+    )}
+
+    {rest.length > 0 && (
+      <div class="posts">
+        {rest.map((post) => (
+          <a class="post" href={url(`/blog/${post.id}/`)}>
+            <span class="post__date">{fmt(post.data.date)}</span>
+            <div class="post__body">
+              <h3>{post.data.title}</h3>
+              <p>{post.data.description}</p>
+              <div class="post__tags">
+                {post.data.tags.map((t) => <span class="pill pill--plain">{t}</span>)}
+              </div>
+            </div>
+            <span class="post__go" aria-hidden="true">&#8594;</span>
+          </a>
+        ))}
+      </div>
+    )}
+
+    {posts.length === 0 && <p class="blog__sub">Nothing published yet.</p>}
+  </div>
+</Page>

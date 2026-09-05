@@ -1,0 +1,79 @@
+---
+/**
+ * The shell for every page Starlight does not own: the landing page, the blog
+ * and the 404. Starlight builds its own <head>, so anything that must be true
+ * of *both* halves of the site (fonts, tokens, the theme attribute, the consent
+ * banner) is imported here and passed to Starlight through `customCss` in
+ * astro.config.mjs.
+ */
+import '../styles/fonts.css';
+import '../styles/tokens.css';
+import '../styles/site.css';
+import '../styles/consent.css';
+import Masthead from '../components/Masthead.astro';
+import Foot from '../components/Foot.astro';
+import { url, abs, OG_IMAGE, SITE_NAME, gtmId, gtmSnippet, consentDefaultSnippet, consentBannerSnippet } from '../../site.config.mjs';
+
+interface Props {
+  title: string;
+  description: string;
+  current?: 'docs' | 'blog';
+  ogType?: string;
+}
+const { title, description, current, ogType = 'website' } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+
+// Absolute, because a scraper resolves it with no page context. The alt text
+// describes the card rather than repeating the title: a screen reader that has
+// just read the title should not hear it twice.
+const ogImage = abs(OG_IMAGE.path);
+const gtm = gtmId();
+---
+<!doctype html>
+<html lang="en" data-accent="forest">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={url('/favicon.svg')} type="image/svg+xml" />
+    <link rel="alternate" type="application/rss+xml" title="SlackCLI - Notes from the terminal" href={url('/rss.xml')} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content={SITE_NAME} />
+    {/* No og:locale. Starlight derives its own from the locale config and emits
+        a bare `en`; spelling a second one here would mean the two halves
+        disagreed about the same page's language for the sake of a tag whose
+        absence costs nothing. */}
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content={String(OG_IMAGE.width)} />
+    <meta property="og:image:height" content={String(OG_IMAGE.height)} />
+    <meta property="og:image:alt" content="The SlackCLI wordmark over a terminal prompt reading slackcli conversations unread" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={ogImage} />
+    <slot name="head" />
+    {/* Consent Mode's defaults must be in the dataLayer BEFORE the container
+        loads, so these three are one ordered group: default, container,
+        banner. Keep them adjacent and keep them in this order. */}
+    {gtm && <script is:inline set:html={consentDefaultSnippet()} />}
+    {gtm && <script is:inline set:html={gtmSnippet(gtm)} />}
+    {gtm && <script is:inline set:html={consentBannerSnippet(url('/docs/user-guide/workspaces/#config-file'))} />}
+    <script is:inline>
+      // Applied before first paint so a dark-mode visitor never sees a flash
+      // of the paper ground. The key is Starlight's own, so a choice made here
+      // survives into the docs and back.
+      (() => {
+        const t = localStorage.getItem('starlight-theme');
+        if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
+  </head>
+  <body>
+    <Masthead current={current} />
+    <slot />
+    <div class="shell"><Foot /></div>
+  </body>
+</html>

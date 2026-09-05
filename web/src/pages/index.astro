@@ -1,0 +1,387 @@
+---
+/**
+ * The landing page.
+ *
+ * Everything here is hand-laid rather than generated: it is the one page whose
+ * job is persuasion, and it carries the design at full intensity. Offset
+ * shadows, the display serif, the single accent call to action. Docs and blog
+ * step the same vocabulary down.
+ *
+ * The order is an argument rather than a feature list. The terminal shows the
+ * tool working before anything is claimed about it; the three costs come before
+ * the eleven capabilities, because somebody who does not recognise the problem
+ * does not care about the answer; and the task table sits above the install
+ * section because "I want to see what I missed" is the sentence that makes
+ * somebody scroll to it.
+ */
+import Page from '../layouts/Page.astro';
+import { url, abs, REPO, SITE, SITE_NAME, ORG, OG_IMAGE } from '../../site.config.mjs';
+import { FAQ } from '../../faq.config.mjs';
+import release from '../data/release.json';
+import Term from '../components/Term.astro';
+import Install from '../components/Install.astro';
+import StarCta from '../components/StarCta.astro';
+import Faq from '../components/Faq.astro';
+import JsonLd from '../components/JsonLd.astro';
+
+// Resolved at build time by scripts/fetch-release.mjs. Nothing about a version
+// or a download is written by hand.
+const { version } = release;
+
+/**
+ * What you can do, in the words somebody would actually use.
+ *
+ * This block carries most of the page's long-tail search surface, so every row
+ * is a real intent paired with the exact command that satisfies it, and both
+ * halves are real: a command here can be pasted.
+ */
+const TASKS = [
+  {
+    q: 'See what I missed',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' conversations unread' }],
+    path: '/docs/user-guide/conversations/',
+  },
+  {
+    q: 'Read a channel or a thread',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' conversations read --permalink=' }, { t: '"$LINK"', c: 's' }],
+    path: '/docs/user-guide/conversations/',
+  },
+  {
+    q: 'Reply, edit, or react',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' messages send --message=' }, { t: '"On it"', c: 's' }],
+    path: '/docs/user-guide/messages/',
+  },
+  {
+    q: 'Search the whole workspace',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' search messages ' }, { t: '"release notes"', c: 's' }],
+    path: '/docs/user-guide/search/',
+  },
+  {
+    q: 'Find a channel or a person',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' search people ' }, { t: '"ada"', c: 's' }],
+    path: '/docs/user-guide/search/',
+  },
+  {
+    q: 'Upload a file with a message',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' messages send --file=./report.pdf' }],
+    path: '/docs/user-guide/messages/',
+  },
+  {
+    q: 'Post rich Block Kit content',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' messages send --blocks=@blocks.json' }],
+    path: '/docs/user-guide/messages/',
+  },
+  {
+    q: 'Read a Canvas as Markdown',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' canvas read F0123456789' }],
+    path: '/docs/user-guide/canvas/',
+  },
+  {
+    q: 'Work through saved for later',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' saved list --state=to_do' }],
+    path: '/docs/user-guide/saved/',
+  },
+  {
+    q: 'Juggle several workspaces',
+    code: [{ t: 'slackcli', c: 'k' }, { t: ' conversations list --workspace=acme' }],
+    path: '/docs/user-guide/workspaces/',
+  },
+];
+
+/**
+ * Structured data.
+ *
+ * Every value is derived rather than restated: the version comes from the same
+ * build-time fetch the download buttons do, so the card cannot advertise a
+ * release the page does not offer, and the FAQ comes from the same module the
+ * accordion renders, so a search engine cannot show an answer this page does
+ * not contain.
+ *
+ * `offers` at price 0 is not decoration. Without an explicit free offer a
+ * SoftwareApplication is shown with no pricing at all, which reads as
+ * "unknown", and free is one of the two most load-bearing facts about this one.
+ */
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    '@id': `${SITE}${url('/')}#app`,
+    name: SITE_NAME,
+    alternateName: 'Slack CLI for the terminal',
+    applicationCategory: 'DeveloperApplication',
+    applicationSubCategory: 'CommandLineTool',
+    operatingSystem: 'macOS, Linux, Windows',
+    softwareVersion: version,
+    downloadUrl: `${REPO}/releases/latest`,
+    installUrl: abs('/#install'),
+    url: abs('/'),
+    image: abs(OG_IMAGE.path),
+    license: `${REPO}/blob/main/LICENSE`,
+    isAccessibleForFree: true,
+    description:
+      'A command-line interface for Slack workspaces. Read channels and threads, send and reply, search, and drive it all from a shell script or an AI agent, using either a Slack app token or your own signed-in browser session.',
+    featureList: [
+      'Read channels, DMs, threads and unreads',
+      'Send, reply, edit, react, draft and upload files',
+      'Search messages, channels and people',
+      'JSON output on every command, for scripts and AI agents',
+      'Works without registering a Slack app',
+      'Several workspaces and identities side by side',
+    ],
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    author: { '@type': 'Organization', name: ORG.name, url: ORG.url },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': `${SITE}${url('/')}#website`,
+    name: SITE_NAME,
+    url: abs('/'),
+    publisher: { '@type': 'Organization', name: ORG.name, url: ORG.url },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    '@id': `${SITE}${url('/')}#faq`,
+    mainEntity: FAQ.map((item) => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: { '@type': 'Answer', text: item.a.replace(/\s+/g, ' ').trim() },
+    })),
+  },
+];
+---
+
+<Page
+  title="SlackCLI - the Slack CLI for humans and AI agents"
+  description="Read, send, search and reply across your Slack workspaces from the terminal. One binary, no Slack app to register, no admin approval, and JSON output on every command."
+>
+  <JsonLd slot="head" schema={schema} />
+
+  <div class="shell">
+    <section class="hero">
+      <div class="hero__eyebrow">
+        <span class="pill">v{version}</span>
+        <span class="pill pill--plain">macOS &middot; Linux &middot; Windows</span>
+        <span class="pill pill--plain">MIT licensed</span>
+        <span class="pill pill--plain">No Slack app required</span>
+      </div>
+
+      <h1 class="hero__title">Slack, without the <em>tab</em>.</h1>
+
+      <p class="hero__lede">
+        SlackCLI is a single binary that reads, sends, searches and replies across one{' '}
+        <b>or many</b> Slack workspaces, straight from your terminal. It signs in with the session
+        you already have, so there is <b>no Slack app to register</b> and nothing to get approved.
+        Every command speaks <b>JSON</b>, which is what makes it usable by a script or an AI agent
+        as easily as by you.
+      </p>
+
+      <div class="hero__cta">
+        <a class="btn btn--primary" href="#install">Install in a minute &#8594;</a>
+        <a class="btn btn--ink" href={url('/docs/user-guide/')}>Read the docs</a>
+        <span class="hero__note">One binary. No runtime. No account.</span>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat__n">0</div>
+          <div class="stat__k label">Slack apps to register</div>
+        </div>
+        <div class="stat">
+          <div class="stat__n">1</div>
+          <div class="stat__k label">Binary, no runtime</div>
+        </div>
+        <div class="stat">
+          <div class="stat__n">11</div>
+          <div class="stat__k label">Command groups</div>
+        </div>
+        <div class="stat">
+          <div class="stat__n">--json</div>
+          <div class="stat__k label">On every command</div>
+        </div>
+      </div>
+
+      <Term />
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <h2>Three reasons this exists.</h2>
+        <span class="label">The problem</span>
+      </div>
+      <div class="pains">
+        <div class="sheet sheet--dashed pain">
+          <span class="pain__n">01</span>
+          <h4>The tab that eats the day</h4>
+          <p>
+            You are in the terminal. The answer is in Slack. So you switch, get pulled into three
+            other threads, and come back having forgotten what you were doing. The cost is not the
+            reading, it is the re-entry.
+          </p>
+          <span class="pain__fix"><b>slackcli conversations unread</b></span>
+        </div>
+        <div class="sheet sheet--dashed pain">
+          <span class="pain__n">02</span>
+          <h4>The app you are not allowed to create</h4>
+          <p>
+            Every other route into Slack starts with registering an app, picking OAuth scopes, and
+            waiting for a workspace admin who has better things to do. Most useful automation dies
+            right there, unbuilt.
+          </p>
+          <span class="pain__fix"><b>slackcli auth login-auto</b></span>
+        </div>
+        <div class="sheet sheet--dashed pain">
+          <span class="pain__n">03</span>
+          <h4>The agent that cannot reach your team</h4>
+          <p>
+            Your AI agent can read the whole repository and still miss the thread that explains why
+            the code is that way. Slack is where the context lives, and most tooling cannot get at
+            it without a webhook server.
+          </p>
+          <span class="pain__fix"><b>slackcli search messages &hellip; --json</b></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="what-it-does">
+      <div class="section__head">
+        <h2>What do you want to do?</h2>
+        <span class="label">Every command</span>
+      </div>
+      <div class="tasks">
+        {TASKS.map((task) => (
+          <a class="task" href={url(task.path)}>
+            <span class="task__q">{task.q}</span>
+            <code class="task__c">
+              {task.code.map((tk) => (tk.c ? <span class={tk.c}>{tk.t}</span> : <span>{tk.t}</span>))}
+            </code>
+            <span class="task__go" aria-hidden="true">&#8594;</span>
+          </a>
+        ))}
+      </div>
+      <p class="osfoot">
+        <span class="label">Also</span>
+        <a href={url('/docs/user-guide/files/')}>files</a>
+        <span class="label">&middot;</span>
+        <a href={url('/docs/user-guide/emoji/')}>custom emoji</a>
+        <span class="label">&middot;</span>
+        <a href={url('/docs/user-guide/usergroups/')}>user groups</a>
+        <span class="label">&middot;</span>
+        <a href={url('/docs/user-guide/team/')}>team info</a>
+        <span class="label">&middot;</span>
+        <a href={url('/docs/user-guide/links-and-timestamps/')}>paste a Slack link anywhere an ID goes</a>
+      </p>
+    </section>
+
+    <section class="section" id="scripting">
+      <div class="section__head">
+        <h2>Built to be piped.</h2>
+        <span class="label">Scripts and agents</span>
+      </div>
+      <div class="split">
+        <div class="sheet panel">
+          <div class="eyebrow">
+            For your shell
+            <span class="eyebrow__end"><a href={url('/docs/user-guide/scripting/')}>Scripting guide &#8599;</a></span>
+          </div>
+          <h3>One object on stdout, every time</h3>
+          <p>
+            <code>--json</code> is not bolted onto the read commands alone. <code>send</code>,{' '}
+            <code>edit</code> and <code>draft</code> echo back what they wrote, so a later step can
+            edit or react to the exact message. Exit codes are meaningful, so a pipeline can branch
+            on failure instead of grepping stderr.
+          </p>
+          <pre class="codeblock"><span class="c"># post, then keep the handle for a later step</span>
+sent=$(<span class="k">slackcli</span> messages send --recipient-id=C123 \
+  --message=<span class="s">"Deploying now"</span> --json)
+
+<span class="k">slackcli</span> messages react --permalink=<span class="s">"$(jq -r .permalink &lt;&lt;&lt;"$sent")"</span> \
+  --emoji=eyes</pre>
+        </div>
+        <div class="sheet panel">
+          <div class="eyebrow">
+            For your agent
+            <span class="eyebrow__end"><a href={url('/docs/user-guide/claude-code-plugin/')}>Claude Code plugin &#8599;</a></span>
+          </div>
+          <h3>Slack as a tool an agent can hold</h3>
+          <p>
+            SlackCLI ships a Claude Code plugin with a <code>/slackcli</code> skill, so an agent can
+            catch up on a channel, pull the thread behind an incident, and post the summary back,
+            without you writing a single command for it.
+          </p>
+          <p>
+            It works the same for anything that can run a binary and parse JSON: a cron job, a CI
+            step, a Makefile target. No webhook server, no callback URL, no public endpoint.
+          </p>
+          <pre class="codeblock"><span class="c"># turn today's unreads into a digest</span>
+<span class="k">slackcli</span> conversations unread --json \
+  | <span class="k">jq</span> <span class="s">'[.unread_channels[] | {'{'}name, unread_count{'}'}]'</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="auth">
+      <div class="section__head">
+        <h2>Two ways in. Neither needs an admin.</h2>
+        <span class="label">Authentication</span>
+      </div>
+      <div class="ways">
+        <div class="sheet way">
+          <span class="way__tag">Recommended</span>
+          <h3>Your own session</h3>
+          <p>
+            A browser window opens, you sign in the way you always do, and SlackCLI keeps the
+            session tokens for <b>every workspace on that account</b>. It acts as you, so it can do
+            exactly what you can do, and nothing you could not.
+          </p>
+          <pre class="codeblock"><span class="k">slackcli</span> auth login-auto</pre>
+          <ul class="way__list">
+            <li><b>Nothing to install</b> beyond a Chrome, Edge, Chromium or Brave you already have.</li>
+            <li><b>Sign in once.</b> The profile persists, so later refreshes run headless.</li>
+            <li><b>Unlocks drafts</b> and Slack's native unread and saved endpoints.</li>
+          </ul>
+        </div>
+        <div class="sheet way">
+          <span class="way__tag">For automation</span>
+          <h3>A Slack app token</h3>
+          <p>
+            If you already have an <code>xoxb</code> or <code>xoxp</code> token, hand it over. It is
+            validated against Slack before anything is written to disk, so a bad token fails at
+            sign-in rather than at three in the morning.
+          </p>
+          <pre class="codeblock"><span class="k">slackcli</span> auth login --token=<span class="s">"xoxb-..."</span> \
+  --workspace-name=<span class="s">"My Team"</span></pre>
+          <ul class="way__list">
+            <li><b>Stable.</b> Survives a browser logout, which is what CI needs.</li>
+            <li><b>Scoped.</b> The token can do only what you granted it.</li>
+            <li><b>Mixable.</b> Keep both kinds side by side and pick with <code>--workspace</code>.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="osfoot">
+        <span class="label">Stored at</span>
+        <a class="literal" href={url('/docs/user-guide/workspaces/#config-file')}>~/.config/slackcli/workspaces.json</a>
+        <span class="label">mode 0600, never printed back</span>
+      </p>
+    </section>
+
+    <Install />
+
+    <Faq />
+
+    <StarCta />
+
+    <section class="closer">
+      <h2>The terminal is already open.</h2>
+      <p>
+        One command to install, one to sign in, and the next time somebody asks what happened in
+        #incidents you can answer without leaving the shell.
+      </p>
+      <div class="hero__cta">
+        <a class="btn btn--primary" href="#install">Install SlackCLI {version} &#8594;</a>
+        <a class="btn btn--ghost" href={REPO}>Star on GitHub</a>
+      </div>
+    </section>
+  </div>
+</Page>

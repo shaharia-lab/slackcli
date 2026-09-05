@@ -1,0 +1,208 @@
+---
+/**
+ * The install section, and the page's primary conversion point.
+ *
+ * Four rules shape it, and they are all consequences of this being a static
+ * page that cannot know who is asking:
+ *
+ *   1. **Homebrew is answered first and separately.** It is one line, it works
+ *      on macOS and Linux, and it is the route that also gives people
+ *      `brew upgrade`. Burying it inside a per-platform accordion would make
+ *      the easy path the one you have to open a panel to find.
+ *   2. **Every platform is rendered**, as a stacked <details>. Detection
+ *      happens in the browser, so nothing may be omitted server-side: a
+ *      <details> panel keeps its content in the DOM whether open or shut, which
+ *      is why collapsing is safe where dropping would not be. The script below
+ *      reorders, opens and marks; it never removes. With JavaScript off, the
+ *      first panel is open and the others are one click away.
+ *   3. **The OS is detected; the architecture is not.** Safari reports
+ *      `MacIntel` on Apple Silicon, so there is no reliable way to tell an ARM
+ *      Mac from an Intel one in JavaScript. Chromium exposes it through
+ *      `userAgentData.getHighEntropyValues`, which is used when present, and
+ *      both Mac downloads are always listed either way. Guessing wrong hands
+ *      somebody a binary that will not run.
+ *   4. **Filenames, sizes and links come from the release API**, never from a
+ *      template. See scripts/fetch-release.mjs.
+ */
+import release from '../data/release.json';
+import { url } from '../../site.config.mjs';
+import CopyLine from './CopyLine.astro';
+
+const { downloads, resolved } = release;
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+const pick = (id: string) => downloads.find((d: any) => d.id === id);
+
+const linux = pick('linux-x64');
+const macArm = pick('macos-arm');
+
+const OSES = [
+  {
+    os: 'macos',
+    label: 'macOS',
+    hint: 'Apple menu, About This Mac, tells you which chip you have. Homebrew above picks for you.',
+    files: downloads.filter((d: any) => d.os === 'macos'),
+    steps: [
+      {
+        t: 'Download, mark it executable, and put it on your PATH:',
+        code: macArm
+          ? `curl -L ${macArm.href} -o slackcli\nchmod +x slackcli\nmkdir -p ~/.local/bin && mv slackcli ~/.local/bin/`
+          : null,
+      },
+      {
+        t: 'If Gatekeeper blocks it, clear the quarantine flag. Release binaries are ad-hoc signed rather than notarised:',
+        code: 'xattr -d com.apple.quarantine ~/.local/bin/slackcli',
+      },
+    ],
+  },
+  {
+    os: 'linux',
+    label: 'Linux',
+    hint: 'Works on any distribution. The binary bundles its own runtime, so there is no Node.js or Bun to install.',
+    files: downloads.filter((d: any) => d.os === 'linux'),
+    steps: [
+      {
+        t: 'Download, mark it executable, and put it on your PATH:',
+        code: linux
+          ? `curl -L ${linux.href} -o slackcli\nchmod +x slackcli\nmkdir -p ~/.local/bin && mv slackcli ~/.local/bin/`
+          : null,
+      },
+      {
+        t: 'If the shell cannot find it afterwards, ~/.local/bin is not on your PATH:',
+        code: 'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc && exec $SHELL',
+      },
+    ],
+  },
+  {
+    os: 'windows',
+    label: 'Windows',
+    hint: 'Homebrew is not an option here, so the binary is the route. WSL users want the Linux build instead.',
+    files: downloads.filter((d: any) => d.os === 'windows'),
+    steps: [
+      { t: 'Download slackcli-windows.exe and put it in a folder that is on your PATH.', code: null },
+      {
+        t: 'SmartScreen may warn that the publisher is unknown. Choose More info, then Run anyway. These builds are unsigned rather than backed by an EV certificate.',
+        code: null,
+      },
+    ],
+  },
+];
+---
+
+<section class="section" id="install">
+  <div class="section__head">
+    <h2>Installed in about a minute.</h2>
+    <span class="label">Install</span>
+  </div>
+
+  <div class="sheet panel prereq">
+    <div class="eyebrow">
+      The one-liner
+      <span class="eyebrow__end"><a href={url('/docs/user-guide/installation/')}>Full guide &#8599;</a></span>
+    </div>
+    <h3>Homebrew, on macOS and Linux</h3>
+    <p>
+      One formula, and <code>brew upgrade slackcli</code> keeps it current. There is no runtime to
+      install alongside it: SlackCLI ships as a single self-contained binary.
+    </p>
+    <CopyLine code={'brew tap shaharia-lab/tap && brew install slackcli'} />
+  </div>
+
+  <div class="osgrid" id="osgrid">
+    {OSES.map((entry, i) => (
+      <details class="sheet oscard" data-os={entry.os} open={i === 0}>
+        <summary class="oscard__sum">
+          <span class="oscard__chev" aria-hidden="true">&#9656;</span>
+          {entry.label}
+          <span class="oscard__rec" hidden>Recommended for you</span>
+          <span class="oscard__files">
+            {entry.files.length} {entry.files.length === 1 ? 'binary' : 'binaries'}
+          </span>
+        </summary>
+        <div class="oscard__body">
+        {resolved && entry.files.length > 0 ? (
+          <div class="rows">
+            {entry.files.map((f: any) => (
+              <a class="row" href={f.href}>
+                <span class="badge">{f.kind}</span>
+                <span class="row__m">{f.file}</span>
+                <span class="row__r">{f.arch} &middot; {mb(f.size)}</span>
+                <span class="row__go">&#8595;</span>
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p><a href={release.url}>Pick a binary from the latest release &#8599;</a></p>
+        )}
+
+        <ol class="osteps">
+          {entry.steps.map((s) => (
+            <li>
+              <span>{s.t}</span>
+              {s.code && <pre class="codeblock">{s.code}</pre>}
+            </li>
+          ))}
+        </ol>
+
+        <p class="oshint label">{entry.hint}</p>
+        </div>
+      </details>
+    ))}
+  </div>
+
+  <p class="osfoot">
+    <span class="label">Then</span>
+    <a class="literal" href={url('/docs/user-guide/authentication/')}>slackcli auth login-auto</a>
+    <span class="label">&middot;</span>
+    <a href={release.checksums}>Verify with checksums.txt &#8599;</a>
+    <span class="label">&middot;</span>
+    <a href={url('/docs/user-guide/installation/#from-source')}>Build from source</a>
+  </p>
+</section>
+
+<script is:inline>
+  /* Promotes the visitor's platform to the front and marks it. It never hides
+     a card: a wrong guess, an unknown OS, or no JavaScript all leave the full
+     set visible and in their authored order. */
+  (async () => {
+    const grid = document.getElementById('osgrid');
+    if (!grid) return;
+
+    const ua = navigator.userAgent;
+    let os = null;
+    if (/Mac/i.test(ua)) os = 'macos';
+    else if (/Win/i.test(ua)) os = 'windows';
+    else if (/Linux|X11|CrOS/i.test(ua) && !/Android/i.test(ua)) os = 'linux';
+    if (!os) return;
+
+    const card = grid.querySelector(`.oscard[data-os="${os}"]`);
+    if (!card) return;
+
+    grid.prepend(card);
+    card.classList.add('oscard--rec');
+    card.open = true;
+    const flag = card.querySelector('.oscard__rec');
+    if (flag) flag.hidden = false;
+
+    /* Collapse the others, so the section is one open panel rather than three
+       competing ones. They stay one click away, and their content stays in the
+       DOM either way: <details> hides, it does not remove. */
+    grid.querySelectorAll('.oscard').forEach((el) => {
+      if (el !== card) el.open = false;
+    });
+
+    /* Architecture, only where the browser will actually tell us. Chromium
+       answers 'arm'; Safari and Firefox do not expose it at all, so both Mac
+       builds stay listed and nothing is emphasised. */
+    try {
+      const d = await navigator.userAgentData?.getHighEntropyValues(['architecture']);
+      if (!d?.architecture) return;
+      const arm = d.architecture === 'arm';
+      card.querySelectorAll('.row').forEach((row) => {
+        const isArm = /arm64/i.test(row.querySelector('.row__m')?.textContent || '');
+        if (isArm === arm) row.classList.add('row--rec');
+      });
+    } catch {
+      /* No high-entropy hints available. The list stands as rendered. */
+    }
+  })();
+</script>

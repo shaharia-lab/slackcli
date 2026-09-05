@@ -1,0 +1,10 @@
+# Generated from ../docs by scripts/sync-docs.mjs — never edit, never commit.
+src/content/docs/docs/
+
+# Resolved from the GitHub Releases API by scripts/fetch-release.mjs.
+src/data/release.json
+src/data/repo.json
+
+dist/
+.astro/
+node_modules/

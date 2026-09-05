@@ -1,0 +1,47 @@
+---
+/**
+ * Theme switch for the pages Starlight does not render.
+ *
+ * It reads and writes the same `starlight-theme` localStorage key Starlight's
+ * own selector uses, so a choice made on the landing page survives into the
+ * docs and back. Diverging here would give one site two memories.
+ *
+ * The label names the mode it switches to ("Dark" while you are in light)
+ * rather than saying "Theme", which tells you nothing about what a click does.
+ */
+---
+<button class="navbtn themetoggle" type="button" aria-label="Switch between light and dark">
+  <span class="themetoggle__t">Dark</span>
+</button>
+
+<script is:inline>
+  (() => {
+    const KEY = 'starlight-theme';
+    const root = document.documentElement;
+    const btn = document.querySelector('.themetoggle');
+    const now = () =>
+      root.getAttribute('data-theme') ||
+      (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+    /* The label names the mode the button switches *to*, which is what people
+       read it as. Set from the resolved theme rather than rendered, because on
+       the "system" setting the server cannot know which one that is. */
+    const relabel = () => {
+      const t = btn?.querySelector('.themetoggle__t');
+      if (t) t.textContent = now() === 'dark' ? 'Light' : 'Dark';
+    };
+
+    const apply = (t) => {
+      if (t === 'dark' || t === 'light') root.setAttribute('data-theme', t);
+      else root.removeAttribute('data-theme');
+      relabel();
+    };
+
+    apply(localStorage.getItem(KEY));
+    btn?.addEventListener('click', () => {
+      const next = now() === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(KEY, next);
+      apply(next);
+    });
+  })();
+</script>

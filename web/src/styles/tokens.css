@@ -1,0 +1,26 @@
+/* ==========================================================================
+   SlackCLI site - design tokens
+
+   These are not defined here. They come from @shaharia-lab/agento-code, the
+   published design system shared by every Shaharia Lab open-source project
+   site, so there is one definition of the brand rather than one per site.
+
+   The file is kept as a shim rather than deleted because it is imported from
+   two places that cannot see each other: src/layouts/Page.astro for the
+   landing page and blog, and `customCss` in astro.config.mjs for the Starlight
+   half. One import list is easier to keep honest than two.
+
+   NOTE the package's own entry point, styles.css, is deliberately NOT used.
+   Its first line is tokens/fonts.css, which pulls the four families from
+   Google Fonts; this site self-hosts them through @fontsource (see fonts.css,
+   and the reason written there). Importing the token files individually is
+   what keeps that true. Everything else styles.css imports is listed below, in
+   its order.
+   ========================================================================== */
+@import '@shaharia-lab/agento-code/tokens/colors.css';
+@import '@shaharia-lab/agento-code/tokens/accents.css';
+@import '@shaharia-lab/agento-code/tokens/typography.css';
+@import '@shaharia-lab/agento-code/tokens/space.css';
+@import '@shaharia-lab/agento-code/tokens/borders.css';
+@import '@shaharia-lab/agento-code/tokens/motion.css';
+@import '@shaharia-lab/agento-code/base.css';

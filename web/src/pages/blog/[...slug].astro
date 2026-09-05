@@ -1,0 +1,82 @@
+---
+import { getCollection, render } from 'astro:content';
+import Page from '../../layouts/Page.astro';
+import JsonLd from '../../components/JsonLd.astro';
+import StarCta from '../../components/StarCta.astro';
+import { abs, url, SITE, SITE_NAME, ORG, OG_IMAGE } from '../../../site.config.mjs';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+
+const initials = post.data.author
+  .split(' ')
+  .map((w: string) => w[0])
+  .join('')
+  .slice(0, 2)
+  .toUpperCase();
+const date = post.data.date.toLocaleDateString('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+/**
+ * The byline and the date are rendered for a reader in `en-GB` prose, which no
+ * indexer parses. This states them again in the one form that is machine
+ * readable, and `datePublished` has to be the ISO instant rather than the
+ * formatted string for that reason.
+ *
+ * There is no `dateModified`: the frontmatter carries no such field, and
+ * inventing one from the build time would tell a crawler every post was
+ * rewritten on every deploy.
+ */
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.data.title,
+  description: post.data.description,
+  datePublished: post.data.date.toISOString(),
+  keywords: post.data.tags,
+  image: abs(OG_IMAGE.path),
+  mainEntityOfPage: { '@type': 'WebPage', '@id': abs(`/blog/${post.id}/`) },
+  author: { '@type': 'Person', name: post.data.author },
+  publisher: { '@type': 'Organization', name: ORG.name, url: ORG.url },
+  isPartOf: { '@type': 'WebSite', '@id': `${SITE}${url('/')}#website`, name: SITE_NAME },
+};
+---
+
+<Page
+  title={`${post.data.title} - SlackCLI`}
+  description={post.data.description}
+  current="blog"
+  ogType="article"
+>
+  <JsonLd slot="head" schema={schema} />
+  <div class="shell">
+    <article class="entry">
+      <div class="entry__meta">
+        {post.data.tags[0] && <span class="pill">{post.data.tags[0]}</span>}
+        <span class="post__date">{date}</span>
+      </div>
+      <h1>{post.data.title}</h1>
+      <p class="entry__lede">{post.data.description}</p>
+
+      <Content />
+
+      <div class="byline">
+        <div class="byline__av">{initials}</div>
+        <div>
+          <div class="byline__n">{post.data.author}</div>
+          <div class="byline__r">Maintainer, SlackCLI</div>
+        </div>
+      </div>
+    </article>
+
+    <StarCta />
+  </div>
+</Page>

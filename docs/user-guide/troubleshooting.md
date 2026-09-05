@@ -1,4 +1,4 @@
-# Troubleshooting
+# Troubleshooting SlackCLI
 
 ## `No workspace configured`
 

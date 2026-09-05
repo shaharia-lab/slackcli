@@ -119,7 +119,7 @@ const schema = [
     license: `${REPO}/blob/main/LICENSE`,
     isAccessibleForFree: true,
     description:
-      'A command-line interface for Slack workspaces. Read channels and threads, send and reply, search, and drive it all from a shell script or an AI agent, using either a Slack app token or your own signed-in browser session.',
+      'The Slack CLI for humans and AI agents. Read, send, search and reply across one or many Slack workspaces from the terminal. No Slack app needed.',
     featureList: [
       'Read channels, DMs, threads and unreads',
       'Send, reply, edit, react, draft and upload files',
@@ -130,6 +130,7 @@ const schema = [
     ],
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     author: { '@type': 'Organization', name: ORG.name, url: ORG.url },
+    sameAs: [REPO],
   },
   {
     '@context': 'https://schema.org',
@@ -154,7 +155,7 @@ const schema = [
 
 <Page
   title="SlackCLI - the Slack CLI for humans and AI agents"
-  description="Read, send, search and reply across your Slack workspaces from the terminal. One binary, no Slack app to register, no admin approval, and JSON output on every command."
+  description="Read, send, search and reply across your Slack workspaces from the terminal. One binary, no Slack app to register, and JSON output on every command."
 >
   <JsonLd slot="head" schema={schema} />
 
@@ -167,7 +168,7 @@ const schema = [
         <span class="pill pill--plain">No Slack app required</span>
       </div>
 
-      <h1 class="hero__title">Slack, without the <em>tab</em>.</h1>
+      <h1 class="hero__title">The Slack CLI, without the <em>tab</em>.</h1>
 
       <p class="hero__lede">
         SlackCLI is a single binary that reads, sends, searches and replies across one{' '}

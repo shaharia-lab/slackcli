@@ -1,6 +1,6 @@
 ---
 title: Designing a CLI an AI agent can actually drive
-description: "--json on the read commands is the easy half. The rules that make a tool safe for something that cannot read a spinner are stricter than they look, and one of them cost us a bug that only showed up past 64 KiB."
+description: "--json on the read commands is the easy half. The rules that make a tool safe for something that cannot read a spinner are stricter than they look."
 date: 2026-08-28
 author: Shaharia Azam
 tags: ['Design', 'Scripting']

@@ -1,4 +1,4 @@
-# Messages
+# Send, reply, edit and react to Slack messages
 
 `slackcli messages` sends, edits, reacts to, and drafts messages.
 

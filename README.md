@@ -15,7 +15,7 @@ No Slack app to build, no admin approval to wait for.
 [![License](https://img.shields.io/github/license/shaharia-lab/slackcli?style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/shaharia-lab/slackcli?style=flat-square)](https://github.com/shaharia-lab/slackcli/commits/main)
 
-**[Website](https://slackcli.dev) · [Quickstart](#-quickstart) · [What it does](#-what-do-you-want-to-do) · [Commands](#-command-reference) · [Docs](docs/README.md) · [Contributing](#-contributing)**
+**[Website](https://slackcli.dev) · [Quickstart](#-quickstart) · [What it does](#-what-do-you-want-to-do) · [Commands](#-command-reference) · [Docs](https://slackcli.dev/docs/) · [Contributing](#-contributing)**
 
 <br>
 
@@ -44,7 +44,7 @@ https://github.com/user-attachments/assets/90cf1c89-2859-4b84-a731-b0ff3e1172f3
 
 ## ⚡ Quickstart
 
-Three steps, about a minute.
+Three steps, about a minute. Every platform in detail: [installation guide](https://slackcli.dev/docs/user-guide/installation/).
 
 <details open>
 <summary><b>1. Install</b> — pick your platform</summary>
@@ -174,7 +174,8 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 
 Every command that returns data speaks `--json`, and so do the commands that write —
 `messages send`, `edit`, and `draft` echo back what they just wrote. SlackCLI drops
-straight into shell pipelines, cron jobs, CI steps, and AI agent toolchains.
+straight into shell pipelines, cron jobs, CI steps, and AI agent toolchains. The
+[scripting guide](https://slackcli.dev/docs/user-guide/scripting/) covers the output contract in full.
 
 ```bash
 # Who is talking about the outage, and when?
@@ -406,7 +407,7 @@ In rough order of usefulness:
 
 ## 📚 Documentation
 
-Everything lives in [`docs/`](docs/README.md).
+Everything is published at [slackcli.dev/docs](https://slackcli.dev/docs/) and lives in [`docs/`](docs/README.md).
 
 <table>
 <tr>

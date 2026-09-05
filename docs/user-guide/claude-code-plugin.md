@@ -1,4 +1,4 @@
-# Claude Code plugin
+# Slack CLI for Claude Code: plugin and skill
 
 SlackCLI ships a [Claude Code](https://claude.com/claude-code) plugin with one
 skill, `/slackcli`, so an agent can read, post, search, and manage a Slack

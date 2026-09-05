@@ -1,4 +1,4 @@
-# Files
+# Inspect, read and download Slack files
 
 `slackcli files` inspects metadata, prints textual content, and downloads
 Slack-hosted files. Every command accepts a file ID or Slack file URL.

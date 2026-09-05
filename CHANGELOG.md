@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Project website**: `web/` builds an Astro site published to GitHub Pages at <https://shaharia-lab.github.io/slackcli/>, with a landing page, the full documentation and a blog (#164)
+- **Project website**: `web/` builds an Astro site published to GitHub Pages at <https://slackcli.dev>, with a landing page, the full documentation and a blog (#164)
   - The documentation half is generated from `docs/` at build time by `web/scripts/sync-docs.mjs`, so the repository stays the single source and nothing is maintained twice
   - Styled with `@shaharia-lab/agento-code`, the design system shared by every Shaharia Lab project site
   - The version, the per-platform binaries, their sizes and the checksums link all come from the GitHub Releases API at build time, so nothing about a download is written by hand

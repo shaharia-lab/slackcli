@@ -8,10 +8,11 @@ name: Site
 # release trigger the site would advertise the previous version until somebody
 # happened to push a docs change.
 #
-# The site is a PROJECT site with no custom domain, so it publishes at
-# https://shaharia-lab.github.io/slackcli/ and every route carries that prefix.
-# That prefix is stated once, in web/site.config.mjs, and nothing here needs to
-# know it.
+# The site is served from its own apex domain, https://slackcli.dev, so it
+# publishes at the root and no route carries a path prefix. The address is
+# stated once, in web/site.config.mjs; the domain, its DNS and the Pages
+# custom-domain setting live in shaharia-lab/infrastructure. Nothing here needs
+# to know either.
 on:
   push:
     branches: [main]

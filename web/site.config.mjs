@@ -1,28 +1,39 @@
 /**
  * One definition of where this site lives.
  *
- * The site is published to GitHub Pages as a PROJECT site - no custom domain -
- * so every page sits under `/slackcli/`. That prefix is the difference from the
- * Agento site this one is a sibling of, and it is the reason no href in this
- * repository may be written as a bare `/docs/…`: Astro applies `base` to its
- * own routing and to Starlight's generated links, but NOT to hrefs you write by
- * hand or write into markdown. Everything hand-written goes through `url()`
- * below, so changing the prefix here moves the whole site.
+ * The site is published to GitHub Pages at its own domain, slackcli.dev, so
+ * pages sit at the ROOT and internal URLs carry no path prefix. Astro applies
+ * `base` to its own routing and to Starlight's generated links, but NOT to
+ * hrefs written by hand or written into markdown, so everything hand-written
+ * goes through `url()` below rather than spelling any prefix out. Change the
+ * address here and nothing else moves.
  *
- * BASE carries a leading slash and NO trailing slash. It is concatenated
- * directly in a few places that do not go through `url()` - `${BASE}/docs/` in
+ * BASE is the EMPTY STRING, not '/'. It is concatenated directly in a few
+ * places that do not go through `url()`: `${BASE}/docs/` in
  * scripts/sync-docs.mjs, and `href.slice(BASE.length)` /
- * `href.startsWith(BASE + '/')` in scripts/check-links.mjs - so a trailing
- * slash there would produce `//docs/`, an off-by-one slice, and a prefix test
- * that matches nothing, which breaks the docs links and silently stops the link
- * checker from checking. astro.config.mjs passes it to Astro as-is.
+ * `href.startsWith(BASE + '/')` in scripts/check-links.mjs. With '/' those
+ * become `//docs/`, an off-by-one slice, and a `'//'` prefix test that matches
+ * nothing, so the docs links break and the link checker silently stops
+ * checking. Astro wants '/' for the site root, and astro.config.mjs converts
+ * it there.
  *
- * If this project ever takes a custom domain, change SITE to it and BASE to the
- * EMPTY STRING (not '/'), and add the CNAME through
- * shaharia-lab/infrastructure rather than a file here.
+ * The domain and the GitHub Pages custom-domain setting are managed in
+ * shaharia-lab/infrastructure (terraform/cloudflare for the zone and the
+ * DNS-only apex A/AAAA records, terraform/github-shaharia-lab for
+ * `github_repository_pages.cname`). Setting the cname there is what writes the
+ * CNAME file GitHub serves and what makes GitHub request the certificate, so
+ * there is deliberately NO CNAME file in this repository: one committed here
+ * would be a second source of truth that silently wins or silently loses
+ * depending on deploy order.
+ *
+ * `.dev` is on the HSTS preload list, so the site is unreachable over plain
+ * HTTP and only works once GitHub has issued the certificate. That cannot
+ * happen until the apex records resolve to GitHub's Pages addresses, and it
+ * cannot happen at all while those records are proxied through Cloudflare,
+ * because the ACME challenge never reaches Pages.
  */
-export const SITE = 'https://shaharia-lab.github.io';
-export const BASE = '/slackcli';
+export const SITE = 'https://slackcli.dev';
+export const BASE = '';
 
 export const REPO = 'https://github.com/shaharia-lab/slackcli';
 export const REPO_BLOB = `${REPO}/blob/main`;
@@ -175,7 +186,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();`;
 }
 
-/** Join a site-absolute path onto the base. `url('/docs/')` → `/slackcli/docs/`. */
+/** Join a site-absolute path onto the base. `url('/docs/')` → `/docs/`. */
 export function url(path = '/') {
   const p = path.startsWith('/') ? path : `/${path}`;
   return `${BASE}${p}`.replace(/\/{2,}/g, '/');

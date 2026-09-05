@@ -11,14 +11,11 @@
  * that spells the address out, and it would go stale in silence, since a wrong
  * Sitemap line is not an error anywhere. Crawlers just ignore it.
  *
- * KNOWN LIMIT, and the reason this file is not the whole SEO story. A crawler
- * reads robots.txt from the ORIGIN root, and this is a GitHub Pages *project*
- * site, so this file publishes at `/slackcli/robots.txt` where nothing will
- * look for it. It is emitted anyway because it costs one route, it is correct
- * the day this site moves to a domain of its own, and a person who goes looking
- * finds the sitemap through it. Until then the sitemap has to be submitted by
- * hand as a URL-prefix property in Search Console; discovery otherwise happens
- * through the links on the pages themselves.
+ * This only does its job because the site sits at the root of its own domain.
+ * A crawler reads robots.txt from the ORIGIN root, so on the previous GitHub
+ * Pages project address it would have published at `/slackcli/robots.txt`,
+ * where nothing looks for it. Keep that in mind before ever moving the site
+ * back under a path prefix.
  */
 import type { APIRoute } from 'astro';
 import { SITE, BASE } from '../../site.config.mjs';

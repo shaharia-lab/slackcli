@@ -9,8 +9,8 @@
  * project's docs are nested (`user-guide/`, `development/`) rather than flat.
  * `slug` mirrors that path with the extension dropped and a directory's
  * `README.md` collapsing to the directory itself - so `user-guide/search.md`
- * publishes at `/slackcli/docs/user-guide/search/` and `user-guide/README.md`
- * at `/slackcli/docs/user-guide/`. Keeping the two shapes in step is what lets
+ * publishes at `/docs/user-guide/search/` and `user-guide/README.md` at
+ * `/docs/user-guide/`. Keeping the two shapes in step is what lets
  * sync-docs.mjs resolve a relative link between two docs without a lookup
  * table of exceptions.
  *

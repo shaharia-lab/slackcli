@@ -174,5 +174,5 @@ Build the CLI that way and the agent integration is almost nothing. Build it the
 other way and no amount of plugin will save it.
 
 Full details in the
-[scripting and JSON guide](/slackcli/docs/user-guide/scripting/) and the
-[Claude Code plugin](/slackcli/docs/user-guide/claude-code-plugin/) page.
+[scripting and JSON guide](/docs/user-guide/scripting/) and the
+[Claude Code plugin](/docs/user-guide/claude-code-plugin/) page.

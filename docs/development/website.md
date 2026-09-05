@@ -1,18 +1,21 @@
 # Website
 
 The project site lives in [`web/`](../../web) and publishes to GitHub Pages at
-**https://shaharia-lab.github.io/slackcli/**. It is an Astro site with three
-parts: a hand-laid landing page, the documentation you are reading now, and a
-blog.
+**https://slackcli.dev**. It is an Astro site with three parts: a hand-laid
+landing page, the documentation you are reading now, and a blog.
 
-There is no custom domain, so every route carries the `/slackcli/` prefix.
+The site sits at the root of its own domain, so no route carries a path prefix.
+The domain, its DNS and the Pages custom-domain setting are all managed in
+`shaharia-lab/infrastructure`, not here, and there is deliberately no `CNAME`
+file in this repository: `github_repository_pages.cname` is what writes the one
+GitHub serves.
 
 ## Run it locally
 
 ```bash
 cd web
 npm ci
-npm run dev            # http://localhost:4321/slackcli/
+npm run dev            # http://localhost:4321/
 ```
 
 ```bash
@@ -68,9 +71,9 @@ The `slug` mirrors the path with the extension dropped, and a directory's
 
 | File | Route |
 |---|---|
-| `docs/README.md` | `/slackcli/docs/` |
-| `docs/user-guide/README.md` | `/slackcli/docs/user-guide/` |
-| `docs/user-guide/search.md` | `/slackcli/docs/user-guide/search/` |
+| `docs/README.md` | `/docs/` |
+| `docs/user-guide/README.md` | `/docs/user-guide/` |
+| `docs/user-guide/search.md` | `/docs/user-guide/search/` |
 
 ### Renaming a heading is a breaking change
 
@@ -96,10 +99,10 @@ draft: false
 ---
 ```
 
-Links from a post to a documentation page are written as absolute site paths,
-including the prefix: `/slackcli/docs/user-guide/scripting/`. Markdown cannot
-call the site's `url()` helper, so this is the one place the prefix is spelled
-out by hand, and `npm run check:links` is what stops it from rotting.
+Links from a post to a documentation page are written as absolute site paths:
+`/docs/user-guide/scripting/`. Markdown cannot call the site's `url()` helper,
+so a post is the one place a route is spelled out by hand, and
+`npm run check:links` is what stops those from rotting.
 
 ## Where things are
 
@@ -154,13 +157,23 @@ version, the per-platform binary sizes and the checksums URL. Without that
 trigger the site would advertise the previous release until somebody happened to
 push a docs change.
 
-## Known gaps
+## The domain
 
-- **`robots.txt` is not where a crawler looks.** A crawler reads it from the
-  origin root, and a project site publishes it under the path prefix. The route
-  is kept because it costs nothing and becomes correct the day the site takes a
-  domain of its own; until then the sitemap has to be submitted by hand as a
-  URL-prefix property in Search Console.
-- **GitHub Pages has to be enabled once**, with the source set to GitHub
-  Actions, before the `Site` workflow can deploy. Repository settings for this
-  organisation are managed in `shaharia-lab/infrastructure`.
+`slackcli.dev` is an apex domain served by GitHub Pages, wired in
+`shaharia-lab/infrastructure`:
+
+- `terraform/cloudflare` holds the zone and eight apex records, four `A` and
+  four `AAAA` pointing at GitHub's published Pages addresses. Every one is
+  `proxied = false` on purpose. A proxied record hides the request behind
+  Cloudflare's edge, GitHub's ACME challenge never reaches Pages, the
+  certificate is never issued, and "Enforce HTTPS" stays greyed out.
+- `terraform/github-shaharia-lab` holds `github_repository_pages.slackcli` with
+  `build_type = "workflow"` and `cname = "slackcli.dev"`. `build_type` is not
+  optional: with the default the API expects a branch naming a source, and the
+  deploy job fails at `actions/deploy-pages` with a Pages-not-configured error.
+
+Two things follow from `.dev` being on the HSTS preload list. The site is
+unreachable over plain HTTP, so it does not work at all until GitHub has issued
+the certificate, and GitHub cannot issue one until the apex records resolve. The
+old `shaharia-lab.github.io/slackcli` address keeps working throughout; GitHub
+redirects it to the custom domain.

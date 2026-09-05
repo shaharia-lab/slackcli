@@ -155,5 +155,5 @@ slackcli conversations unread
 ```
 
 Four commands, no admin, no app. The
-[authentication guide](/slackcli/docs/user-guide/authentication/) covers all
+[authentication guide](/docs/user-guide/authentication/) covers all
 four ways to sign in and which one to pick for which job.

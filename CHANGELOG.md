@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-05
+
 ### Added
+- **Slack files**: a new `files` command group — `files info`, `files read` and `files download` — accepting a file ID, a Slack file permalink, a canvas URL, or a private `files.slack.com` URL (#157)
+  - `read` prefers Slack's `plain_text` rendering for email files and refuses to print binary content instead of spraying bytes at the terminal
+  - `download` streams the original bytes and will not overwrite an existing path
+  - Redirects are followed manually, so browser cookies and bearer tokens are never forwarded to a non-Slack download host
+- **`emoji` commands**: `emoji list` and `emoji get` read a workspace's custom emoji under both standard and browser-session authentication, with `--limit` validated up front so a bad value errors instead of reporting an empty workspace (#140)
+- **`team` and `usergroups` read commands**: `team info`, `usergroups list` and `usergroups read`, all taking `--team <workspace-id>` for Enterprise Grid scoping, under both auth types (#139)
+- **`usergroups` write commands**: `create`, `update`, `add`, `remove`, `enable` and `disable` (#139)
+  - `add` and `remove` are read-modify-write against `usergroups.users.update`, which replaces the whole member list: they read the current membership, apply the change, skip a no-op, and refuse to empty the last member
+  - Every write confirms first, and refuses with a non-zero exit when stdin is not a TTY and `--yes` is absent
+- **`--json` and `--message-file` on `messages send`, `edit` and `draft`**: automation can keep what it just wrote instead of scraping the human success line (#150)
+  - `--json` emits `{channel_id, ts, permalink}` on `send`, `{channel_id, file_id}` on `send --file`, `{channel_id, ts}` on `edit`, and `{channel_id, draft_id, thread_ts?}` on `draft`
+  - `--message-file` reads the body from a UTF-8 file, mutually exclusive with `--message`; a missing, empty or whitespace-only file is rejected before any Slack call
+  - Warnings now go to stderr rather than stdout, so a workspace-mismatch warning can no longer corrupt a `--json` pipe
+- **`--json` on `conversations list`**: the last read command without it, though the README and the scripting guide already promised it. Emits `{conversation_count, conversations, users, next_cursor}`, with Slack's empty-string cursor normalised to `null` (#141)
 - **Project website**: `web/` builds an Astro site published to GitHub Pages at <https://slackcli.dev>, with a landing page, the full documentation and a blog (#164)
   - The documentation half is generated from `docs/` at build time by `web/scripts/sync-docs.mjs`, so the repository stays the single source and nothing is maintained twice
   - Styled with `@shaharia-lab/agento-code`, the design system shared by every Shaharia Lab project site
@@ -20,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Slack API calls are throttled**: every request now goes through a process-wide rate limiter — at most 2 in flight, with at least 200ms between calls — for both standard and browser-session authentication (#147)
   - Unthrottled bursts (one `users.info` per user, one `conversations.info` per channel) could trip Slack's `unexpected_api_call_volume` anomaly detection, which on Enterprise Grid signs the browser session out
   - Commands that resolve many names (`saved list`, `conversations unread`) are correspondingly slower on large workspaces; the spinner keeps running while they are paced
+- **`findBrowser`'s PATH scan honours the platform it was given**: it used `node:path`'s host-following `join`/`delimiter`, so simulating a non-host OS scanned with the wrong separators (#154)
+  - No effect on `auth login-auto`, whose only call site passes no platform; what it fixes is the cross-platform simulation, which failed the mandatory pre-commit hook on a Windows host
 
 ## [0.10.0] - 2026-08-29
 

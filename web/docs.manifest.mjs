@@ -57,7 +57,14 @@ export const PAGES = [
   { file: 'user-guide/files.md', slug: 'user-guide/files', label: 'Files', group: 'users' },
   { file: 'user-guide/emoji.md', slug: 'user-guide/emoji', label: 'Emoji', group: 'users' },
   { file: 'user-guide/scripting.md', slug: 'user-guide/scripting', label: 'Scripting and JSON', group: 'users' },
-  { file: 'user-guide/claude-code-plugin.md', slug: 'user-guide/claude-code-plugin', label: 'Claude Code plugin', group: 'users' },
+  {
+    file: 'user-guide/claude-code-plugin.md',
+    slug: 'user-guide/claude-code-plugin',
+    label: 'Claude Code plugin',
+    group: 'users',
+    description:
+      'Install the slackcli plugin in Claude Code and give the agent a skill that reads, searches and replies in Slack from the terminal.',
+  },
   {
     file: 'user-guide/troubleshooting.md',
     slug: 'user-guide/troubleshooting',

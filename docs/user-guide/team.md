@@ -1,4 +1,4 @@
-# Team
+# Workspace and team information
 
 `slackcli team` reads information about the **workspace (team) itself** — its
 name, domain, and ID.

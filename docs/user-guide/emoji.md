@@ -1,4 +1,4 @@
-# Emoji
+# List a workspace's custom emoji
 
 `slackcli emoji` reads a workspace's **custom emoji** — the ones an admin or
 member uploaded, not the built-in Unicode set.

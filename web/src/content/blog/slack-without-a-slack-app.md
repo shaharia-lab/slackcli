@@ -1,6 +1,6 @@
 ---
 title: Automating Slack without creating a Slack app
-description: Most Slack tooling dies at the words "ask your workspace admin". SlackCLI takes a second route in, using the session your browser already holds, and this is how that works and what it costs.
+description: Most Slack tooling dies at the words "ask your workspace admin". SlackCLI takes a second route in, using the session your browser already holds.
 date: 2026-08-14
 author: Shaharia Azam
 tags: ['Authentication', 'Design']

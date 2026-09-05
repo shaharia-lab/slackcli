@@ -1,4 +1,4 @@
-# Conversations
+# Read Slack channels, threads and unreads
 
 `slackcli conversations` covers channels, DMs, and group DMs: listing them,
 reading history and threads, fetching one message, and seeing what is unread.

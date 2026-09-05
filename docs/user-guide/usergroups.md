@@ -1,4 +1,4 @@
-# User groups
+# Slack user groups from the CLI
 
 `slackcli usergroups` lists, reads, and manages **user groups** — Slack's own
 name for a named, mentionable group of people (also called a "subteam", e.g.

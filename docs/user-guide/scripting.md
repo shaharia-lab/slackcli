@@ -1,4 +1,4 @@
-# Scripting and JSON output
+# Scripting SlackCLI from shell scripts and AI agents
 
 SlackCLI is built to be driven by scripts, cron jobs, and AI agents as much as by
 hand.

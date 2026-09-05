@@ -1,4 +1,4 @@
-# Authentication
+# Authentication: browser session or Slack app token
 
 SlackCLI supports two kinds of credentials, and four ways to obtain them.
 

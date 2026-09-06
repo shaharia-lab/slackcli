@@ -21,9 +21,14 @@ Start here if you want to *use* SlackCLI.
 | [Conversations](user-guide/conversations.md) | List channels and DMs, read history, threads, unreads |
 | [Messages](user-guide/messages.md) | Send, reply, edit, react, draft, attach files, Block Kit |
 | [Search](user-guide/search.md) | Search messages, channels, and people |
+| [Team](user-guide/team.md) | Read the workspace's own name, domain, and ID |
+| [User groups](user-guide/usergroups.md) | List and read user groups, and manage them behind `--yes` |
 | [Saved items](user-guide/saved.md) | Read your "saved for later" list |
 | [Canvas](user-guide/canvas.md) | List canvases and read them as Markdown |
+| [Files](user-guide/files.md) | Inspect, read, and download Slack-hosted files |
+| [Emoji](user-guide/emoji.md) | List a workspace's custom emoji and inspect one |
 | [Scripting and JSON output](user-guide/scripting.md) | Piping into `jq`, exit codes, automation patterns |
+| [Claude Code plugin](user-guide/claude-code-plugin.md) | The `/slackcli` skill, so an agent can drive Slack |
 | [Troubleshooting](user-guide/troubleshooting.md) | Auth failures, permissions, update problems |
 
 ## Developer documentation

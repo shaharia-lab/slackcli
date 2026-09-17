@@ -1,4 +1,4 @@
-# Canvas
+# Read a Slack Canvas as Markdown
 
 `slackcli canvas` lists Slack canvases and reads them as Markdown, which makes
 them usable in a terminal, a diff, or an AI agent's context.

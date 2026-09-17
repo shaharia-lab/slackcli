@@ -1,4 +1,4 @@
-# Installation
+# Install SlackCLI on macOS, Linux and Windows
 
 SlackCLI ships as a single self-contained binary. There is no runtime to install
 — you do not need Bun or Node.js to *run* it.

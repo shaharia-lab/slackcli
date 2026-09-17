@@ -1,0 +1,12 @@
+/* Fonts are self-hosted rather than pulled from Google Fonts. SlackCLI's whole
+   pitch is that your credentials stay on your machine; opening the marketing
+   site with a request to a third party is the wrong note to start on, and a
+   self-hosted face renders on the first paint instead of the second. */
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@fontsource-variable/newsreader/index.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
+@import '@fontsource/karla/400.css';
+@import '@fontsource/karla/500.css';
+@import '@fontsource/karla/600.css';
+@import '@fontsource/karla/700.css';

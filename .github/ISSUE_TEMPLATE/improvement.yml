@@ -1,0 +1,52 @@
+name: Improvement
+description: Improve something that already exists — code quality, performance, docs, DX, CI.
+title: "[Improvement]: "
+labels: ["improvement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Per the [repository constitution](https://github.com/shaharia-lab/slackcli/blob/main/CLAUDE.md),
+        every change starts as an issue and waits for triage. **Please do not open a pull
+        request until this issue carries the `ready-for-pr` label.**
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Code quality / refactoring
+        - Performance
+        - Documentation
+        - Developer experience / tooling
+        - CI/CD
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: WHAT — what should be improved?
+      description: The current state and the concrete improvement you are proposing.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: WHY — why is it worth doing?
+      description: The benefit — reliability, maintainability, speed, clarity — and who gains from it.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: HOW — suggested approach (optional)
+      description: If you have a concrete approach in mind, describe it here.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this has not been proposed yet.
+          required: true
+        - label: I understand a PR is only welcome after this issue receives the `ready-for-pr` label.
+          required: true

@@ -1,8 +1,8 @@
 # Slack links and timestamps
 
-Anywhere the CLI takes a channel, user, or canvas ID, you can paste the Slack URL
-instead — the form "Copy link" actually gives you. Bare IDs keep working exactly
-as before.
+Anywhere the CLI takes a channel, user, canvas, or file ID, you can paste the
+Slack URL instead — the form "Copy link" actually gives you. Bare IDs keep
+working exactly as before.
 
 ```bash
 # Equivalent
@@ -16,6 +16,8 @@ slackcli conversations read https://myteam.slack.com/archives/C1234567890
 | `https://myteam.slack.com/archives/D0987654321` | DM `D0987654321` |
 | `https://myteam.slack.com/team/U9876543210` | user `U9876543210` |
 | `https://myteam.slack.com/docs/T012AB/F1234567890` | canvas `F1234567890` |
+| `https://myteam.slack.com/files/U9876543210/F1234567890/report.txt` | file `F1234567890` |
+| `https://files.slack.com/files-pri/T012AB-F1234567890/download/report.txt` | file `F1234567890` |
 
 Timestamps work the same way — the permalink form is accepted wherever the
 dotted API form is:

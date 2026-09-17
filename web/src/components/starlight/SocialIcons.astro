@@ -1,0 +1,28 @@
+---
+/**
+ * Starlight's social icons, plus the star button the marketing half carries.
+ *
+ * Search traffic lands on a documentation page far more often than on the
+ * landing page, and until this override the docs half of the site offered a
+ * reader no way to star the repository except a small GitHub glyph that says
+ * nothing about what clicking it does. This is the same control as the one in
+ * src/components/Masthead.astro, in the one slot Starlight puts at the right of
+ * its header.
+ *
+ * `SocialIcons` rather than a header override, because replacing the header
+ * means owning Starlight's whole responsive layout, the search box and the
+ * sidebar toggle. This adds one element and inherits the rest.
+ */
+import Default from '@astrojs/starlight/components/SocialIcons.astro';
+import { REPO } from '../../../site.config.mjs';
+import repo from '../../data/repo.json';
+
+// Same threshold as Masthead and StarCta: below it the number weakens the ask.
+const stars = repo.resolved && repo.stars !== null && repo.stars >= 100
+  ? new Intl.NumberFormat('en', { notation: 'compact' }).format(repo.stars)
+  : null;
+---
+<a class="sl-star" href={REPO}>
+  <span aria-hidden="true">&#9733;</span> Star{stars && <span class="sl-star__n">{stars}</span>}
+</a>
+<Default><slot /></Default>

@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="SlackCLI — give your AI agent access to Slack. Read, search, and reply from the terminal. No Slack app needed." width="1000">
+<img src="assets/banner.png" alt="SlackCLI — the Slack CLI for humans and AI agents. Read, send, search and reply across one or many Slack workspaces from the terminal. No Slack app needed." width="1000">
 
-### Work with one — or many — Slack workspaces, straight from your terminal.
+### The Slack CLI for humans and AI agents. Read, send, search and reply across one — or many — Slack workspaces, straight from your terminal.
 
 Read channels, send messages, search history, and catch up on what you missed.
 Built to be **AI-agent friendly**, so your scripts and assistants can use Slack too.
@@ -15,7 +15,7 @@ No Slack app to build, no admin approval to wait for.
 [![License](https://img.shields.io/github/license/shaharia-lab/slackcli?style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/shaharia-lab/slackcli?style=flat-square)](https://github.com/shaharia-lab/slackcli/commits/main)
 
-**[Quickstart](#-quickstart) · [What it does](#-what-do-you-want-to-do) · [Commands](#-command-reference) · [Docs](docs/README.md) · [Contributing](#-contributing)**
+**[Website](https://slackcli.dev) · [Quickstart](#-quickstart) · [What it does](#-what-do-you-want-to-do) · [Commands](#-command-reference) · [Docs](https://slackcli.dev/docs/) · [Contributing](#-contributing)**
 
 <br>
 
@@ -44,7 +44,7 @@ https://github.com/user-attachments/assets/90cf1c89-2859-4b84-a731-b0ff3e1172f3
 
 ## ⚡ Quickstart
 
-Three steps, about a minute.
+Three steps, about a minute. Every platform in detail: [installation guide](https://slackcli.dev/docs/user-guide/installation/).
 
 <details open>
 <summary><b>1. Install</b> — pick your platform</summary>
@@ -161,6 +161,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Find a channel or a person | `slackcli search people "ada"` | [search](docs/user-guide/search.md) |
 | Work through "saved for later" | `slackcli saved list --state=to_do` | [saved items](docs/user-guide/saved.md) |
 | Read a Canvas as Markdown | `slackcli canvas read F123` | [canvas](docs/user-guide/canvas.md) |
+| Inspect or download a Slack file | `slackcli files info F123` | [files](docs/user-guide/files.md) |
 | Upload a file with a message | `slackcli messages send --file=./report.pdf …` | [messages](docs/user-guide/messages.md) |
 | Post rich Block Kit content | `slackcli messages send --blocks=@blocks.json …` | [messages](docs/user-guide/messages.md) |
 | Script it / feed an AI agent | `… --json \| jq` | [scripting & JSON](docs/user-guide/scripting.md) |
@@ -171,8 +172,10 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 
 ## 🤖 Built to be scripted
 
-Every command that returns data speaks `--json`, so SlackCLI drops straight into shell
-pipelines, cron jobs, CI steps, and AI agent toolchains.
+Every command that returns data speaks `--json`, and so do the commands that write —
+`messages send`, `edit`, and `draft` echo back what they just wrote. SlackCLI drops
+straight into shell pipelines, cron jobs, CI steps, and AI agent toolchains. The
+[scripting guide](https://slackcli.dev/docs/user-guide/scripting/) covers the output contract in full.
 
 ```bash
 # Who is talking about the outage, and when?
@@ -184,6 +187,10 @@ slackcli conversations unread --json | jq '[.unread_channels[] | {name, unread_c
 
 # Read a thread, summarise it elsewhere, reply with the result
 slackcli conversations read --permalink="$LINK" --json | jq '.messages[].text'
+
+# Post, then keep the handle so a later step can edit or react
+sent=$(slackcli messages send --recipient-id=C123 --message="Deploying…" --json)
+slackcli messages react --permalink="$(jq -r .permalink <<<"$sent")" --emoji=eyes
 ```
 
 No Slack app, no OAuth dance, no webhook server — just a binary and a token.
@@ -300,6 +307,8 @@ slackcli messages send --recipient-id=C1234567890 --message="Hello team!"
 slackcli messages send --permalink="$LINK" --message="On it"      # replies in-thread
 slackcli messages send --recipient-id=C123 --file=./report.pdf --message="Latest numbers"
 slackcli messages send --recipient-id=C123 --blocks=@blocks.json
+slackcli messages send --recipient-id=C123 --message-file=./release-notes.md
+slackcli messages send --recipient-id=C123 --message="Done" --json   # {channel_id, ts, permalink}
 slackcli messages react --permalink="$LINK" --emoji=+1
 slackcli messages edit --channel-id=C123 --timestamp=1234567890.123456 --message="Corrected"
 slackcli messages draft --recipient-id=C123 --message="Draft for later"
@@ -328,7 +337,7 @@ slackcli search people "ada@example.com"
 </details>
 
 <details>
-<summary><code>saved</code> · <code>canvas</code> · <code>update</code></summary>
+<summary><code>saved</code> · <code>canvas</code> · <code>files</code> · <code>update</code></summary>
 
 <br>
 
@@ -336,11 +345,14 @@ slackcli search people "ada@example.com"
 slackcli saved list --state=to_do            # saved | to_do | completed
 slackcli canvas list --channel=C1234567890
 slackcli canvas read F1234567890             # Canvas -> Markdown
+slackcli files info F1234567890
+slackcli files read F1234567890              # email plain_text or original text
+slackcli files download F1234567890 --output ./report.pdf
 slackcli update check                        # is there a newer version?
 slackcli update                              # install it
 ```
 
-📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md)
+📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md) · [files](docs/user-guide/files.md)
 
 </details>
 
@@ -395,7 +407,7 @@ In rough order of usefulness:
 
 ## 📚 Documentation
 
-Everything lives in [`docs/`](docs/README.md).
+Everything is published at [slackcli.dev/docs](https://slackcli.dev/docs/) and lives in [`docs/`](docs/README.md).
 
 <table>
 <tr>
@@ -413,6 +425,7 @@ Everything lives in [`docs/`](docs/README.md).
 - [Saved items](docs/user-guide/saved.md)
 - [Canvas](docs/user-guide/canvas.md)
 - [Scripting & JSON output](docs/user-guide/scripting.md)
+- [Claude Code plugin](docs/user-guide/claude-code-plugin.md)
 - [Troubleshooting](docs/user-guide/troubleshooting.md)
 
 </td>

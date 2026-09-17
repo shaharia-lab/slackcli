@@ -1,0 +1,339 @@
+/* ==========================================================================
+   SlackCLI site - Starlight
+
+   Docs pages are Starlight's markup, so the theme is applied by pointing its
+   own custom properties at our tokens and then restyling the handful of
+   surfaces that carry the design's signature: hard ink borders, the em-rule
+   eyebrow on sidebar groups, hairline rows, and serif headings.
+
+   Starlight defines its props inside `@layer starlight.base`. This file is
+   unlayered, so it wins on the cascade without needing specificity tricks -
+   which is why the whole mapping can sit on a single `:root` and still beat
+   Starlight's own `:root[data-theme='light']` block.
+
+   Starlight stamps data-theme on <html>, the same attribute tokens.css keys
+   its dark palette off, so its theme toggle drives our tokens for free.
+   ========================================================================== */
+
+:root {
+  --sl-font: var(--font-body);
+  --sl-font-mono: var(--font-mono);
+
+  --sl-color-bg: var(--paper);
+  --sl-color-bg-nav: var(--paper);
+  --sl-color-bg-sidebar: var(--paper);
+  --sl-color-bg-inline-code: var(--sunken);
+  --sl-color-bg-accent: var(--accent-tint);
+
+  --sl-color-text: var(--ink);
+  --sl-color-white: var(--ink);
+  --sl-color-black: var(--paper);
+  --sl-color-text-invert: var(--paper);
+  --sl-color-text-accent: var(--accent-deep);
+  --sl-color-accent: var(--accent-deep);
+  --sl-color-accent-low: var(--accent-tint);
+  --sl-color-accent-high: var(--accent-deep);
+
+  --sl-color-gray-1: var(--ink);
+  --sl-color-gray-2: var(--ink-soft);
+  --sl-color-gray-3: var(--ink-soft);
+  --sl-color-gray-4: var(--ink-faint);
+  --sl-color-gray-5: var(--ink-faint);
+  --sl-color-gray-6: var(--sunken);
+  --sl-color-gray-7: var(--raised);
+
+  --sl-color-hairline: var(--ink);
+  --sl-color-hairline-light: var(--ink-faint);
+  --sl-color-hairline-shade: var(--ink);
+
+  /* Nothing in this design is blurred. */
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: none;
+
+  --sl-content-width: 48rem;
+  --sl-sidebar-width: 15.5rem;
+  --sl-text-body: 1rem;
+  --sl-nav-height: 4rem;
+}
+
+/* --- header -------------------------------------------------------------- */
+/* `header.header`, not `.header`. Expressive Code gives every code frame a
+   <figcaption class="header">, so an unqualified rule here painted the title
+   bar of every shell block with the page background - a bare light strip
+   stacked on a dark code body. */
+header.header {
+  border-bottom: var(--bw-strong) solid var(--ink);
+  background: var(--paper);
+  padding-inline: var(--sl-nav-pad-x, 1rem);
+}
+.site-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  gap: 0.5rem;
+}
+header.header .social-icons a { color: var(--ink); }
+header.header .social-icons a:hover { color: var(--accent-deep); }
+
+/* The star button added by src/components/starlight/SocialIcons.astro. It is
+   styled here rather than reusing `.navbtn` from site.css, because site.css is
+   the marketing half's stylesheet and a docs page never loads it. */
+.sl-star {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 26px; padding: 0 10px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: var(--raised); color: var(--ink);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: var(--tracking-nav); text-transform: uppercase; line-height: 1;
+  text-decoration: none; white-space: nowrap;
+}
+.sl-star:hover { background: var(--accent-tint); color: var(--ink); }
+.sl-star:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.sl-star__n {
+  font-variant-numeric: tabular-nums;
+  padding-left: 8px; margin-left: 2px;
+  border-left: 1.5px solid currentColor;
+}
+/* Below Starlight's own header breakpoint the row is tight and the search box
+   has to win, so the count goes first and then the button. */
+@media (max-width: 800px) { .sl-star__n { display: none; } }
+@media (max-width: 640px) { .sl-star { display: none; } }
+
+/* A code frame is one solid block, matching the hand-written ones on the
+   landing page: no title bar, no window dots. The colours come from the
+   `frames` style overrides in astro.config.mjs; this removes the strip's
+   height, which no colour setting can. */
+.expressive-code .frame.is-terminal .header { display: none; }
+.expressive-code .frame.is-terminal pre { border-top: var(--bw) solid var(--code-border); }
+
+/* --- sidebar ------------------------------------------------------------- */
+#starlight__sidebar { border-inline-end: var(--bw) solid var(--ink); }
+.sidebar-content { padding-top: 1.25rem; }
+
+/* Group headings take the em-rule eyebrow the whole site uses. */
+.sidebar-content summary,
+.sidebar-content > ul > li > details > summary > .group-label > span,
+.sidebar-content .top-level > li > span {
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.sidebar-content > ul > li > details > summary .group-label span::before,
+.sidebar-content .top-level > li > span::before {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 1.5px;
+  margin-right: 9px;
+  margin-bottom: 4px;
+  background: var(--ink-soft);
+}
+.sidebar-content a {
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.95rem;
+}
+.sidebar-content a:hover { background: var(--sunken); color: var(--ink); }
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover {
+  background: var(--accent-tint);
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --- search -------------------------------------------------------------- */
+site-search button[data-open-modal] {
+  border: var(--bw) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--raised);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+site-search kbd {
+  background: transparent;
+  border: 1.2px solid var(--ink-faint);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  color: var(--ink-soft);
+}
+dialog[aria-label='Search'] {
+  border: var(--bw-strong) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--offset);
+  background: var(--paper);
+}
+
+/* --- content ------------------------------------------------------------- */
+.content-panel { border-top: none; }
+.content-panel + .content-panel { border-top: var(--bw) solid var(--ink); }
+
+.sl-markdown-content h1,
+h1.page-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+  font-size: clamp(2.4rem, 5vw, 3.25rem);
+}
+.sl-markdown-content h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  font-size: 1.95rem;
+  line-height: 1.15;
+}
+/* The rule goes on the wrapper, not the heading. Starlight sets
+   `.sl-heading-wrapper > :first-child { display: inline }` so that the anchor
+   link sits on the last line - which makes a border on the h2 itself stop at
+   the end of the text rather than spanning the column. */
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+  padding-bottom: 0.4rem;
+  border-bottom: var(--bw) solid var(--ink);
+}
+.sl-markdown-content h3 {
+  font-family: var(--font-sub);
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+.sl-markdown-content h4,
+.sl-markdown-content h5 {
+  font-family: var(--font-sub);
+  font-weight: 600;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--accent-deep);
+  text-decoration: none;
+  border-bottom: 1.5px solid var(--accent);
+}
+.sl-markdown-content a:hover:not(:where(.not-content *)) { background: var(--accent-tint); }
+
+.sl-markdown-content :not(pre) > code:not(:where(.not-content *)) {
+  border: 1px solid var(--ink-faint);
+  border-radius: 2px;
+  padding: 0.05em 0.35em;
+  font-size: 0.87em;
+}
+
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+  border-inline-start: 6px solid var(--accent);
+  border-block: var(--bw) solid var(--ink);
+  border-inline-end: var(--bw) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--raised);
+  padding: 1rem 1.25rem;
+}
+
+/* Tables get the hairline-row treatment, with a mono header. */
+.sl-markdown-content table:not(:where(.not-content *)) {
+  border: var(--bw) solid var(--ink);
+  border-radius: var(--radius);
+  border-collapse: collapse;
+  background: var(--raised);
+  overflow: hidden;
+}
+.sl-markdown-content th:not(:where(.not-content *)) {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--sunken);
+  border-bottom: var(--bw) solid var(--ink);
+}
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 1px solid var(--ink-faint);
+  padding: 0.55rem 0.75rem;
+}
+.sl-markdown-content tr:last-child td:not(:where(.not-content *)) { border-bottom: 0; }
+
+/* Asides are the dashed callout from the design. */
+.starlight-aside {
+  border: var(--bw) dashed var(--ink);
+  border-inline-start-width: var(--bw);
+  border-radius: var(--radius);
+  background: transparent;
+  padding: 0.9rem 1rem;
+}
+.starlight-aside__title {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.starlight-aside--caution,
+.starlight-aside--danger { border-style: solid; border-color: var(--warn); }
+.starlight-aside--caution .starlight-aside__title,
+.starlight-aside--danger .starlight-aside__title { color: var(--warn); }
+
+/* Same rule as site.css: the block's ground comes from our tokens rather than
+   from Expressive Code's own `--ec-*` palette. */
+.expressive-code .frame pre {
+  background: var(--code-bg);
+  border: var(--bw) solid var(--code-border);
+  border-radius: var(--radius);
+  padding: 14px 0;
+}
+.expressive-code .ec-line .code { padding-inline: 16px; }
+
+/* --- right-hand table of contents ---------------------------------------- */
+#starlight__on-this-page,
+.right-sidebar-panel h2 {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-bottom: 0.5rem;
+  border-bottom: var(--bw) solid var(--ink);
+}
+.right-sidebar-panel a {
+  border-inline-start: 2px solid var(--ink-faint);
+  padding-inline-start: 0.6rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+.right-sidebar-panel a[aria-current='true'] {
+  border-inline-start: 3px solid var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --- pagination ---------------------------------------------------------- */
+.pagination-links > a {
+  border: var(--bw) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: none;
+  background: var(--raised);
+}
+.pagination-links > a:hover { background: var(--sunken); }
+.pagination-links span:first-of-type {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.pagination-links .link-title { font-family: var(--font-sub); font-weight: 600; }
+
+/* --- footer -------------------------------------------------------------- */
+footer .meta a {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}

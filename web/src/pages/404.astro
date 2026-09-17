@@ -1,0 +1,43 @@
+---
+/**
+ * Authored as a site page rather than a docs entry: a Starlight 404 lands with
+ * the docs sidebar and reads as a documentation page that happens to be
+ * missing, and it also collides with Starlight's own catch-all route.
+ */
+import Page from '../layouts/Page.astro';
+import { url, REPO } from '../../site.config.mjs';
+---
+
+<Page title="Not found - SlackCLI" description="That page does not exist here.">
+  <div class="shell notfound">
+    <span class="label">Error 404</span>
+    <h1>That page is not here.</h1>
+    <p>The address you followed does not match anything on this site.</p>
+
+    <div class="rows">
+      <a class="row" href={url('/docs/user-guide/')}>
+        <span class="badge">docs</span>
+        <span class="row__t">User guide</span>
+        <span class="row__r">Installing, signing in, every command</span>
+        <span class="row__go">&#8594;</span>
+      </a>
+      <a class="row" href={url('/blog/')}>
+        <span class="badge">blog</span>
+        <span class="row__t">Notes from the terminal</span>
+        <span class="row__r">How it works and why</span>
+        <span class="row__go">&#8594;</span>
+      </a>
+      <a class="row" href={`${REPO}/releases`}>
+        <span class="badge">dl</span>
+        <span class="row__t">Releases</span>
+        <span class="row__r">Every binary, for every platform</span>
+        <span class="row__go">&#8599;</span>
+      </a>
+    </div>
+
+    <p class="notfound__f">
+      If a link on this site sent you here, that is a bug.{' '}
+      <a href={`${REPO}/issues/new`}>Tell us</a>.
+    </p>
+  </div>
+</Page>

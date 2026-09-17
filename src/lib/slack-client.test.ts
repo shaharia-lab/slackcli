@@ -44,6 +44,14 @@ class TestSlackClient extends SlackClient {
       return { ok: true, channel: params.channel, ts: '1234567890.123456' };
     }
 
+    if (method === 'conversations.members') {
+      return {
+        ok: true,
+        members: ['U1', 'U2', 'U3'],
+        response_metadata: { next_cursor: '' },
+      };
+    }
+
     throw new Error(`Unexpected method: ${method}`);
   }
 }
@@ -229,5 +237,49 @@ describe('SlackClient.postMessage', () => {
     expect(body?.get('channel')).toBe('C123');
     expect(body?.get('text')).toBe('Status table');
     expect(body?.get('blocks')).toBe(JSON.stringify(blocks));
+  });
+});
+
+describe('SlackClient.getConversationMembers', () => {
+  it('calls conversations.members with the channel and returns member IDs', async () => {
+    const client = new TestSlackClient();
+
+    const response = await client.getConversationMembers('C123', { limit: 100 });
+
+    expect(client.calls).toEqual([
+      { method: 'conversations.members', params: { channel: 'C123', limit: 100 } },
+    ]);
+    expect(response.members).toEqual(['U1', 'U2', 'U3']);
+  });
+
+  it('passes the pagination cursor through when provided', async () => {
+    const client = new TestSlackClient();
+
+    await client.getConversationMembers('C123', { limit: 50, cursor: 'next-page' });
+
+    expect(client.calls[0]).toEqual({
+      method: 'conversations.members',
+      params: { channel: 'C123', limit: 50, cursor: 'next-page' },
+    });
+  });
+
+  // Honest degradation: on an enterprise grid Slack blocks member enumeration.
+  // The wrapper must surface enterprise_is_restricted (via the request wrapper's
+  // "Slack API error:" prefix) rather than swallowing it, so the command can
+  // print a clear message and exit non-zero.
+  it('surfaces enterprise_is_restricted from an enterprise grid', async () => {
+    globalThis.fetch = (async (_input, _init) =>
+      Response.json({ ok: false, error: 'enterprise_is_restricted' })) as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+
+    await expect(client.getConversationMembers('C123')).rejects.toThrow('enterprise_is_restricted');
   });
 });

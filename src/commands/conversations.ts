@@ -7,6 +7,8 @@ import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
 import {
   normalizeTimestamp,
+  parseSlackLink,
+  isSlackUrl,
   resolveMessageTarget,
   resolveThreadTarget,
   workspaceMismatchWarning,
@@ -19,6 +21,24 @@ import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | undefined): void {
   const message = workspaceMismatchWarning(linkWorkspace, client.workspaceHost);
   if (message) warning(message);
+}
+
+// A channel argument is either a raw channel/conversation ID or a Slack link
+// (/archives/<channel>) — reuse the existing permalink parser for the link form
+// so `members list` accepts the same channel inputs as `read`/`get`.
+function resolveChannelArg(input: string): { channelId: string; workspace: string | undefined } {
+  if (isSlackUrl(input)) {
+    const parsed = parseSlackLink(input);
+    return { channelId: parsed.channelId, workspace: parsed.workspace };
+  }
+  return { channelId: input, workspace: undefined };
+}
+
+// True when a Slack error is the enterprise-grid member-enumeration block.
+// conversations.members returns enterprise_is_restricted on a grid regardless of
+// team scoping; the request wrapper prefixes it with "Slack API error:".
+function isEnterpriseRestricted(err: any): boolean {
+  return typeof err?.message === 'string' && err.message.includes('enterprise_is_restricted');
 }
 
 export function createConversationsCommand(): Command {
@@ -339,6 +359,89 @@ export function createConversationsCommand(): Command {
       } catch (err: any) {
         spinner.fail('Failed to fetch unread conversations');
         error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // Channel membership (read-only). The write/self operations
+  // (members add/remove, join/leave) are a separate follow-up PR.
+  const members = conversations
+    .command('members')
+    .description('Inspect channel membership');
+
+  // List the members of a channel/conversation
+  members
+    .command('list')
+    .description('List the members of a channel or conversation')
+    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .option('--limit <number>', 'Maximum number of members to return', '100')
+    .option('--cursor <cursor>', 'Pagination cursor for next page of results')
+    .option('--workspace <id|name>', 'Workspace to use (overrides default)')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (channelArg, options) => {
+      const spinner = ora('Fetching members...').start();
+
+      try {
+        const { channelId, workspace } = resolveChannelArg(channelArg);
+        const limit = parseInt(options.limit);
+
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspace);
+
+        // Page until we have `limit` members or run out of pages, so --limit
+        // reflects members RETURNED (consistent with the CLI's other --limit flags).
+        const memberIds: string[] = [];
+        let cursor: string | undefined = options.cursor;
+
+        while (memberIds.length < limit) {
+          const response: any = await client.getConversationMembers(channelId, {
+            limit: Math.min(limit - memberIds.length, 1000),
+            ...(cursor ? { cursor } : {}),
+          });
+          const page: string[] = response.members || [];
+          memberIds.push(...page);
+          cursor = response.response_metadata?.next_cursor || undefined;
+          if (!cursor) break;
+        }
+
+        const trimmed = memberIds.slice(0, limit);
+        // If Slack handed back a cursor on the last page, more members remain.
+        const nextCursor = cursor;
+
+        spinner.succeed(`Found ${trimmed.length} members`);
+
+        if (options.json) {
+          writeJson({
+            channel_id: channelId,
+            member_count: trimmed.length,
+            members: trimmed,
+            ...(nextCursor ? { next_cursor: nextCursor } : {}),
+          });
+          return;
+        }
+
+        console.log('');
+        console.log(chalk.bold(`👥 Members of ${channelId} (${trimmed.length})`));
+        trimmed.forEach((id) => console.log(`  ${id}`));
+
+        if (nextCursor) {
+          console.log(chalk.dim('\nMore results available. Next page:'));
+          console.log(chalk.cyan(`  slackcli conversations members list ${channelId} --cursor "${nextCursor}"\n`));
+        }
+      } catch (err: any) {
+        // Honest degradation: on an enterprise grid, conversations.members is
+        // enterprise-policy-blocked (and --team does NOT lift it). Surface it
+        // clearly with a non-zero exit rather than hiding the command or faking success.
+        if (isEnterpriseRestricted(err)) {
+          spinner.fail('Member enumeration is restricted on this workspace');
+          error(
+            'Slack returned enterprise_is_restricted: listing channel members is blocked by this Enterprise Grid\'s policy.',
+            'This is an org-level restriction; scoping to a team does not lift it. Ask a workspace admin if you need member enumeration.',
+          );
+          process.exit(1);
+        }
+        spinner.fail('Failed to fetch members');
+        error(err.message, 'Run "slackcli auth list" to check your authentication.');
         process.exit(1);
       }
     });

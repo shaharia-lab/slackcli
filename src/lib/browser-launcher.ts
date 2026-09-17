@@ -14,7 +14,7 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises';
-import { join, delimiter } from 'path';
+import { join, posix, win32 } from 'path';
 import { homedir } from 'os';
 
 export type BrowserLaunchFailure =
@@ -135,11 +135,19 @@ export async function findBrowser(
   // PATH scan covers installs outside the standard prefixes (Nix, Flatpak
   // shims, distro variants, Scoop/Chocolatey on Windows) without hardcoding
   // every layout.
-  const pathDirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
+  //
+  // Use the path module for the *simulated* platform, not the host's. The
+  // top-level `join`/`delimiter` always follow the real host OS, so on a
+  // real Windows machine they silently produce backslash paths even when
+  // `platform` says 'linux' or 'freebsd' (as the tests do). CI runs on
+  // Linux, where the host-OS behavior happens to match posix, so this bug
+  // was invisible there and only surfaces on an actual Windows machine.
+  const platformPath = platform === 'win32' ? win32 : posix;
+  const pathDirs = (process.env.PATH ?? '').split(platformPath.delimiter).filter(Boolean);
   const names = PATH_CANDIDATES[platform] ?? PATH_CANDIDATES.default;
   for (const name of names) {
     for (const dir of pathDirs) {
-      const full = join(dir, name);
+      const full = platformPath.join(dir, name);
       if (await fileExists(full)) return full;
     }
   }

@@ -1,0 +1,23 @@
+---
+/**
+ * One `<script type="application/ld+json">`, serialised safely.
+ *
+ * Structured data is what turns a result into a rich one: the software card
+ * with its price and platforms, an article's byline and date, the FAQ
+ * accordion. None of it is inferable from the prose, so it has to be stated.
+ *
+ * `set:html` rather than an interpolated expression: Astro HTML-escapes an
+ * expression, which inside a <script> produces `&quot;` where a parser needs
+ * `"`, and the whole block is then silently invalid. Silently, because no
+ * browser reports it and the page looks perfect. The escape below is the one
+ * that genuinely matters instead: a `</script>` sequence appearing inside any
+ * string value would end the block early, so the closing angle bracket is
+ * escaped, which JSON parsers read as an ordinary `/`.
+ */
+interface Props {
+  schema: Record<string, unknown> | Record<string, unknown>[];
+}
+const { schema } = Astro.props;
+const json = JSON.stringify(schema).replace(/</g, '\\u003c');
+---
+<script type="application/ld+json" is:inline set:html={json} />

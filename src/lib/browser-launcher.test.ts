@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import {
@@ -118,21 +118,22 @@ describe('findBrowser on Windows', () => {
   it('scans PATH for .exe names, not POSIX ones', async () => {
     // The regression this guards: PATH_CANDIDATES previously held only
     // extension-less POSIX names ('google-chrome'), which can never match a
-    // Windows executable. Both the path separator and the PATH delimiter come
-    // from the host, so this uses a delimiter-free directory and composes the
-    // expected value with the same join — the assertion is about the
-    // executable *name*, not Windows path syntax.
+    // Windows executable. findBrowser resolves 'win32' paths with the win32
+    // path module regardless of the host OS running the test, so the
+    // expected value here is composed with `win32.join`, not the host's
+    // `join` — the assertion is about the executable *name*, not about
+    // whichever path syntax the test happens to run on.
     const dir = '/tools/chrome';
     process.env.PATH = dir;
     const probed: string[] = [];
     const found = await findBrowser(async (p) => {
       probed.push(p);
-      return p === join(dir, 'chrome.exe');
+      return p === win32.join(dir, 'chrome.exe');
     }, 'win32');
 
-    expect(found).toBe(join(dir, 'chrome.exe'));
+    expect(found).toBe(win32.join(dir, 'chrome.exe'));
     expect(probed.some((p) => p.endsWith('.exe'))).toBe(true);
-    expect(probed).not.toContain(join(dir, 'google-chrome'));
+    expect(probed).not.toContain(win32.join(dir, 'google-chrome'));
   });
 
   it('returns null when no browser is installed', async () => {

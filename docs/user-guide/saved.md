@@ -1,4 +1,4 @@
-# Saved items
+# Work through Slack saved items
 
 `slackcli saved list` reads your **Later** / "saved for later" list.
 

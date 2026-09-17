@@ -1,0 +1,25 @@
+---
+import { url, REPO } from '../../site.config.mjs';
+import ThemeToggle from './ThemeToggle.astro';
+import repo from '../data/repo.json';
+
+// Same threshold as StarCta: below it the number weakens the ask.
+const stars = repo.resolved && repo.stars !== null && repo.stars >= 100
+  ? new Intl.NumberFormat('en', { notation: 'compact' }).format(repo.stars)
+  : null;
+
+interface Props { current?: 'docs' | 'blog' }
+const { current } = Astro.props;
+---
+<header class="masthead">
+  <div class="masthead__in">
+    <a class="wordmark" href={url('/')}><span class="wordmark__dot"></span>SlackCLI</a>
+    <nav class="nav">
+      <a href={url('/docs/')} aria-current={current === 'docs' ? 'page' : undefined}>Docs</a>
+      <a href={url('/blog/')} aria-current={current === 'blog' ? 'page' : undefined}>Blog</a>
+      <a href={`${REPO}/releases`}>Releases</a>
+      <a class="navbtn navstar" href={REPO}><span aria-hidden="true">&#9733;</span> Star{stars && <span class="n">{stars}</span>}</a>
+      <ThemeToggle />
+    </nav>
+  </div>
+</header>

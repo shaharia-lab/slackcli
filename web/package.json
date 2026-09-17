@@ -1,0 +1,26 @@
+{
+  "name": "slackcli-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node scripts/sync-docs.mjs && node scripts/fetch-release.mjs",
+    "dev": "npm run sync && astro dev",
+    "build": "npm run clean && npm run sync && astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "clean": "node scripts/clean.mjs",
+    "build:og": "node scripts/render-og.mjs",
+    "check:links": "node scripts/check-links.mjs"
+  },
+  "dependencies": {
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.3",
+    "@astrojs/starlight": "^0.41.10",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@fontsource/karla": "^5.3.0",
+    "@shaharia-lab/agento-code": "0.3.1",
+    "astro": "^7.2.9"
+  }
+}

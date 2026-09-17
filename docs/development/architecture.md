@@ -38,15 +38,43 @@ important thing to understand about this codebase.
 
 ```ts
 async request(method: string, params = {}) {
-  return this.config.auth_type === 'standard'
-    ? this.standardRequest(method, params)
-    : this.browserRequest(method, params);
+  return this.rateLimiter.run(() =>
+    this.config.auth_type === 'standard'
+      ? this.standardRequest(method, params)
+      : this.browserRequest(method, params));
 }
 ```
 
 Everything above it — every `listConversations`, `postMessage`, `searchMessages`
 — is auth-agnostic and goes through `request()`. **New API calls belong there,
 not in a command file.**
+
+### Throttling
+
+Because `request()` is a complete funnel, it is also where outgoing traffic is
+paced. `src/lib/rate-limiter.ts` holds a hand-rolled `RateLimiter` — a
+concurrency cap plus a minimum delay between call *starts* — and
+`slackRateLimiter`, the process-wide instance every `SlackClient` shares by
+default (`SLACK_MAX_CONCURRENT_REQUESTS`, `SLACK_MIN_REQUEST_INTERVAL_MS`).
+
+It exists because Slack's Enterprise Grid anomaly detection raises
+[`unexpected_api_call_volume`](https://docs.slack.dev/reference/audit-logs-api/anomalous-events-reference/)
+when a client outpaces what a browser would do, and it can log the session out.
+Several paths fan out one call per entity — `getUsersInfo()`,
+`enrichSavedItems()` in `saved.ts`, and the unread resolver in `unread.ts` — so
+the gate sits in `request()` and those modules need no throttling of their own.
+
+Two consequences worth knowing:
+
+- The pacing applies to **both** auth types. The anomaly is about volume, not
+  about which transport produced it.
+- Commands that resolve many names (`saved list`, `conversations unread`) are
+  measurably slower on large workspaces. That is the trade; keep the spinner
+  running so it does not look hung.
+
+Retry/backoff on HTTP 429 is deliberately *not* here — it is a separate concern
+from pacing, and the raw `fetch()` calls used for file upload/download are
+single-shot per invocation, so they bypass the limiter.
 
 ### Where the two genuinely diverge
 

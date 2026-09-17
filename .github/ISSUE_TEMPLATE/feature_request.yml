@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a new feature or capability for SlackCLI.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Per the [repository constitution](https://github.com/shaharia-lab/slackcli/blob/main/CLAUDE.md),
+        every feature starts as an issue and waits for triage. **Please do not open a pull
+        request until this issue carries the `ready-for-pr` label** — PRs that skip triage are
+        likely to be rejected, even if the code is good.
+  - type: textarea
+    id: what
+    attributes:
+      label: WHAT — what is the feature?
+      description: A clear description of the feature or capability you are proposing.
+      placeholder: Add a `slackcli reminders list` command that ...
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: WHY — why is it needed?
+      description: The problem it solves or the workflow it enables. This is what triage is decided on.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: HOW — suggested implementation (optional)
+      description: If you have an idea how this could be built (Slack APIs involved, affected modules, auth-type considerations), sketch it here.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this has not been requested yet.
+          required: true
+        - label: I understand a PR is only welcome after this issue receives the `ready-for-pr` label.
+          required: true

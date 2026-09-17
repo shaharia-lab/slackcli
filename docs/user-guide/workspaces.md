@@ -1,4 +1,4 @@
-# Workspaces and profiles
+# Use several Slack workspaces from one CLI
 
 Every authenticated Slack workspace is stored under a **profile key** in
 `~/.config/slackcli/workspaces.json`. The first workspace you add automatically

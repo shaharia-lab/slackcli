@@ -1,0 +1,56 @@
+---
+/**
+ * One shell command, with a button that copies it.
+ *
+ * The single highest-value control on the page: the install one-liner. Copying
+ * it by hand from a code block means selecting across two lines without
+ * catching the prompt, and people get it wrong.
+ *
+ * The command is passed as a plain string and rendered as text, never as
+ * markup, so a caller cannot inject anything into the page through it. The
+ * button reads its payload from the rendered element rather than from an
+ * attribute, so what gets copied is exactly what is on screen.
+ */
+interface Props {
+  /** The command, verbatim. Newlines are preserved. */
+  code: string;
+  /** Optional label for the button; the confirmation is always "Copied". */
+  label?: string;
+}
+const { code, label = 'Copy' } = Astro.props;
+---
+<div class="copyline">
+  <pre class="codeblock" data-copy-src>{code}</pre>
+  <button class="copyline__btn" type="button" data-copy data-label={label}>{label}</button>
+</div>
+
+<script is:inline>
+  /* Delegated, and registered once however many CopyLine components a page
+     renders: Astro inlines this block per component instance, and a per-instance
+     listener on `document` would fire the handler as many times as there are
+     instances. The flag is the guard. */
+  (() => {
+    if (window.__slackcliCopyWired) return;
+    window.__slackcliCopyWired = true;
+
+    document.addEventListener('click', async (event) => {
+      const btn = event.target.closest('[data-copy]');
+      if (!btn) return;
+
+      const src = btn.parentElement?.querySelector('[data-copy-src]');
+      if (!src) return;
+
+      const label = btn.getAttribute('data-label') || 'Copy';
+      try {
+        await navigator.clipboard.writeText(src.textContent.trim());
+        btn.textContent = 'Copied';
+      } catch {
+        /* Denied permission, an insecure origin, or an older browser. Saying
+           so beats a button that silently does nothing; the text is selectable
+           either way. */
+        btn.textContent = 'Select it';
+      }
+      setTimeout(() => { btn.textContent = label; }, 1800);
+    });
+  })();
+</script>

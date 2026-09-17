@@ -4,18 +4,32 @@ import { readFile, stat } from 'node:fs/promises';
 import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
+import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
   file_id?: string;
 }
 
+export interface SlackClientOptions {
+  /** Overrides the process-wide limiter. Intended for tests. */
+  rateLimiter?: RateLimiter;
+}
+
+// files.completeUploadExternal echoes the files it attached. Only the id is
+// relied on, so the shape stays deliberately narrow.
+export interface ExternalUploadCompleteResponse {
+  files?: Array<{ id?: string; title?: string }>;
+}
+
 export class SlackClient {
   private config: WorkspaceConfig;
   private webClient?: WebClient;
+  private rateLimiter: RateLimiter;
 
-  constructor(config: WorkspaceConfig) {
+  constructor(config: WorkspaceConfig, options: SlackClientOptions = {}) {
     this.config = config;
+    this.rateLimiter = options.rateLimiter ?? slackRateLimiter;
 
     // Only use WebClient for standard auth
     if (config.auth_type === 'standard') {
@@ -24,12 +38,21 @@ export class SlackClient {
   }
 
   // Make API request (handles both auth types)
+  //
+  // Every Slack API call in the codebase funnels through here, so this is where
+  // the traffic is paced: callers like `getUsersInfo()`, `enrichSavedItems()` and
+  // the unread resolver fan out one call per user/channel, and an unthrottled
+  // burst trips Slack's `unexpected_api_call_volume` anomaly detection (#147).
+  // The limiter applies to both auth types — the anomaly is about volume, not
+  // about which transport produced it.
   async request(method: string, params: Record<string, any> = {}): Promise<any> {
-    if (this.config.auth_type === 'standard') {
-      return this.standardRequest(method, params);
-    } else {
-      return this.browserRequest(method, params);
-    }
+    return this.rateLimiter.run(() => {
+      if (this.config.auth_type === 'standard') {
+        return this.standardRequest(method, params);
+      } else {
+        return this.browserRequest(method, params);
+      }
+    });
   }
 
   // Standard token request (using @slack/web-api)
@@ -156,6 +179,13 @@ export class SlackClient {
     return this.request('chat.postMessage', params);
   }
 
+  // Resolve the shareable link for a message. Callers treat this as optional
+  // metadata: it is a second API call after a message is already delivered, so
+  // a failure here must never turn a successful send into a failed one.
+  async getPermalink(channel: string, messageTs: string): Promise<any> {
+    return this.request('chat.getPermalink', { channel, message_ts: messageTs });
+  }
+
   async updateMessage(channel: string, ts: string, text: string): Promise<any> {
     // `parse` must be explicit: chat.update defaults it to `client` (unlike
     // chat.postMessage, which defaults to `none`), and that escapes the
@@ -166,7 +196,7 @@ export class SlackClient {
   async uploadFileExternal(channel: string, filePath: string, options: {
     initial_comment?: string;
     thread_ts?: string;
-  } = {}): Promise<unknown> {
+  } = {}): Promise<ExternalUploadCompleteResponse> {
     const fileStats = await stat(filePath).catch((error: unknown) => {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
         throw new Error(`File not found: ${filePath}`);
@@ -373,6 +403,102 @@ export class SlackClient {
     return this.request('conversations.info', { channel });
   }
 
+  // Get team (workspace) info. team.info works for both auth types. On an
+  // enterprise org, an optional team (T-id) scopes the lookup to one workspace;
+  // omitted, Slack returns the token's own workspace.
+  async getTeamInfo(options: { team?: string } = {}): Promise<any> {
+    const params: Record<string, any> = {};
+    if (options.team) params.team = options.team;
+    return this.request('team.info', params);
+  }
+
+  // List user groups ("subteams"). include_count returns user_count;
+  // include_disabled returns groups whose date_delete is non-zero. On an
+  // enterprise org, team_id scopes the listing to one workspace.
+  async listUsergroups(options: {
+    include_disabled?: boolean;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { include_count: true };
+    if (options.include_disabled) params.include_disabled = true;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.list', params);
+  }
+
+  // List the member user IDs of a user group.
+  async listUsergroupUsers(usergroup: string, options: {
+    include_disabled?: boolean;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup };
+    if (options.include_disabled) params.include_disabled = true;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.users.list', params);
+  }
+
+  // Create a user group. On an enterprise org, team_id (a workspace T-id) is
+  // REQUIRED — Slack rejects org-context creates without it.
+  async createUsergroup(name: string, options: {
+    handle?: string;
+    description?: string;
+    channels?: string;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { name, include_count: true };
+    if (options.handle) params.handle = options.handle;
+    if (options.description) params.description = options.description;
+    if (options.channels) params.channels = options.channels;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.create', params);
+  }
+
+  // Update a user group's name, handle, and/or description.
+  async updateUsergroup(usergroup: string, options: {
+    name?: string;
+    handle?: string;
+    description?: string;
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, include_count: true };
+    if (options.name !== undefined) params.name = options.name;
+    if (options.handle !== undefined) params.handle = options.handle;
+    if (options.description !== undefined) params.description = options.description;
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.update', params);
+  }
+
+  // Replace a user group's full member list. Slack's usergroups.users.update
+  // is a WHOLE-LIST set operation, not an incremental add/remove — callers that
+  // want add/remove semantics must read the current list, modify it, and pass
+  // the result here. `users` is a comma-separated list of user IDs.
+  async setUsergroupUsers(usergroup: string, users: string, options: {
+    team_id?: string;
+  } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, users, include_count: true };
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.users.update', params);
+  }
+
+  // Enable (restore) a disabled user group.
+  async enableUsergroup(usergroup: string, options: { team_id?: string } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, include_count: true };
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.enable', params);
+  }
+
+  // Disable (archive) a user group.
+  async disableUsergroup(usergroup: string, options: { team_id?: string } = {}): Promise<any> {
+    const params: Record<string, any> = { usergroup, include_count: true };
+    if (options.team_id) params.team_id = options.team_id;
+    return this.request('usergroups.disable', params);
+  }
+
+  // List the workspace's custom emoji (emoji.list works for both auth types).
+  // Returns { ok, emoji: { <name>: <image-url|"alias:<other>"> } }.
+  async listEmoji(): Promise<any> {
+    return this.request('emoji.list', {});
+  }
+
   // Get unread counts (browser: client.counts, standard: conversations.list with unread data)
   async getUnreadCounts(): Promise<any> {
     if (this.config.auth_type === 'browser') {
@@ -400,23 +526,65 @@ export class SlackClient {
     return this.request('files.info', { file: fileId });
   }
 
-  // Download file content with auth, size guard, and auth page detection
-  async downloadFile(url: string, maxBytes: number = 10 * 1024 * 1024): Promise<string> {
-    const headers: Record<string, string> = {};
+  // Fetch a Slack-hosted file with the configured authentication. Returning the
+  // response lets callers either buffer textual content or stream binary bytes.
+  async fetchFile(url: string): Promise<Response> {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error('Download failed: invalid Slack file URL');
+    }
+    if (parsedUrl.protocol !== 'https:' || !parsedUrl.hostname.toLowerCase().endsWith('.slack.com')) {
+      throw new Error('Download failed: URL is not hosted by Slack');
+    }
+
+    const authHeaders: Record<string, string> = {};
 
     if (this.config.auth_type === 'standard') {
-      headers['Authorization'] = `Bearer ${this.config.token}`;
+      authHeaders['Authorization'] = `Bearer ${this.config.token}`;
     } else if (this.config.auth_type === 'browser') {
       const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-      headers['Cookie'] = `d=${encodedXoxdToken}`;
-      headers['Origin'] = 'https://app.slack.com';
+      authHeaders['Cookie'] = `d=${encodedXoxdToken}`;
+      authHeaders['Origin'] = 'https://app.slack.com';
     }
 
-    const response = await fetch(url, { headers });
+    let currentUrl = parsedUrl;
+    for (let redirects = 0; redirects <= 5; redirects += 1) {
+      const isSlackHost = currentUrl.hostname.toLowerCase().endsWith('.slack.com');
+      const response = await fetch(currentUrl, {
+        headers: isSlackHost ? authHeaders : {},
+        redirect: 'manual',
+      });
 
-    if (!response.ok) {
-      throw new Error(`Download failed: HTTP ${response.status}`);
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        await response.body?.cancel();
+        if (!location) throw new Error('Download failed: redirect had no destination');
+        try {
+          currentUrl = new URL(location, currentUrl);
+        } catch {
+          throw new Error('Download failed: redirect destination is invalid');
+        }
+        if (currentUrl.protocol !== 'https:') {
+          throw new Error('Download failed: redirect destination is not secure');
+        }
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Download failed: HTTP ${response.status}`);
+      }
+
+      return response;
     }
+
+    throw new Error('Download failed: too many redirects');
+  }
+
+  // Download file content with auth and a size guard.
+  async downloadFile(url: string, maxBytes: number = 10 * 1024 * 1024): Promise<string> {
+    const response = await this.fetchFile(url);
 
     // Early exit when Content-Length is known and exceeds limit
     const contentLength = response.headers.get('content-length');

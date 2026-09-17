@@ -25,9 +25,13 @@ list for the version you have installed.
 | `conversations` | List channels and DMs, read history and threads, unreads |
 | `messages` | Send, reply, edit, react, draft, attach files, Block Kit |
 | `search` | Search messages, channels, and people |
+| `team` | Read the workspace's own name, domain, and ID |
+| `usergroups` | List, read, and manage user groups ("subteams") |
 | `users` | Look up a user by ID and list users by account status |
 | `saved` | Read your "saved for later" list |
 | `canvas` | List canvases and read them as Markdown |
+| `files` | Inspect, read, and download Slack-hosted files |
+| `emoji` | List a workspace's custom emoji and inspect one |
 | `update` | Check for and install new versions |
 
 ## Pages
@@ -39,11 +43,16 @@ list for the version you have installed.
 5. [Conversations](conversations.md)
 6. [Messages](messages.md)
 7. [Search](search.md)
-8. [Users](users.md)
-9. [Saved items](saved.md)
-10. [Canvas](canvas.md)
-11. [Scripting and JSON output](scripting.md)
-12. [Troubleshooting](troubleshooting.md)
+8. [Team](team.md)
+9. [User groups](usergroups.md)
+10. [Users](users.md)
+11. [Saved items](saved.md)
+12. [Canvas](canvas.md)
+13. [Files](files.md)
+14. [Emoji](emoji.md)
+15. [Scripting and JSON output](scripting.md)
+16. [Claude Code plugin](claude-code-plugin.md)
+17. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 
@@ -51,6 +60,6 @@ list for the version you have installed.
 falls back to your default workspace when you omit it. See
 [workspaces and profiles](workspaces.md).
 
-**Paste Slack URLs instead of IDs** — anywhere a channel, user, message, or
-canvas ID is expected. See
+**Paste Slack URLs instead of IDs** — anywhere a channel, user, message, canvas,
+or file ID is expected. See
 [Slack links and timestamps](links-and-timestamps.md).

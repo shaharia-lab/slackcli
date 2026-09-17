@@ -1,0 +1,13 @@
+{
+  "name": "slackcli",
+  "version": "1.0.0",
+  "description": "Drive Slack from Claude Code with the slackcli binary: installs it if missing, checks authentication, then reads, sends, searches, and manages a workspace",
+  "author": {
+    "name": "Shaharia Lab",
+    "url": "https://github.com/shaharia-lab"
+  },
+  "homepage": "https://github.com/shaharia-lab/slackcli",
+  "repository": "https://github.com/shaharia-lab/slackcli",
+  "license": "MIT",
+  "keywords": ["slack", "cli", "messaging", "automation"]
+}

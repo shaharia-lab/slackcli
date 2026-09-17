@@ -6,6 +6,11 @@ account status. Every subcommand accepts `--workspace <id|name>` and `--json`.
 `search people` finds users by name or email; `users` is for looking one up by
 ID and for enumerating the workspace with a status filter.
 
+Looking up and listing users requires the `users:read` scope (plus
+`users:read.email` for the `email` field) when you use standard authentication.
+`--resolve-fields` additionally needs `users.profile:read`. Browser-session
+authentication uses the existing browser cookie and token.
+
 ## `users info <id>`
 
 ```bash

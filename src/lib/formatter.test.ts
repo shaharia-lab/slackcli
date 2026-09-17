@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   formatSavedItems,
+  warning,
   formatSearchMessages,
   formatChannelSearchResults,
   formatPeopleSearchResults,
@@ -395,6 +396,29 @@ describe('formatFileSize', () => {
 
   it('formats 1023 bytes (boundary before KB)', () => {
     expect(formatFileSize(1023)).toBe('1023 B');
+  });
+});
+
+describe('warning', () => {
+  // Warnings are diagnostics: they must reach stderr, never stdout, so that
+  // `... --json | jq` still receives exactly one parseable object even when a
+  // pre-send warning (e.g. workspace mismatch) fires.
+  it('writes to stderr, keeping stdout clean for --json output', () => {
+    const out: unknown[][] = [];
+    const err: unknown[][] = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args: unknown[]) => { out.push(args); };
+    console.error = (...args: unknown[]) => { err.push(args); };
+    try {
+      warning('workspace mismatch');
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    expect(out).toHaveLength(0);
+    expect(err).toHaveLength(1);
+    expect(err[0]!.join(' ')).toContain('workspace mismatch');
   });
 });
 

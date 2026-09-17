@@ -12,6 +12,7 @@ import { createSavedCommand } from './commands/saved.ts';
 import { createSearchCommand } from './commands/search.ts';
 import { createTeamCommand } from './commands/team.ts';
 import { createUsergroupsCommand } from './commands/usergroups.ts';
+import { createUsersCommand } from './commands/users.ts';
 import { notifyIfUpdateAvailable } from './lib/updater.ts';
 import { getAppVersion } from './version.ts';
 
@@ -33,6 +34,7 @@ program.addCommand(createSavedCommand());
 program.addCommand(createSearchCommand());
 program.addCommand(createTeamCommand());
 program.addCommand(createUsergroupsCommand());
+program.addCommand(createUsersCommand());
 program.addCommand(createUpdateCommand());
 
 // Show update notification after command output if a newer version is cached

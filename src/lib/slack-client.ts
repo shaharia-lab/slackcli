@@ -393,6 +393,11 @@ export class SlackClient {
     return this.request('users.list', params);
   }
 
+  // Get team custom-profile field definitions (ID -> label/type map)
+  async getTeamProfile(): Promise<any> {
+    return this.request('team.profile.get', {});
+  }
+
   // Get conversation info
   async getConversationInfo(channel: string): Promise<any> {
     return this.request('conversations.info', { channel });

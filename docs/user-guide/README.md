@@ -27,6 +27,7 @@ list for the version you have installed.
 | `search` | Search messages, channels, and people |
 | `team` | Read the workspace's own name, domain, and ID |
 | `usergroups` | List, read, and manage user groups ("subteams") |
+| `users` | Look up a user by ID and list users by account status |
 | `saved` | Read your "saved for later" list |
 | `canvas` | List canvases and read them as Markdown |
 | `files` | Inspect, read, and download Slack-hosted files |
@@ -44,13 +45,14 @@ list for the version you have installed.
 7. [Search](search.md)
 8. [Team](team.md)
 9. [User groups](usergroups.md)
-10. [Saved items](saved.md)
-11. [Canvas](canvas.md)
-12. [Files](files.md)
-13. [Emoji](emoji.md)
-14. [Scripting and JSON output](scripting.md)
-15. [Claude Code plugin](claude-code-plugin.md)
-16. [Troubleshooting](troubleshooting.md)
+10. [Users](users.md)
+11. [Saved items](saved.md)
+12. [Canvas](canvas.md)
+13. [Files](files.md)
+14. [Emoji](emoji.md)
+15. [Scripting and JSON output](scripting.md)
+16. [Claude Code plugin](claude-code-plugin.md)
+17. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 

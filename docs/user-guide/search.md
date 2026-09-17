@@ -51,6 +51,7 @@ workspaces, and capped at that 1000.
 ```bash
 slackcli search people rafael
 slackcli search people "@example.com" --limit=50
+slackcli search people rafael --resolve-fields --json
 ```
 
 Matches on username, real name, display name, and email.
@@ -58,3 +59,8 @@ Matches on username, real name, display name, and email.
 The same auth-type split applies: browser auth uses Slack's search backend;
 standard auth lists up to 1000 users and filters locally, skipping deactivated
 accounts and bots.
+
+`--resolve-fields` labels each result's custom profile fields (`Xf…` ID →
+human label) via one cached `team.profile.get` call — the same shared resolver
+used by [`users info` and `users list`](users.md#--resolve-fields). Labels only:
+field values that are user IDs (Manager, Direct Reports) stay as `U…` IDs.

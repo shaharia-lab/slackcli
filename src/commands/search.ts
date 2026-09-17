@@ -10,6 +10,7 @@ import {
   writeJson,
 } from '../lib/formatter.ts';
 import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts';
+import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 
 export function createSearchCommand(): Command {
   const search = new Command('search')
@@ -144,6 +145,12 @@ export function createSearchCommand(): Command {
     .description('Search for people by name or email')
     .argument('<query>', 'Name, username, or email to search')
     .option('--limit <number>', 'Number of results', '20')
+    .option(
+      '--resolve-fields',
+      'Resolve custom profile-field IDs to their labels (labels only; ' +
+        'user-typed values such as Manager stay as IDs)',
+      false,
+    )
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
     .action(async (query, options) => {
@@ -186,12 +193,36 @@ export function createSearchCommand(): Command {
 
         spinner.succeed(`Found ${total} matching people (showing ${people.length})`);
 
+        // --resolve-fields labels each result's custom profile fields, using the
+        // same shared resolver as `users info` / `users list`. Labels only; a
+        // result carrying no profile.fields is passed through untouched.
+        let resolvedByPerson: Array<Record<string, string>> | undefined;
+        if (options.resolveFields) {
+          const labels = await buildFieldLabelMap(client);
+          resolvedByPerson = people.map((p: any) => resolveProfileFields(p, labels));
+        }
+
         if (options.json) {
-          writeJson({ query, total, people });
+          const out = resolvedByPerson
+            ? people.map((p: any, i: number) => ({ ...p, resolved_fields: resolvedByPerson![i] }))
+            : people;
+          writeJson({ query, total, people: out });
           return;
         }
 
         console.log('\n' + formatPeopleSearchResults(query, people, total));
+
+        // Mirror `users info`/`users list`: when --resolve-fields is set, show the
+        // labelled custom fields in text output too, not only in --json.
+        if (resolvedByPerson) {
+          people.forEach((p: any, i: number) => {
+            const entries = Object.entries(resolvedByPerson![i]).filter(([, v]) => v);
+            if (entries.length === 0) return;
+            console.log(`  ${p.name || p.id} fields:`);
+            for (const [label, value] of entries) console.log(`    ${label}: ${value}`);
+          });
+          console.log('');
+        }
       } catch (err: any) {
         spinner.fail('Failed to search people');
         error(err.message);

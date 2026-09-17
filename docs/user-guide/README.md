@@ -25,6 +25,7 @@ list for the version you have installed.
 | `conversations` | List channels and DMs, read history and threads, unreads |
 | `messages` | Send, reply, edit, react, draft, attach files, Block Kit |
 | `search` | Search messages, channels, and people |
+| `users` | Look up a user by ID and list users by account status |
 | `saved` | Read your "saved for later" list |
 | `canvas` | List canvases and read them as Markdown |
 | `update` | Check for and install new versions |
@@ -38,10 +39,11 @@ list for the version you have installed.
 5. [Conversations](conversations.md)
 6. [Messages](messages.md)
 7. [Search](search.md)
-8. [Saved items](saved.md)
-9. [Canvas](canvas.md)
-10. [Scripting and JSON output](scripting.md)
-11. [Troubleshooting](troubleshooting.md)
+8. [Users](users.md)
+9. [Saved items](saved.md)
+10. [Canvas](canvas.md)
+11. [Scripting and JSON output](scripting.md)
+12. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 

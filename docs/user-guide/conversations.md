@@ -93,3 +93,23 @@ slackcli conversations unread --json
 Conversations with mentions sort first, then alphabetically. On a workspace with
 many unread channels this makes one API call per channel to resolve names and
 may hit Slack rate limits.
+
+## `conversations members list`
+
+```bash
+slackcli conversations members list C1234567890
+slackcli conversations members list C1234567890 --limit=50
+slackcli conversations members list C1234567890 --cursor="$NEXT_CURSOR"   # next page
+slackcli conversations members list C1234567890 --json
+```
+
+Lists the member IDs of a channel or conversation. `--limit` reflects members
+**returned** (it pages until it has that many or the conversation is exhausted),
+and when more remain the output prints the `--cursor` value to fetch the next
+page. `--json` gives `{ channel_id, member_count, members: [...], next_cursor? }`.
+
+**Enterprise-grid caveat.** On an Enterprise Grid org this endpoint can be
+blocked by org policy — Slack returns `enterprise_is_restricted`, the command
+reports it clearly and exits non-zero (scoping to a team does **not** lift it).
+Member *management* (`add`/`remove`) and self ops (`join`/`leave`) ship
+separately; this command is read-only.

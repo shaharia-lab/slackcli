@@ -76,6 +76,15 @@ describe('conversations members (read-only)', () => {
     expect(opts).toContain('--json');
   });
 
+  it('defaults --limit to a valid positive integer the action accepts', () => {
+    // The action rejects a non-positive/NaN --limit (Number.isFinite && > 0),
+    // so the wired default must itself pass that guard.
+    const limitOption = (membersSubcommand('list')?.options ?? []).find((o) => o.long === '--limit');
+    const parsed = parseInt(String(limitOption?.defaultValue), 10);
+    expect(Number.isFinite(parsed)).toBe(true);
+    expect(parsed).toBeGreaterThan(0);
+  });
+
   it('ships ONLY the read side — no write/self membership subcommands', () => {
     const memberSubcommandNames = (subcommand('members')?.commands ?? []).map((c) => c.name());
     expect(memberSubcommandNames).toEqual(['list']);

@@ -413,11 +413,16 @@ export function createConversationsCommand(): Command {
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, options) => {
+      const limit = parseInt(options.limit, 10);
+      if (!Number.isFinite(limit) || limit <= 0) {
+        error('--limit must be a positive integer');
+        process.exit(1);
+      }
+
       const spinner = ora('Fetching members...').start();
 
       try {
         const { channelId, workspace } = resolveChannelArg(channelArg);
-        const limit = parseInt(options.limit);
 
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspace);

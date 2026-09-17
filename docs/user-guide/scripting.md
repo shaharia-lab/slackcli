@@ -6,7 +6,8 @@ hand.
 ## `--json`
 
 Every read command supports `--json`: `conversations list`, `conversations read`,
-`conversations get`, `conversations unread`, `search messages`, `search channels`,
+`conversations get`, `conversations unread`, `conversations members list`,
+`search messages`, `search channels`,
 `search people`, `saved list`, `canvas list`, `canvas read`, `team info`,
 `usergroups list`, `usergroups read`, `emoji list`, `emoji get`, `files info`,
 `files read`.

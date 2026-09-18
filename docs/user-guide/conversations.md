@@ -111,5 +111,60 @@ page. `--json` gives `{ channel_id, member_count, members: [...], next_cursor? }
 **Enterprise-grid caveat.** On an Enterprise Grid org this endpoint can be
 blocked by org policy — Slack returns `enterprise_is_restricted`, the command
 reports it clearly and exits non-zero (scoping to a team does **not** lift it).
-Member *management* (`add`/`remove`) and self ops (`join`/`leave`) ship
-separately; this command is read-only.
+Member *management* (`add`/`remove`) and self ops (`join`/`leave`) are
+documented below; this command is read-only.
+
+## `conversations members add`
+
+```bash
+slackcli conversations members add C1234567890 U1 U2 U3
+slackcli conversations members add C1234567890 U1,U2 --yes    # non-interactive
+slackcli conversations members add C1234567890 U1 --json
+```
+
+Adds one or more users (or agents/apps) to a channel. IDs are comma- or
+space-separated. This is a batch, all-or-nothing operation: Slack's
+`conversations.invite` adds the whole set or, if any ID cannot be invited,
+adds none and reports the error — a success message never over-reports.
+
+Mutating commands confirm before acting: in a terminal you get a `[y/N]`
+prompt; with no terminal the command refuses unless you pass `--yes`, so a
+script cannot change membership by accident. `--json` gives
+`{ channel_id, added: [...] }`.
+
+## `conversations members remove`
+
+```bash
+slackcli conversations members remove C1234567890 U1 U2
+slackcli conversations members remove C1234567890 U1 --yes --json
+```
+
+Removes one or more users from a channel. Slack's `conversations.kick` removes
+one user per call, so this is best-effort per ID: it attempts every ID and
+reports which came out and which failed, rather than stopping at the first
+error. It exits non-zero if **any** removal failed, and `--json` gives
+`{ channel_id, removed: [...], failed: [{ user, error }] }`. Confirmation
+works exactly as for `add` (prompt, or `--yes` when non-interactive).
+
+## `conversations join`
+
+```bash
+slackcli conversations join C1234567890
+slackcli conversations join C1234567890 --json
+```
+
+Joins a public channel as yourself. This is a self-op with no confirmation
+prompt — it is idempotent (joining a channel you are already in is a no-op) and
+only changes your own membership. `--json` gives `{ channel_id, channel }`.
+
+## `conversations leave`
+
+```bash
+slackcli conversations leave C1234567890
+slackcli conversations leave C1234567890 --yes --json
+```
+
+Leaves a channel or conversation as yourself. Like the other mutating commands
+it confirms first (or takes `--yes` when non-interactive). Leaving a channel you
+are already out of is reported as a no-op, not an error. `--json` gives
+`{ channel_id, left, not_in_channel }`.

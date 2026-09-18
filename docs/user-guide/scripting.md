@@ -13,9 +13,10 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 `files read`, `users info`, `users list`.
 
 The writing commands support it too — `messages send`, `messages edit`,
-`messages draft`, and the `usergroups` write verbs (`create`, `update`, `add`,
-`remove`, `enable`, `disable`) — where it returns the identity of what was just
-written instead of the human success line.
+`messages draft`, the `usergroups` write verbs (`create`, `update`, `add`,
+`remove`, `enable`, `disable`), and the `conversations` membership write/self
+verbs (`members add`, `members remove`, `join`, `leave`) — where it returns the
+identity of what was just written instead of the human success line.
 
 JSON goes to **stdout**. Progress spinners, warnings, error messages, and the
 update-available notice go to **stderr**, so a pipe normally carries only data:

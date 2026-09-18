@@ -417,6 +417,37 @@ export class SlackClient {
     return this.request('conversations.members', params);
   }
 
+  // Invite one or more users to a conversation. conversations.invite takes a
+  // comma-separated `users` list and adds them all in one call; Slack returns
+  // the updated channel object. On an enterprise org the optional team (T-id)
+  // scopes the write to one workspace.
+  async inviteToConversation(channel: string, users: string, options: { team?: string } = {}): Promise<any> {
+    const params: Record<string, any> = { channel, users };
+    if (options.team) params.team_id = options.team;
+    return this.request('conversations.invite', params);
+  }
+
+  // Remove a single user from a conversation. conversations.kick takes exactly
+  // one `user` (unlike invite's list), so the command loops per id.
+  async kickFromConversation(channel: string, user: string, options: { team?: string } = {}): Promise<any> {
+    const params: Record<string, any> = { channel, user };
+    if (options.team) params.team_id = options.team;
+    return this.request('conversations.kick', params);
+  }
+
+  // Join a public channel as the authenticated user. conversations.join is a
+  // self-op (no target user) and returns the joined channel object.
+  async joinConversation(channel: string): Promise<any> {
+    return this.request('conversations.join', { channel });
+  }
+
+  // Leave a conversation as the authenticated user. conversations.leave is a
+  // self-op; Slack returns { ok, not_in_channel? } where not_in_channel=true
+  // means we were already out (a no-op, not a failure).
+  async leaveConversation(channel: string): Promise<any> {
+    return this.request('conversations.leave', { channel });
+  }
+
   // Get team (workspace) info. team.info works for both auth types. On an
   // enterprise org, an optional team (T-id) scopes the lookup to one workspace;
   // omitted, Slack returns the token's own workspace.

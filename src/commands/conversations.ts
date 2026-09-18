@@ -5,6 +5,7 @@ import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
+import { confirmWrite, parseUserIds } from './usergroups.ts';
 import {
   normalizeTimestamp,
   parseSlackLink,
@@ -397,11 +398,13 @@ export function createConversationsCommand(): Command {
       }
     });
 
-  // Channel membership (read-only). The write/self operations
-  // (members add/remove, join/leave) are a separate follow-up PR.
+  // Channel membership. `members list` is read-only; `members add`/`remove`
+  // are the write operations, and `join`/`leave` (below, on the group) are the
+  // self operations. Naming mirrors the Slack UI ("Members" / "Add people or
+  // agents" / "Remove from channel") and the CLI's own `usergroups add/remove`.
   const members = conversations
     .command('members')
-    .description('Inspect channel membership');
+    .description('Inspect and manage channel membership');
 
   // List the members of a channel/conversation
   members
@@ -480,6 +483,189 @@ export function createConversationsCommand(): Command {
           process.exit(1);
         }
         spinner.fail('Failed to fetch members');
+        error(err.message, 'Run "slackcli auth list" to check your authentication.');
+        process.exit(1);
+      }
+    });
+
+  // Add one or more users to a channel/conversation (conversations.invite).
+  // The API takes a comma-separated `users` list (up to 1000) and is atomic:
+  // per Slack's docs, if ANY user in the batch cannot be invited the whole call
+  // returns ok:false (with a per-user `errors[]` array) and NONE are added. Our
+  // request wrapper throws on ok:false, so the catch below surfaces the failure
+  // and we never falsely report a partial add. (Slack's `force=true` option would
+  // invite the valid ids and skip invalid ones; not exposed here to keep the
+  // write PR minimal — a follow-up can add it if users want best-effort invite.)
+  members
+    .command('add')
+    .description('Add one or more users (or agents/apps) to a channel')
+    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .argument('<users...>', 'One or more user IDs (comma- or space-separated); agent/app IDs work too')
+    .option('--workspace <id|name>', 'Workspace to use (overrides default)')
+    .option('--team <workspace-id>', 'Target workspace T-id (enterprise org scoping)')
+    .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
+    .option('--json', 'Output in JSON format', false)
+    .action(async (channelArg, users, options) => {
+      const ids = parseUserIds(users);
+      if (ids.length === 0) {
+        error('No user IDs given — pass at least one user ID to add.');
+        process.exit(1);
+      }
+      const { channelId, workspace } = resolveChannelArg(channelArg);
+      if (!(await confirmWrite(`Add ${ids.length} user(s) to ${channelId}?`, options.yes))) {
+        process.exit(1);
+      }
+
+      const spinner = ora('Adding members...').start();
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspace);
+
+        await client.inviteToConversation(channelId, ids.join(','), { team: options.team });
+
+        spinner.succeed(`Added ${ids.length} user(s) to ${channelId}`);
+
+        if (options.json) {
+          writeJson({ channel_id: channelId, added: ids });
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to add members');
+        error(err.message, 'Run "slackcli auth list" to check your authentication.');
+        process.exit(1);
+      }
+    });
+
+  // Remove users from a channel/conversation (conversations.kick). The API
+  // removes exactly ONE user per call, so we loop per id and report which
+  // succeeded and which failed rather than aborting the whole batch on the
+  // first error (a best-effort remove, since a later id may still be removable).
+  members
+    .command('remove')
+    .description('Remove one or more users from a channel')
+    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .argument('<users...>', 'One or more user IDs (comma- or space-separated)')
+    .option('--workspace <id|name>', 'Workspace to use (overrides default)')
+    .option('--team <workspace-id>', 'Target workspace T-id (enterprise org scoping)')
+    .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
+    .option('--json', 'Output in JSON format', false)
+    .action(async (channelArg, users, options) => {
+      const ids = parseUserIds(users);
+      if (ids.length === 0) {
+        error('No user IDs given — pass at least one user ID to remove.');
+        process.exit(1);
+      }
+      const { channelId, workspace } = resolveChannelArg(channelArg);
+      if (!(await confirmWrite(`Remove ${ids.length} user(s) from ${channelId}?`, options.yes))) {
+        process.exit(1);
+      }
+
+      const spinner = ora('Removing members...').start();
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspace);
+
+        const removed: string[] = [];
+        const failed: Array<{ user: string; error: string }> = [];
+        for (const id of ids) {
+          spinner.text = `Removing ${id}...`;
+          try {
+            await client.kickFromConversation(channelId, id, { team: options.team });
+            removed.push(id);
+          } catch (kickErr: any) {
+            failed.push({ user: id, error: kickErr?.message ?? String(kickErr) });
+          }
+        }
+
+        if (failed.length === 0) {
+          spinner.succeed(`Removed ${removed.length} user(s) from ${channelId}`);
+        } else if (removed.length === 0) {
+          spinner.fail(`Failed to remove any of ${ids.length} user(s) from ${channelId}`);
+        } else {
+          spinner.warn(`Removed ${removed.length} of ${ids.length}; ${failed.length} failed`);
+        }
+
+        if (options.json) {
+          writeJson({ channel_id: channelId, removed, failed });
+        } else if (failed.length > 0) {
+          failed.forEach((f) => console.error(chalk.red(`  ✗ ${f.user}: ${f.error}`)));
+        }
+
+        // Exit non-zero whenever ANY removal failed, so a script (piping --json
+        // or not) sees a partial failure — not only when every removal failed.
+        // Use exitCode + return, never process.exit() after writeJson(): the
+        // async JSON pipe truncates at 64 KiB if the process exits under it (#73).
+        if (failed.length > 0) {
+          process.exitCode = 1;
+          return;
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to remove members');
+        error(err.message, 'Run "slackcli auth list" to check your authentication.');
+        process.exit(1);
+      }
+    });
+
+  // Join a public channel as the authenticated user (conversations.join). This
+  // is a self-op — no target user, no confirmation gate (you are only changing
+  // your own membership, and it is idempotent: joining a channel you are in
+  // returns the channel with no error).
+  conversations
+    .command('join')
+    .description('Join a public channel as yourself')
+    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .option('--workspace <id|name>', 'Workspace to use (overrides default)')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (channelArg, options) => {
+      const { channelId, workspace } = resolveChannelArg(channelArg);
+      const spinner = ora('Joining channel...').start();
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspace);
+
+        const response = await client.joinConversation(channelId);
+
+        spinner.succeed(`Joined ${channelId}`);
+
+        if (options.json) {
+          writeJson({ channel_id: channelId, channel: response.channel ?? null });
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to join channel');
+        error(err.message, 'Run "slackcli auth list" to check your authentication.');
+        process.exit(1);
+      }
+    });
+
+  // Leave a conversation as the authenticated user (conversations.leave). Also
+  // a self-op. Slack returns { not_in_channel: true } when you were already
+  // out; that is a no-op success, not an error.
+  conversations
+    .command('leave')
+    .description('Leave a channel or conversation as yourself')
+    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .option('--workspace <id|name>', 'Workspace to use (overrides default)')
+    .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
+    .option('--json', 'Output in JSON format', false)
+    .action(async (channelArg, options) => {
+      const { channelId, workspace } = resolveChannelArg(channelArg);
+      if (!(await confirmWrite(`Leave ${channelId}?`, options.yes))) {
+        process.exit(1);
+      }
+      const spinner = ora('Leaving channel...').start();
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspace);
+
+        const response = await client.leaveConversation(channelId);
+        const alreadyOut = response.not_in_channel === true;
+
+        spinner.succeed(alreadyOut ? `Already not a member of ${channelId}` : `Left ${channelId}`);
+
+        if (options.json) {
+          writeJson({ channel_id: channelId, left: !alreadyOut, not_in_channel: alreadyOut });
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to leave channel');
         error(err.message, 'Run "slackcli auth list" to check your authentication.');
         process.exit(1);
       }

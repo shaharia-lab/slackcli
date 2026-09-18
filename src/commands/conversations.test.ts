@@ -85,17 +85,63 @@ describe('conversations members (read-only)', () => {
     expect(parsed).toBeGreaterThan(0);
   });
 
-  it('ships ONLY the read side — no write/self membership subcommands', () => {
+  it('ships the read side under members list', () => {
     const memberSubcommandNames = (subcommand('members')?.commands ?? []).map((c) => c.name());
-    expect(memberSubcommandNames).toEqual(['list']);
-    // Guard against the follow-up write PR's verbs leaking into this read PR.
-    for (const write of ['add', 'remove', 'invite', 'kick', 'join', 'leave']) {
-      expect(memberSubcommandNames).not.toContain(write);
-    }
-    // No join/leave leaked onto the conversations group either.
+    expect(memberSubcommandNames).toContain('list');
+  });
+});
+
+describe('conversations membership (write/self)', () => {
+  it('nests the write ops under members as add/remove', () => {
+    const memberSubcommandNames = (subcommand('members')?.commands ?? []).map((c) => c.name());
+    expect(memberSubcommandNames).toContain('add');
+    expect(memberSubcommandNames).toContain('remove');
+  });
+
+  it('exposes join/leave as self-ops on the conversations group', () => {
     const groupSubcommandNames = createConversationsCommand().commands.map((c) => c.name());
-    for (const write of ['join', 'leave']) {
-      expect(groupSubcommandNames).not.toContain(write);
+    expect(groupSubcommandNames).toContain('join');
+    expect(groupSubcommandNames).toContain('leave');
+  });
+
+  it('takes a channel plus a variadic users list on members add/remove', () => {
+    for (const verb of ['add', 'remove']) {
+      const args = (membersSubcommand(verb)?.registeredArguments ?? []).map((a) => ({
+        name: a.name(),
+        required: a.required,
+        variadic: a.variadic,
+      }));
+      expect(args).toEqual([
+        { name: 'channel', required: true, variadic: false },
+        { name: 'users', required: true, variadic: true },
+      ]);
+    }
+  });
+
+  it('exposes --yes on every mutating command (add/remove/leave), and NOT on the idempotent join', () => {
+    const yesOn = (cmd: ReturnType<typeof membersSubcommand> | ReturnType<typeof subcommand>) =>
+      (cmd?.options ?? []).some((o) => o.long === '--yes');
+    expect(yesOn(membersSubcommand('add'))).toBe(true);
+    expect(yesOn(membersSubcommand('remove'))).toBe(true);
+    expect(yesOn(subcommand('leave'))).toBe(true);
+    expect(yesOn(subcommand('join'))).toBe(false);
+  });
+
+  it('exposes --team on the write ops (enterprise scoping) but not on the self-ops', () => {
+    expect((membersSubcommand('add')?.options ?? []).map((o) => o.long)).toContain('--team');
+    expect((membersSubcommand('remove')?.options ?? []).map((o) => o.long)).toContain('--team');
+    // join/leave are self-ops — they carry no --team.
+    expect((subcommand('join')?.options ?? []).map((o) => o.long)).not.toContain('--team');
+    expect((subcommand('leave')?.options ?? []).map((o) => o.long)).not.toContain('--team');
+  });
+
+  it('takes a single channel positional on join and leave', () => {
+    for (const verb of ['join', 'leave']) {
+      const args = (subcommand(verb)?.registeredArguments ?? []).map((a) => ({
+        name: a.name(),
+        required: a.required,
+      }));
+      expect(args).toEqual([{ name: 'channel', required: true }]);
     }
   });
 });

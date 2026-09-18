@@ -391,6 +391,45 @@ describe('SlackClient.getConversationMembers', () => {
   });
 });
 
+describe('SlackClient.leaveConversation', () => {
+  // Slack's conversations.leave returns { ok: false, not_in_channel: true } with
+  // NO `error` field when you were already out. request() throws on ok:false, so
+  // the wrapper must recover the structured payload and return it as the no-op
+  // success Slack intends — not surface it as a failure.
+  it('returns the not_in_channel payload as a no-op success when already out', async () => {
+    globalThis.fetch = (async (_input, _init) =>
+      Response.json({ ok: false, not_in_channel: true })) as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+
+    const response = await client.leaveConversation('C123');
+    expect(response.not_in_channel).toBe(true);
+  });
+
+  it('still throws on a genuine leave error (e.g. cant_leave_general)', async () => {
+    globalThis.fetch = (async (_input, _init) =>
+      Response.json({ ok: false, error: 'cant_leave_general' })) as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+
+    await expect(client.leaveConversation('C123')).rejects.toThrow('cant_leave_general');
+  });
+});
+
 describe('SlackClient request throttling', () => {
   // A fast stand-in for the process-wide limiter: same shape, test-sized numbers.
   const testLimiter = () => new RateLimiter({ maxConcurrent: 2, minIntervalMs: 25 });

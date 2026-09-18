@@ -65,7 +65,15 @@ export class SlackClient {
       const response = await this.webClient.apiCall(method, params);
       return response;
     } catch (error: any) {
-      throw new Error(`Slack API error: ${error.message}`);
+      const wrapped = new Error(`Slack API error: ${error.message}`);
+      // @slack/web-api attaches the full Slack response payload to error.data
+      // on an ok:false result. Preserve it so callers can inspect structured
+      // fields (e.g. conversations.leave's `not_in_channel`) that are not part
+      // of the error message string.
+      if (error && typeof error === 'object' && 'data' in error) {
+        (wrapped as any).slackData = (error as any).data;
+      }
+      throw wrapped;
     }
   }
 
@@ -106,12 +114,21 @@ export class SlackClient {
       const data: any = await response.json();
 
       if (!data.ok) {
-        throw new Error(data.error || 'Unknown API error');
+        const err = new Error(data.error || 'Unknown API error');
+        // Preserve the full Slack payload so callers can inspect structured
+        // non-error fields (e.g. conversations.leave's `not_in_channel`, which
+        // comes back with ok:false but no `error` string).
+        (err as any).slackData = data;
+        throw err;
       }
 
       return data;
     } catch (error: any) {
-      throw new Error(`Slack API error: ${error.message}`);
+      const wrapped = new Error(`Slack API error: ${error.message}`);
+      if (error && typeof error === 'object' && 'slackData' in error) {
+        (wrapped as any).slackData = (error as any).slackData;
+      }
+      throw wrapped;
     }
   }
 
@@ -442,10 +459,21 @@ export class SlackClient {
   }
 
   // Leave a conversation as the authenticated user. conversations.leave is a
-  // self-op; Slack returns { ok, not_in_channel? } where not_in_channel=true
-  // means we were already out (a no-op, not a failure).
+  // self-op. On success Slack returns { ok: true }; when you were already out
+  // it responds with { ok: false, not_in_channel: true } and NO `error` field,
+  // which request() throws on. We catch that specific case and return the
+  // payload so callers can treat it as the no-op success Slack intends,
+  // re-throwing any genuine error.
   async leaveConversation(channel: string): Promise<any> {
-    return this.request('conversations.leave', { channel });
+    try {
+      return await this.request('conversations.leave', { channel });
+    } catch (err: any) {
+      const data = err?.slackData;
+      if (data && data.not_in_channel === true) {
+        return data;
+      }
+      throw err;
+    }
   }
 
   // Get team (workspace) info. team.info works for both auth types. On an

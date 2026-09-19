@@ -76,6 +76,10 @@ megabytes needs a different design, not a raised limit.
 
 ## Releasing
 
+*When* releases happen — the weekly schedule, what counts as releasable,
+out-of-band fixes, versioning and deprecation — is policy, and lives in
+[RELEASING.md](../../RELEASING.md). This section covers the mechanics.
+
 Releases are triggered by pushing a `v*.*.*` tag, and the repo has a `/release`
 skill that drives the whole sequence. By hand it is:
 

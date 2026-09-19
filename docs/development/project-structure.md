@@ -23,6 +23,7 @@ slackcli/
 ├── .pre-commit-config.yaml       Local checks mirroring CI
 ├── CLAUDE.md                     Repository constitution + architecture notes
 ├── CONTRIBUTING.md               Contribution policy
+├── RELEASING.md                  Release schedule, versioning and deprecation policy
 └── dist/                         Build output (gitignored)
 ```
 

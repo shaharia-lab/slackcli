@@ -438,6 +438,7 @@ Everything is published at [slackcli.dev/docs](https://slackcli.dev/docs/) and l
 - [Project structure](docs/development/project-structure.md)
 - [Testing](docs/development/testing.md)
 - [Build & release](docs/development/build-and-release.md)
+- [Release policy & schedule](RELEASING.md)
 - [Adding a command](docs/development/adding-a-command.md)
 
 <br>

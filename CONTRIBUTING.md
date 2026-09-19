@@ -118,6 +118,10 @@ git push --force-with-lease
 
 The `Signed Commits` workflow posts (and keeps updated) a comment on any pull request with unverified commits, so you will hear about this on your first push rather than at merge time.
 
+## When Will My Change Ship?
+
+Releases are cut weekly, on Saturday, from whatever is on `main` — provided there is at least one releasable change. Once your pull request is merged, it ships in the next release; security and critical fixes go out sooner. The full schedule, versioning and deprecation rules are in [RELEASING.md](RELEASING.md).
+
 ## For AI Agent Contributors
 
 AI-generated contributions are welcome and go through the same process as human contributions:

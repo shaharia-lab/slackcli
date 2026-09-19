@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-19
+
+### Added
+- **`users` command group**: `users info <id>` looks up a single user by ID, and `users list` enumerates workspace users filtered by `--status active|deactivated|all` (#177)
+  - `--limit` on `users list` means matches-returned, not scan depth: it pages `users.list` internally, applying the status filter as it goes, and stops once it has that many matches
+  - `--resolve-fields`, shared with `search people`, resolves custom profile fields from opaque `Xf…` IDs to their human labels via one cached `team.profile.get` call; fields whose values are themselves user IDs (Manager, Direct Reports) are left as `U…` IDs, not resolved to names
+  - Account status is derived from `deleted`, the one deactivation signal Slack always returns
+- **`conversations members list <channel>`**: read-only channel membership enumeration, cursor-paginated, accepting a channel ID or a Slack link (#176)
+  - On Enterprise Grid, a workspace policy can return `enterprise_is_restricted` for this call regardless of `--team` scoping; the command reports that clearly and exits non-zero instead of hiding or faking success
+- **`conversations members add/remove <channel> <users...>`, `conversations join/leave <channel>`**: change channel membership from the CLI (#178)
+  - `add` calls `conversations.invite` once for the whole list — Slack's call is all-or-nothing, so a success message never lies about who got added
+  - `remove` calls `conversations.kick` per user and is best-effort: it tries every ID, reports which succeeded and which failed, and exits non-zero if any failed; `--json` carries the full `removed`/`failed` split
+  - `join` needs no confirmation (joining is harmless, rejoining is a no-op); `leave` confirms like other write commands (`--yes` to skip in a TTY, refused without it otherwise), and leaving a channel you are not in is reported as a no-op
+
 ## [0.11.0] - 2026-09-05
 
 ### Added

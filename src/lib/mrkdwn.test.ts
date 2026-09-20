@@ -214,6 +214,55 @@ describe('parseMrkdwn', () => {
     ]);
   });
 
+  it('does not match a space-padded _italic_ span', () => {
+    expect(elements('_ spaced _')).toEqual([
+      { type: 'text', text: '_ spaced _' },
+    ]);
+  });
+
+  it('does not match a span padded on only one side', () => {
+    expect(elements('*bold *')).toEqual([{ type: 'text', text: '*bold *' }]);
+    expect(elements('* bold*')).toEqual([{ type: 'text', text: '* bold*' }]);
+  });
+
+  it('does not match empty markers for any marker', () => {
+    expect(elements('__')).toEqual([{ type: 'text', text: '__' }]);
+    expect(elements('``')).toEqual([{ type: 'text', text: '``' }]);
+    expect(elements('~~')).toEqual([{ type: 'text', text: '~~' }]);
+  });
+
+  it('leaves an unterminated _ literal', () => {
+    expect(elements('_italic')).toEqual([{ type: 'text', text: '_italic' }]);
+  });
+
+  it('merges three nested styles onto one element', () => {
+    expect(elements('*_~x~_*')).toEqual([
+      { type: 'text', text: 'x', style: { strike: true, italic: true, bold: true } },
+    ]);
+  });
+
+  it('applies an outer style on top of an inner `code` span', () => {
+    // The code span itself does not nest, but the bold wrapping it still merges in.
+    expect(elements('*`a`*')).toEqual([
+      { type: 'text', text: 'a', style: { code: true, bold: true } },
+    ]);
+  });
+
+  it('collects plain text between two spans into a single element', () => {
+    expect(elements('*a* mid *b*')).toEqual([
+      { type: 'text', text: 'a', style: { bold: true } },
+      { type: 'text', text: ' mid ' },
+      { type: 'text', text: 'b', style: { bold: true } },
+    ]);
+  });
+
+  it('emits no plain element between two adjacent spans', () => {
+    expect(elements('*a*_b_')).toEqual([
+      { type: 'text', text: 'a', style: { bold: true } },
+      { type: 'text', text: 'b', style: { italic: true } },
+    ]);
+  });
+
   it('does not let a tilde in a URL swallow a later strike span', () => {
     expect(elements('see https://host/~user and ~important~')).toEqual([
       { type: 'text', text: 'see https://host/~user and ' },

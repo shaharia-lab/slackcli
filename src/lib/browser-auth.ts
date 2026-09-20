@@ -191,9 +191,19 @@ export function extractWorkspacesFromLocalConfig(raw: string): CapturedWorkspace
     .filter((workspace): workspace is CapturedWorkspace => workspace !== null);
 }
 
+/** The `localConfig_v2` team fields we read — each still to be narrowed. */
+interface LocalConfigTeam {
+  token?: unknown;
+  url?: unknown;
+  domain?: unknown;
+  id?: unknown;
+  name?: unknown;
+}
+
 /** One `localConfig_v2` team entry as a workspace, or null if unusable. */
-function toCapturedWorkspace(team: any): CapturedWorkspace | null {
-  const token = team?.token;
+function toCapturedWorkspace(entry: unknown): CapturedWorkspace | null {
+  const team = (entry ?? {}) as LocalConfigTeam;
+  const token = team.token;
   if (typeof token !== 'string' || !token.startsWith('xoxc-')) return null;
 
   const workspaceUrl = workspaceUrlForTeam(team);
@@ -213,7 +223,7 @@ function toCapturedWorkspace(team: any): CapturedWorkspace | null {
  * `domain`. An unparseable `url` yields null — it does not fall back to
  * `domain`.
  */
-function workspaceUrlForTeam(team: any): string | null {
+function workspaceUrlForTeam(team: LocalConfigTeam): string | null {
   // Reduce to an origin: Slack stores `https://team.slack.com/` but has also
   // been seen carrying a path, and this value becomes the API base that
   // every later request is built on.
@@ -466,13 +476,13 @@ function captureTimeout(headless: boolean | undefined): CaptureResult {
 async function settleWorkspaces(
   session: CdpSession,
   initial: CapturedWorkspace[],
-  clock: { deadline: number; sleep: (ms: number) => Promise<void>; now: () => number }
+  timing: { deadline: number; sleep: (ms: number) => Promise<void>; now: () => number }
 ): Promise<CapturedWorkspace[]> {
   let fromLocalConfig = initial;
-  const settleDeadline = Math.min(clock.now() + SETTLE_BUDGET_MS, clock.deadline);
+  const settleDeadline = Math.min(timing.now() + SETTLE_BUDGET_MS, timing.deadline);
   let stableReads = 0;
-  while (clock.now() < settleDeadline && stableReads < 2) {
-    await clock.sleep(POLL_INTERVAL_MS);
+  while (timing.now() < settleDeadline && stableReads < 2) {
+    await timing.sleep(POLL_INTERVAL_MS);
     const settled = await readWorkspacesFromLocalStorage(session);
     if (settled.length > fromLocalConfig.length) {
       fromLocalConfig = settled;

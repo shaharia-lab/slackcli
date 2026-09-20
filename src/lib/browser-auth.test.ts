@@ -647,6 +647,9 @@ describe('captureSlackTokens', () => {
     expect(result.workspaces).toHaveLength(1);
   });
 
+  // Separate from makeFakeSession, whose state is fixed for the whole run:
+  // these tests need it to change between polls, and to count the polls.
+  //
   // Scripts a session whose state changes as the capture polls it: each
   // localStorage read takes the next entry of `localConfigs` (the last one
   // repeats), and `emitOnRead` fires intercepted requests just before the

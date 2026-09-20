@@ -1,6 +1,6 @@
 import { isAuthPage } from './canvas-parser.ts';
 import type { SlackClient } from './slack-client.ts';
-import type { SlackUser } from '../types/index.ts';
+import type { SlackCanvas, SlackUser } from '../types/index.ts';
 
 const CANVAS_ID_PATTERN = /^F[A-Z0-9]+$/i;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -72,7 +72,7 @@ export async function fetchCanvasHtml(
   client: SlackClient,
   fileId: string,
   onProgress?: OnProgress,
-): Promise<{ file: any; html: string }> {
+): Promise<{ file: SlackCanvas; html: string }> {
   onProgress?.('Fetching canvas metadata...');
   const fileInfo = await client.getFileInfo(fileId);
   const file = fileInfo.file;

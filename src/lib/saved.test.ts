@@ -250,4 +250,126 @@ describe('enrichSavedItems', () => {
     const result = await enrichSavedItems(client);
     expect(result.items[0].channel_name).toBe('C_PRIVATE');
   });
+
+  it('chunks channels into batches of 10 for messages.list (browser auth)', async () => {
+    const batchSizes: number[] = [];
+    const channels = Array.from({ length: 12 }, (_, i) => `C${i + 1}`);
+    const client = createMockClient({
+      listSavedItems: () => Promise.resolve({
+        saved_items: channels.map((ch, i) => ({
+          item_type: 'message', item_id: ch, ts: `${i}.1`, date_created: '1700000000',
+        })),
+      }),
+      listMessages: (ids: any) => {
+        batchSizes.push(ids.length);
+        const msgs: Record<string, any[]> = {};
+        for (const group of ids) {
+          msgs[group.channel] = group.timestamps.map((ts: string) => ({
+            ts, text: `msg-${group.channel}`, type: 'message',
+          }));
+        }
+        return Promise.resolve({ messages: msgs });
+      },
+      getConversationInfo: (ch: string) => Promise.resolve({ channel: { name: `name-${ch}` } }),
+      getUsersInfo: () => Promise.resolve({ users: [] }),
+    });
+
+    const result = await enrichSavedItems(client);
+    // 12 channels -> two calls, capped at the batch size of 10
+    expect(batchSizes).toEqual([10, 2]);
+    expect(result.items).toHaveLength(12);
+    // Every channel keeps its own name across the batch boundary
+    for (const [i, ch] of channels.entries()) {
+      expect(result.items[i]!.channel_name).toBe(`name-${ch}`);
+      expect(result.items[i]!.message!.text).toBe(`msg-${ch}`);
+    }
+  });
+
+  it('keeps channel names aligned when only some conversation lookups fail', async () => {
+    const client = createMockClient({
+      listSavedItems: () => Promise.resolve({
+        saved_items: [
+          { item_type: 'message', item_id: 'C1', ts: '1.1', date_created: '1700000000' },
+          { item_type: 'message', item_id: 'C2', ts: '2.1', date_created: '1700000001' },
+          { item_type: 'message', item_id: 'C3', ts: '3.1', date_created: '1700000002' },
+        ],
+      }),
+      listMessages: (ids: any) => {
+        const msgs: Record<string, any[]> = {};
+        for (const group of ids) {
+          msgs[group.channel] = group.timestamps.map((ts: string) => ({ ts, text: 'hi', type: 'message' }));
+        }
+        return Promise.resolve({ messages: msgs });
+      },
+      // The middle channel is unreadable; the other two must keep their own names
+      getConversationInfo: (ch: string) => (ch === 'C2'
+        ? Promise.reject(new Error('channel_not_found'))
+        : Promise.resolve({ channel: { name: `name-${ch}` } })),
+      getUsersInfo: () => Promise.resolve({ users: [] }),
+    });
+
+    const result = await enrichSavedItems(client);
+    expect(result.items.map((i) => i.channel_name)).toEqual(['name-C1', 'C2', 'name-C3']);
+  });
+
+  it('skips the message-detail phase when no saved item is a message', async () => {
+    let listMessagesCalls = 0;
+    const progress: string[] = [];
+    const client = createMockClient({
+      listSavedItems: () => Promise.resolve({
+        saved_items: [{ item_type: 'file', item_id: 'F1', date_created: '1700000000' }],
+      }),
+      listMessages: () => {
+        listMessagesCalls++;
+        return Promise.resolve({ messages: {} });
+      },
+      getUsersInfo: () => Promise.resolve({ users: [] }),
+    });
+
+    const result = await enrichSavedItems(client, { onProgress: (m) => progress.push(m) });
+    expect(listMessagesCalls).toBe(0);
+    expect(progress).not.toContain('Fetching message details...');
+    expect(result.items).toHaveLength(1);
+  });
+
+  it('skips the user lookup when no item references a user', async () => {
+    let getUsersInfoCalls = 0;
+    const client = createMockClient({
+      listSavedItems: () => Promise.resolve({
+        items: [{ type: 'message', message: { text: 'no author', ts: '1.1', type: 'message' } }],
+      }),
+      getUsersInfo: () => {
+        getUsersInfoCalls++;
+        return Promise.resolve({ users: [] });
+      },
+    });
+
+    const result = await enrichSavedItems(client);
+    expect(getUsersInfoCalls).toBe(0);
+    expect(result.users.size).toBe(0);
+    expect(result.items).toHaveLength(1);
+  });
+
+  it('reports progress for each phase (browser auth)', async () => {
+    const messages: string[] = [];
+    const client = createMockClient({
+      listSavedItems: () => Promise.resolve({
+        saved_items: [
+          { item_type: 'message', item_id: 'C1', ts: '1.1', date_created: '1700000000' },
+        ],
+      }),
+      listMessages: () => Promise.resolve({
+        messages: { C1: [{ ts: '1.1', text: 'hi', type: 'message', user: 'U1' }] },
+      }),
+      getConversationInfo: () => Promise.resolve({ channel: { name: 'general' } }),
+      getUsersInfo: () => Promise.resolve({ users: [{ id: 'U1', name: 'alice' }] }),
+    });
+
+    await enrichSavedItems(client, { onProgress: (m) => messages.push(m) });
+    expect(messages).toEqual([
+      'Fetching saved items...',
+      'Fetching message details...',
+      'Fetching user information...',
+    ]);
+  });
 });

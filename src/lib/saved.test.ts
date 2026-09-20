@@ -280,8 +280,8 @@ describe('enrichSavedItems', () => {
     expect(result.items).toHaveLength(12);
     // Every channel keeps its own name across the batch boundary
     for (const [i, ch] of channels.entries()) {
-      expect(result.items[i]!.channel_name).toBe(`name-${ch}`);
-      expect(result.items[i]!.message!.text).toBe(`msg-${ch}`);
+      expect(result.items[i].channel_name).toBe(`name-${ch}`);
+      expect(result.items[i].message!.text).toBe(`msg-${ch}`);
     }
   });
 

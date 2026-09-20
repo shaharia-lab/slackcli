@@ -76,16 +76,15 @@ function buildMessageLookup(batchResponses: any[]): Map<string, any> {
 
 /**
  * Batch-fetch the saved messages and their channel names in parallel.
- * `channelKeys` is the single ordering source: the conversations.info promises
- * are issued in that order, so `channelInfos[i]` belongs to `channelKeys[i]`.
+ * Each conversations.info result carries its own channel id back, so the two
+ * halves cannot drift out of alignment the way index-paired arrays can.
  */
 async function fetchMessagesAndChannels(
   client: SlackClient,
   channelTimestamps: Map<string, string[]>,
 ): Promise<{ messageLookup: Map<string, any>; channelNames: Map<string, string> }> {
-  const channelKeys = Array.from(channelTimestamps.keys());
-  const messageIds: ChannelGroup[] = channelKeys.map(
-    (channel) => ({ channel, timestamps: channelTimestamps.get(channel) as string[] }),
+  const messageIds: ChannelGroup[] = Array.from(channelTimestamps.entries()).map(
+    ([channel, timestamps]) => ({ channel, timestamps }),
   );
 
   const batches: ChannelGroup[][] = [];
@@ -93,17 +92,21 @@ async function fetchMessagesAndChannels(
     batches.push(messageIds.slice(i, i + BATCH_SIZE));
   }
 
-  const [batchResponses, ...channelInfos] = await Promise.all([
+  // Both halves are issued before the first await, so they stay concurrent
+  const [batchResponses, namedChannels] = await Promise.all([
     Promise.all(batches.map((batch) => client.listMessages(batch))),
-    ...channelKeys.map((ch) => client.getConversationInfo(ch).catch(() => null)),
+    Promise.all(messageIds.map(async ({ channel }) => {
+      const info = await client.getConversationInfo(channel).catch(() => null);
+      return { channel, name: info?.channel?.name as string | undefined };
+    })),
   ]);
 
   const channelNames = new Map<string, string>();
-  channelInfos.forEach((info, i) => {
-    if (info?.channel?.name) {
-      channelNames.set(channelKeys[i] as string, info.channel.name);
+  for (const { channel, name } of namedChannels) {
+    if (name) {
+      channelNames.set(channel, name);
     }
-  });
+  }
 
   return { messageLookup: buildMessageLookup(batchResponses), channelNames };
 }

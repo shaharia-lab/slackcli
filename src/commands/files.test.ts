@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
+  confirmedOutputPath,
   createFilesCommand,
   extractedFileContent,
   formatFileInfo,
@@ -39,6 +41,54 @@ describe('files command', () => {
     expect(longOptions('read')).toContain('--json');
     expect(longOptions('read')).toContain('--raw');
     expect(longOptions('download')).toContain('--output');
+  });
+
+  it('puts --yes on download, the only subcommand that writes to disk', () => {
+    expect(longOptions('download')).toContain('--yes');
+    expect(longOptions('info')).not.toContain('--yes');
+    expect(longOptions('read')).not.toContain('--yes');
+  });
+});
+
+describe('confirmedOutputPath', () => {
+  const realIsTTY = process.stdin.isTTY;
+
+  function setTTY(value: boolean) {
+    Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
+  }
+
+  afterEach(() => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: realIsTTY, configurable: true });
+  });
+
+  it('downloads to a path inside the working directory without confirming', async () => {
+    // Non-TTY and no --yes: the only way this resolves is by never reaching the
+    // gate, which is what "no new prompt for ordinary downloads" means.
+    setTTY(false);
+    expect(await confirmedOutputPath('report.pdf', false))
+      .toBe(resolve(realpathSync(process.cwd()), 'report.pdf'));
+  });
+
+  it('refuses a traversal when stdin is not a TTY and --yes is absent', async () => {
+    setTTY(false);
+    expect(await confirmedOutputPath('../../../tmp/authorized_keys', false)).toBeNull();
+  });
+
+  it('refuses an absolute path outside the working directory unattended', async () => {
+    setTTY(false);
+    expect(await confirmedOutputPath('/tmp/slackcli-never-written.desktop', false)).toBeNull();
+  });
+
+  it('proceeds on an outside path when --yes is passed, returning the resolved path', async () => {
+    setTTY(false);
+    const outside = join(realpathSync(tmpdir()), 'slackcli-explicit.bin');
+    expect(await confirmedOutputPath(outside, true)).toBe(outside);
+  });
+
+  it('returns the resolved absolute path, never the string that was typed', async () => {
+    setTTY(false);
+    expect(await confirmedOutputPath('./nested/../report.pdf', false))
+      .toBe(resolve(realpathSync(process.cwd()), 'report.pdf'));
   });
 });
 

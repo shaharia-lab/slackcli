@@ -11,14 +11,39 @@ bun run build:all        # all three
 ```
 
 All of them go through `scripts/build.ts`, a thin wrapper around
-`bun build --compile --minify` whose one real job is injecting the version:
+`bun build --compile --minify --bytecode --splitting --format=esm` whose one
+real job is injecting the version:
 
 ```
 --define __APP_VERSION__=<version from package.json>
 ```
 
 A local (untargeted) build also gets `--sourcemap`; cross-compiled targets do
-not.
+not. The release workflow calls `bun build` directly with the same flags, so a
+change to them must land in both places.
+
+### Why bytecode
+
+`--bytecode` ships precompiled JavaScriptCore bytecode, so the binary skips
+parsing at startup. Measured on Linux x64 with Bun 1.4.1 (#137):
+
+| | Plain build | `--bytecode` |
+| --- | --- | --- |
+| `slackcli --help` cold start | ~130 ms | ~80 ms |
+| `bun-linux-x64` | 78 MB | 82 MB |
+| `bun-darwin-x64` | 67 MB | 71 MB |
+| `bun-windows-x64` | 83 MB | 87 MB |
+
+The few extra MB are well inside the 150 MB budget. Two things to know:
+
+- `--bytecode` switches the default output format to CommonJS. `--format=esm`
+  keeps the module semantics of a plain build and is what `--splitting`
+  requires. `--splitting` changes nothing today — there are no dynamic
+  `import()`s to split on — but lets a future lazily-loaded command stay out of
+  the startup path.
+- Bytecode is tied to the JavaScriptCore version of the Bun that emits it, so
+  release binaries must be built by the Bun that CI pins. Bun 1.4.1 is also the
+  first release whose `--bytecode` cross-compiles to Windows x64.
 
 ## Versioning
 
@@ -62,10 +87,12 @@ Other policy workflows: `pr-linked-issue.yml` (a PR must link an open issue),
 
 ### Why Bun is pinned
 
-CI and the release workflow both pin **Bun 1.3.13**. Bun 1.3.12 produced corrupt
-macOS code signatures ([oven-sh/bun#29120](https://github.com/oven-sh/bun/issues/29120)).
-Bump the pin deliberately, in both files at once, after reading Bun's release
-notes.
+CI (`ci.yml`, `test.yml`) and the release workflow all pin **Bun 1.4.1**. Bun
+1.3.12 produced corrupt macOS code signatures
+([oven-sh/bun#29120](https://github.com/oven-sh/bun/issues/29120)), and 1.4.1 is
+the first release where `--bytecode` works for every target we ship (see
+[Why bytecode](#why-bytecode)). Bump the pin deliberately, in all three files at
+once, after reading Bun's release notes.
 
 ### Why the 150 MB budget matters
 

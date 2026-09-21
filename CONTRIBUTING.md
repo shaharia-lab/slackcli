@@ -36,6 +36,12 @@ bun install
 pre-commit install     # required — do not skip
 ```
 
+If you change `package.json`, run `bun install` and **commit the regenerated
+`bun.lock` in the same change**. CI installs with `bun install
+--frozen-lockfile`, so a `package.json` the committed lockfile cannot satisfy
+fails the install step with `error: lockfile had changes, but lockfile is
+frozen` instead of silently resolving fresh versions nobody reviewed.
+
 ### Pre-commit Hooks (required)
 
 Installed hooks are a **prerequisite** for working in this repo, not a suggestion. They run the same checks CI does — trailing whitespace, EOF, YAML/JSON validity, no direct commits to `main`, `actionlint`, type-check, and tests — so you find breakage before you push instead of in a red PR.

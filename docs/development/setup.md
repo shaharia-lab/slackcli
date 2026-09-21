@@ -23,6 +23,22 @@ before you push instead of in a red PR. Working hooks are a prerequisite for
 contributing here: if a hook needs a tool this machine does not have, install
 it before you start rather than working without the check.
 
+## The lockfile is binding in CI
+
+`bun.lock` is committed, and every CI workflow installs with `bun install
+--frozen-lockfile`. Locally you keep using plain `bun install` — but whenever you
+change `package.json`, **commit the regenerated `bun.lock` alongside it**.
+Otherwise the install step fails with:
+
+```
+error: lockfile had changes, but lockfile is frozen
+note: try re-running without --frozen-lockfile and commit the updated lockfile
+```
+
+The check is about what the lockfile can *satisfy*, not about textual equality:
+widening a range the locked version still matches needs no new lockfile, while
+adding a dependency or moving a range past the locked version does.
+
 ## Everyday commands
 
 ```bash

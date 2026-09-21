@@ -139,6 +139,52 @@ describe('parseCurlCommand', () => {
     });
   });
 
+  describe('cookie header matching (#213)', () => {
+    const URL = `curl 'https://test.slack.com/api/test'`;
+    const DATA = `--data 'name="token" xoxc-test'`;
+
+    function xoxdFieldError(curl: string): string | undefined {
+      try {
+        parseCurlCommand(curl);
+      } catch (e) {
+        return (e as CurlParseError).field;
+      }
+      return undefined;
+    }
+
+    it('should stay linear on a Cookie header of 50,000 spaces with no closing quote', () => {
+      const curl = `${URL} -H 'Cookie:${' '.repeat(50_000)}`;
+      const start = performance.now();
+      const field = xoxdFieldError(curl);
+      const ms = performance.now() - start;
+      expect(field).toBe('xoxd');
+      expect(ms).toBeLessThan(100);
+    });
+
+    it('should skip whitespace between "Cookie:" and the value', () => {
+      const result = parseCurlCommand(`${URL} -H 'cookie: \t  d=xoxd-spaced; x=1' ${DATA}`);
+      expect(result.xoxd).toBe('xoxd-spaced');
+    });
+
+    it('should use the first cookie source when several are present', () => {
+      const bFirst = `${URL} -b 'd=xoxd-from-b' -H 'Cookie: d=xoxd-from-header' ${DATA}`;
+      expect(parseCurlCommand(bFirst).xoxd).toBe('xoxd-from-b');
+
+      const headerFirst = `${URL} -H 'Cookie: d=xoxd-from-header' --cookie 'd=xoxd-from-cookie' ${DATA}`;
+      expect(parseCurlCommand(headerFirst).xoxd).toBe('xoxd-from-header');
+
+      const cookieFirst = `${URL} --cookie 'd=xoxd-from-cookie' -b 'd=xoxd-from-b' ${DATA}`;
+      expect(parseCurlCommand(cookieFirst).xoxd).toBe('xoxd-from-cookie');
+    });
+
+    it('should not treat a whitespace-only Cookie header as a cookie value', () => {
+      // An empty header previously shadowed a later -b; it is now skipped.
+      const curl = `${URL} -H 'Cookie:   ' -b 'd=xoxd-later' ${DATA}`;
+      expect(parseCurlCommand(curl).xoxd).toBe('xoxd-later');
+      expect(xoxdFieldError(`${URL} -H 'Cookie:   ' ${DATA}`)).toBe('xoxd');
+    });
+  });
+
   describe('xoxc token extraction', () => {
     it('should extract xoxc token from --data-raw', () => {
       const result = parseCurlCommand(SAMPLE_CURL_COMMAND);

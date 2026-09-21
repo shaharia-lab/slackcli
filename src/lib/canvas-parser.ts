@@ -66,15 +66,18 @@ function processCodeBlocks(html: string): string {
 /** Remove editor noise: temp IDs, decorative classes, style attrs, spans, trailing br. */
 function stripNoise(html: string): string {
   let result = html;
+  // The (?<!\s) lookbehind starts each attribute match only at the first
+  // whitespace of a run, so a long run without the attribute is scanned once
+  // instead of once per position (quadratic backtracking, #213).
   // Remove id attributes
-  result = result.replace(/\s+id=(?:'[^']*'|"[^"]*")/gi, '');
+  result = result.replace(/(?<!\s)\s+id=(?:'[^']*'|"[^"]*")/gi, '');
   // Remove style attributes
-  result = result.replace(/\s+style=(?:'[^']*'|"[^"]*")/gi, '');
+  result = result.replace(/(?<!\s)\s+style=(?:'[^']*'|"[^"]*")/gi, '');
   // Remove value attributes on li
-  result = result.replace(/\s+value=(?:'[^']*'|"[^"]*")/gi, '');
+  result = result.replace(/(?<!\s)\s+value=(?:'[^']*'|"[^"]*")/gi, '');
   // Remove decorative classes (keep semantic ones: checked, embedded-file, embedded-link, prettyprint)
   result = result.replace(
-    /\s+class=(?:'([^']*)'|"([^"]*)")/gi,
+    /(?<!\s)\s+class=(?:'([^']*)'|"([^"]*)")/gi,
     (_match, single: string | undefined, double: string | undefined) => {
       const val = single ?? double ?? '';
       if (/^(checked|embedded-file|embedded-link|prettyprint)$/.test(val.trim())) {
@@ -121,7 +124,7 @@ function convertControlElements(html: string): string {
       if (linkMatch) return `[${linkMatch[2]}](${linkMatch[1]})`;
 
       // Plain text (dates, etc.)
-      const text = inner.replace(/<[^>]*>/g, '').trim();
+      const text = inner.replace(/<[^<>]*>/g, '').trim();
       return text;
     },
   );

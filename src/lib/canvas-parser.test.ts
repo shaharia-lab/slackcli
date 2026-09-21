@@ -330,6 +330,78 @@ describe('canvasHtmlToMarkdown', () => {
   });
 });
 
+describe('canvasHtmlToMarkdown attribute and tag stripping (#213)', () => {
+  // Old patterns take seconds on these inputs; linear ones take a few ms.
+  const LONG = 50_000;
+  const TIME_LIMIT_MS = 100;
+
+  function timed(html: string): { result: string; ms: number } {
+    const start = performance.now();
+    const result = canvasHtmlToMarkdown(html);
+    return { result, ms: performance.now() - start };
+  }
+
+  for (const attr of ['id', 'style', 'value', 'class']) {
+    it(`should stay linear on a long whitespace run followed by "${attr}" without "="`, () => {
+      const { result, ms } = timed(`<p>a${' '.repeat(LONG)}${attr}</p>`);
+      expect(result).toBe(`a${' '.repeat(LONG)}${attr}\n`);
+      expect(ms).toBeLessThan(TIME_LIMIT_MS);
+    });
+  }
+
+  it('should stay linear on a long mixed-whitespace run with no attribute', () => {
+    const run = ' \t'.repeat(LONG / 2);
+    const { result, ms } = timed(`<p>a${run}b</p>`);
+    expect(result).toBe(`a${run}b\n`);
+    expect(ms).toBeLessThan(TIME_LIMIT_MS);
+  });
+
+  it('should stay linear on a long run of "<" with no ">" inside a control element', () => {
+    const { result, ms } = timed(`<control data-remapped="true">${'<'.repeat(LONG)}</control>`);
+    expect(result).toBe(`${'<'.repeat(LONG)}\n`);
+    expect(ms).toBeLessThan(TIME_LIMIT_MS);
+  });
+
+  it('should remove id, style and value attributes preceded by several spaces', () => {
+    expect(canvasHtmlToMarkdown(`<p   id="x">a</p>`)).toBe('a\n');
+    expect(canvasHtmlToMarkdown(`<p \t style='color: red'>a</p>`)).toBe('a\n');
+    expect(canvasHtmlToMarkdown(`<ol><li\n  value="3">a</li></ol>`)).toBe('a\n');
+  });
+
+  it('should remove id, style and value attributes in both quote styles', () => {
+    expect(canvasHtmlToMarkdown(`<h1 id='a' style="b">T</h1>`)).toBe('# T\n');
+    expect(canvasHtmlToMarkdown(`<h1 id="a" style='b'>T</h1>`)).toBe('# T\n');
+    expect(canvasHtmlToMarkdown(`<h1 ID="a"  STYLE='b'   VALUE="c">T</h1>`)).toBe('# T\n');
+  });
+
+  it('should keep only the semantic class values', () => {
+    // Decorative classes are removed, whatever the whitespace or quotes
+    expect(canvasHtmlToMarkdown(`<p   class="line">a</p>`)).toBe('a\n');
+    expect(canvasHtmlToMarkdown(`<b\tclass='parent'>x</b>`)).toBe('**x**\n');
+    // Semantic classes survive stripNoise and drive later conversions
+    expect(
+      canvasHtmlToMarkdown(`<div data-section-style='7'><ul><li   class="checked">done</li></ul></div>`),
+    ).toBe('- [x] done\n');
+    expect(canvasHtmlToMarkdown(`<p  class='embedded-file'>File ID: F1 File URL: https://t.slack.com/files/U1/F1/a.gif</p>`))
+      .toContain('[a.gif](https://t.slack.com/files/U1/F1/a.gif)');
+    expect(canvasHtmlToMarkdown(`<p\n class="embedded-link">Link URL: https://example.com</p>`))
+      .toContain('[https://example.com](https://example.com)');
+    expect(canvasHtmlToMarkdown(`<pre  class="prettyprint">let a = 1;</pre>`)).toContain('```\nlet a = 1;\n```');
+  });
+
+  it('should strip tags from plain control text', () => {
+    expect(canvasHtmlToMarkdown(`<control data-remapped="true"><i>Sep</i> <b>15th</b></control>`)).toBe(
+      'Sep 15th\n',
+    );
+  });
+
+  it('should keep a raw "<" in control text instead of treating it as a tag start', () => {
+    // Slack encodes a literal "<" as &lt;, so this only arises in malformed input.
+    // The old /<[^>]*>/ removed "< b <i>" here; /<[^<>]*>/ keeps the text intact.
+    expect(canvasHtmlToMarkdown(`<control data-remapped="true">a < b <i>x</i></control>`)).toBe('a < b x\n');
+  });
+});
+
 describe('isAuthPage', () => {
   it('should detect Slack sign-in pages', () => {
     expect(isAuthPage(AUTH_PAGE)).toBe(true);

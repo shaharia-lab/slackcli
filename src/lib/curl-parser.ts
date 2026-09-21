@@ -44,9 +44,11 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   // Extract xoxd token from cookie header
   // Supports: -b 'cookies', --cookie 'cookies', -H 'Cookie: cookies'
   const cookieMatch = curlInput.match(
-    /-b\s+'([^']+)'|--cookie\s+'([^']+)'|-H\s+'[Cc]ookie:\s*([^']+)'/
+    // The value's first character excludes whitespace so `\s*` and the value
+    // never compete for the same characters (quadratic backtracking, #213).
+    /(?:-b|--cookie)\s+'([^']+)'|-H\s+'[Cc]ookie:\s*([^'\s][^']*)'/
   );
-  const cookieHeader = cookieMatch ? (cookieMatch[1] || cookieMatch[2] || cookieMatch[3]) : '';
+  const cookieHeader = cookieMatch ? (cookieMatch[1] || cookieMatch[2]) : '';
 
   const xoxdMatch = cookieHeader.match(/(?:^|;\s*)d=(xoxd-[^;]+)/);
   if (!xoxdMatch) {

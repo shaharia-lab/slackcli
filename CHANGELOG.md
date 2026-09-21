@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Faster startup**: release binaries are now compiled with Bun's `--bytecode`, cutting `slackcli --help` cold start from ~130 ms to ~80 ms on Linux x64; CI and releases move from Bun 1.3.13 to 1.4.1 (#137)
   - Binary size against the 1.3.13 builds: Linux x64 98 → 82 MB, Windows x64 113 → 87 MB, macOS x64 66 → 71 MB
+- **Canvas and cURL parsing stay fast on pathological input**: the canvas attribute and tag strippers and the cURL cookie matcher no longer backtrack quadratically, so a long whitespace run or a run of unclosed `<` parses in milliseconds instead of seconds; output for well-formed input is unchanged (#213)
+  - A raw `<` inside a canvas date/text element is now kept instead of swallowing the text up to the next tag, and a whitespace-only `-H 'Cookie:'` header no longer hides a later `-b`/`--cookie`
 
 ### Security
 - **`files download --output` is contained to the working directory**: an output path that resolves outside the current directory is now confirmed before anything is downloaded — `--yes` proceeds, an interactive terminal prompts `y/N`, and a non-interactive shell without `--yes` refuses with a non-zero exit (#191)

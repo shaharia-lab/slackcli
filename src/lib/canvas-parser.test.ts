@@ -72,6 +72,10 @@ const EMOJI_CUSTOM = `<control data-remapped="true"><img src="https://emoji.slac
 
 const EMOJI_STANDARD = `<control data-remapped="true"><img src="https://a.slack-edge.com/production-standard-emoji-assets/14.0/google-small/1f1fa.png" alt="flag-us" data-is-slack style="width: 18px">:flag-us:</img></control>`;
 
+const EMOJI_PLUS = `<control data-remapped="true"><img src="https://a.slack-edge.com/production-standard-emoji-assets/14.0/google-small/1f44d.png" alt="+1" data-is-slack style="width: 18px">:+1:</img></control>`;
+
+const EMOJI_UNDERSCORE = `<control data-remapped="true"><img src="https://a.slack-edge.com/production-standard-emoji-assets/14.0/google-small/2705.png" alt="white_check_mark" data-is-slack style="width: 18px">:white_check_mark:</img></control>`;
+
 const USER_MENTION = `<control data-remapped="true"><a>@U023L3A4UKX</a></control>`;
 
 const CHANNEL_MENTION = `<control data-remapped="true"><a>#CNMU9L92Q</a></control>`;
@@ -222,6 +226,20 @@ describe('canvasHtmlToMarkdown', () => {
     it('should convert standard emoji control elements to :name:', () => {
       const result = canvasHtmlToMarkdown(EMOJI_STANDARD);
       expect(result).toContain(':flag-us:');
+    });
+
+    it('should convert emoji names containing + to :name:', () => {
+      const result = canvasHtmlToMarkdown(EMOJI_PLUS);
+      expect(result).toContain(':+1:');
+      expect(result).not.toContain('<control');
+      expect(result).not.toContain('<img');
+    });
+
+    it('should convert emoji names containing _ to :name:', () => {
+      const result = canvasHtmlToMarkdown(EMOJI_UNDERSCORE);
+      expect(result).toContain(':white_check_mark:');
+      expect(result).not.toContain('<control');
+      expect(result).not.toContain('<img');
     });
 
     it('should convert user mentions to <@U...> format', () => {

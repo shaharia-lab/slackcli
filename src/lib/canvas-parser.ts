@@ -106,7 +106,7 @@ function convertControlElements(html: string): string {
     /<control\b[^>]*>([\s\S]*?)<\/control>/gi,
     (_match, inner: string) => {
       // Emoji: look for :name: text pattern (from <img>:name:</img> or siblings)
-      const emojiMatch = inner.match(/:([a-zA-Z0-9_+\-]+):/);
+      const emojiMatch = inner.match(/:([a-zA-Z0-9_+-]+):/);
       if (emojiMatch && inner.includes('data-is-slack')) {
         return `:${emojiMatch[1]}:`;
       }

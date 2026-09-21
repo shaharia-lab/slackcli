@@ -54,6 +54,16 @@ const CURL_URL_FLAG_EQUALS = `curl --url="https://chromeorg.enterprise.slack.com
   --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-url-equals-test\\r\\n------Boundary--\\r\\n'`;
 
 describe('parseCurlCommand', () => {
+  /** The `field` of the CurlParseError thrown for `curl`, or undefined if it parses. */
+  function parseErrorField(curl: string): string | undefined {
+    try {
+      parseCurlCommand(curl);
+    } catch (e) {
+      return (e as CurlParseError).field;
+    }
+    return undefined;
+  }
+
   describe('workspace extraction', () => {
     it('should extract workspace name and URL from standard curl command', () => {
       const result = parseCurlCommand(SAMPLE_CURL_COMMAND);
@@ -143,19 +153,10 @@ describe('parseCurlCommand', () => {
     const URL = `curl 'https://test.slack.com/api/test'`;
     const DATA = `--data 'name="token" xoxc-test'`;
 
-    function xoxdFieldError(curl: string): string | undefined {
-      try {
-        parseCurlCommand(curl);
-      } catch (e) {
-        return (e as CurlParseError).field;
-      }
-      return undefined;
-    }
-
     it('should stay linear on a Cookie header of 50,000 spaces with no closing quote', () => {
       const curl = `${URL} -H 'Cookie:${' '.repeat(50_000)}`;
       const start = performance.now();
-      const field = xoxdFieldError(curl);
+      const field = parseErrorField(curl);
       const ms = performance.now() - start;
       expect(field).toBe('xoxd');
       expect(ms).toBeLessThan(100);
@@ -181,7 +182,7 @@ describe('parseCurlCommand', () => {
       // An empty header previously shadowed a later -b; it is now skipped.
       const curl = `${URL} -H 'Cookie:   ' -b 'd=xoxd-later' ${DATA}`;
       expect(parseCurlCommand(curl).xoxd).toBe('xoxd-later');
-      expect(xoxdFieldError(`${URL} -H 'Cookie:   ' ${DATA}`)).toBe('xoxd');
+      expect(parseErrorField(`${URL} -H 'Cookie:   ' ${DATA}`)).toBe('xoxd');
     });
   });
 
@@ -221,15 +222,6 @@ describe('parseCurlCommand', () => {
     const URL = `curl 'https://test.slack.com/api/test' -b 'd=xoxd-test'`;
     const LATER_BODY = `--data-raw '{"token":"xoxc-later"}'`;
 
-    function xoxcFieldError(curl: string): string | undefined {
-      try {
-        parseCurlCommand(curl);
-      } catch (e) {
-        return (e as CurlParseError).field;
-      }
-      return undefined;
-    }
-
     // A double-quoted body cannot hold the quoted "token" key the xoxc
     // extraction needs, so these prove the form is matched by showing it takes
     // the place of a later, valid single-quoted body.
@@ -239,7 +231,7 @@ describe('parseCurlCommand', () => {
       ['--data-raw $"a=1"'],
       ['--data $"a=1"'],
     ])('should match a double-quoted body: %s', (body) => {
-      expect(xoxcFieldError(`${URL} ${body} ${LATER_BODY}`)).toBe('xoxc');
+      expect(parseErrorField(`${URL} ${body} ${LATER_BODY}`)).toBe('xoxc');
     });
 
     it('should extract xoxc token from --data with a plain single-quoted body', () => {
@@ -259,7 +251,7 @@ describe('parseCurlCommand', () => {
       ['--data-binary'],
       ['--data-urlencode'],
     ])('should not read the body of unsupported flag %s', (flag) => {
-      expect(xoxcFieldError(`${URL} ${flag} '{"token":"xoxc-unsupported"}'`)).toBe('xoxc');
+      expect(parseErrorField(`${URL} ${flag} '{"token":"xoxc-unsupported"}'`)).toBe('xoxc');
     });
   });
 

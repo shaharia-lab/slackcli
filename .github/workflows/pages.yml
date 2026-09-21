@@ -95,7 +95,9 @@ jobs:
   deploy:
     needs: build
     # A job-level `permissions:` block REPLACES the workflow-level one rather
-    # than extending it, so `contents: read` has to be restated here.
+    # than extending it, so nothing here inherits `contents: read` — it is
+    # restated deliberately. This job needs no checkout today, but a step added
+    # later would fail confusingly without it.
     permissions:
       contents: read
       pages: write

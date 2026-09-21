@@ -132,9 +132,13 @@ skill that drives the whole sequence. By hand it is:
 2. **`build`** — a matrix of five targets: `linux-x64`, `linux-arm64`,
    `darwin-x64`, `darwin-arm64`, `windows-x64`.
 3. **`release`** — collects the artefacts, generates `checksums.txt` with
-   `sha256sum`, and publishes a GitHub Release with generated notes.
+   `sha256sum`, and publishes a GitHub Release with generated notes. It also
+   exposes the four Unix binaries' checksums from that file as job outputs.
 4. **`update-homebrew`** — mints a short-lived token from a GitHub App scoped to
-   `shaharia-lab/homebrew-tap` only, and updates the formula there.
+   `shaharia-lab/homebrew-tap` only, and updates the formula there. The formula
+   `sha256` values come from the `release` job's `checksums.txt` (nothing is
+   re-downloaded), and the job fails before writing to the tap if any of them
+   is missing or is not a 64-character hex SHA256.
 
 Permissions are least-privilege throughout: the workflow default is
 `contents: read`, and only the `release` job opts into `contents: write`.

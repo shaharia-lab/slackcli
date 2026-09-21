@@ -115,6 +115,13 @@ jobs:
     # Only this job writes to the repo (creating the GitHub Release).
     permissions:
       contents: write
+    # The Homebrew formula checksums are taken from the checksums.txt this job
+    # generates, so update-homebrew never re-downloads and re-hashes the assets.
+    outputs:
+      sha_macos_x86: ${{ steps.sums.outputs.sha_macos_x86 }}
+      sha_macos_arm: ${{ steps.sums.outputs.sha_macos_arm }}
+      sha_linux: ${{ steps.sums.outputs.sha_linux }}
+      sha_linux_arm: ${{ steps.sums.outputs.sha_linux_arm }}
 
     steps:
       - name: Checkout code
@@ -136,6 +143,18 @@ jobs:
           cd release
           sha256sum * > checksums.txt
           cat checksums.txt
+
+      - name: Expose Homebrew checksums
+        id: sums
+        run: |
+          # Exact-name match: slackcli-macos must not also match slackcli-macos-arm64.
+          sha_for() { awk -v f="$1" '$2 == f { print $1 }' release/checksums.txt; }
+          {
+            echo "sha_macos_x86=$(sha_for slackcli-macos)"
+            echo "sha_macos_arm=$(sha_for slackcli-macos-arm64)"
+            echo "sha_linux=$(sha_for slackcli-linux)"
+            echo "sha_linux_arm=$(sha_for slackcli-linux-arm64)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -171,17 +190,26 @@ jobs:
       - name: Update Homebrew formulas
         env:
           GH_TOKEN: ${{ steps.tap_token.outputs.token }}
+          SHA_MACOS_X86: ${{ needs.release.outputs.sha_macos_x86 }}
+          SHA_MACOS_ARM: ${{ needs.release.outputs.sha_macos_arm }}
+          SHA_LINUX: ${{ needs.release.outputs.sha_linux }}
+          SHA_LINUX_ARM: ${{ needs.release.outputs.sha_linux_arm }}
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION_NUM="${VERSION#v}"
           VERSION_CLASS=$(echo "$VERSION_NUM" | tr -d '.')
 
-          # Calculate SHA256 for all binaries
-          echo "Calculating SHA256 checksums..."
-          SHA_MACOS_X86=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos" | sha256sum | cut -d' ' -f1)
-          SHA_MACOS_ARM=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-macos-arm64" | sha256sum | cut -d' ' -f1)
-          SHA_LINUX=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-linux" | sha256sum | cut -d' ' -f1)
-          SHA_LINUX_ARM=$(curl -sL "https://github.com/shaharia-lab/slackcli/releases/download/${VERSION}/slackcli-linux-arm64" | sha256sum | cut -d' ' -f1)
+          # Checksums come from the release job's checksums.txt. Refuse to write
+          # the tap if any is missing or malformed, so a broken formula never ships.
+          for pair in SHA_MACOS_X86:slackcli-macos SHA_MACOS_ARM:slackcli-macos-arm64 \
+                      SHA_LINUX:slackcli-linux SHA_LINUX_ARM:slackcli-linux-arm64; do
+            var="${pair%%:*}"
+            asset="${pair#*:}"
+            if ! [[ "${!var}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::No valid SHA256 for ${asset} in checksums.txt (${var}='${!var}')"
+              exit 1
+            fi
+          done
           echo "SHA256 macOS x86_64: ${SHA_MACOS_X86}"
           echo "SHA256 macOS arm64: ${SHA_MACOS_ARM}"
           echo "SHA256 Linux x86_64: ${SHA_LINUX}"

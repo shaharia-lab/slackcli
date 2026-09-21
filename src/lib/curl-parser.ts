@@ -25,6 +25,15 @@ export function extractSlackWorkspaceName(url: string): string {
 }
 
 /**
+ * Request body of a cURL command: `--data-raw` or `--data`, followed by a
+ * single-quoted ('…', $'…') or double-quoted ("…", $"…") value. Group 1 holds a
+ * single-quoted body, group 2 a double-quoted one. `--data\s` cannot match
+ * inside `--data-raw`, `--data-binary` or `--data-urlencode`, and a single scan
+ * means the leftmost flag in the command wins.
+ */
+const DATA_BODY_PATTERN = /--data(?:-raw)?\s+\$?(?:'([^']+)'|"([^"]+)")/;
+
+/**
  * Parse a cURL command and extract Slack authentication tokens
  */
 export function parseCurlCommand(curlInput: string): ParsedCurlResult {
@@ -58,13 +67,8 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   const xoxd = decodeURIComponent(xoxdEncoded);
 
   // Extract xoxc token from data
-  // Supports: --data-raw 'data', --data-raw $'data', --data 'data', --data $'data'
-  const dataMatch = curlInput.match(
-    /--data-raw\s+\$?'([^']+)'|--data-raw\s+\$?"([^"]+)"|--data\s+\$?'([^']+)'|--data\s+\$?"([^"]+)"/
-  );
-  const dataContent = dataMatch
-    ? (dataMatch[1] || dataMatch[2] || dataMatch[3] || dataMatch[4])
-    : '';
+  const dataMatch = curlInput.match(DATA_BODY_PATTERN);
+  const dataContent = dataMatch ? (dataMatch[1] ?? dataMatch[2] ?? '') : '';
 
   const xoxcMatch =
     dataContent.match(/name="token".*?(xoxc-[a-zA-Z0-9-]+)/) ||

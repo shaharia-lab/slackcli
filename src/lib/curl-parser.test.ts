@@ -217,6 +217,52 @@ describe('parseCurlCommand', () => {
     });
   });
 
+  describe('request body flag matching (#214)', () => {
+    const URL = `curl 'https://test.slack.com/api/test' -b 'd=xoxd-test'`;
+    const LATER_BODY = `--data-raw '{"token":"xoxc-later"}'`;
+
+    function xoxcFieldError(curl: string): string | undefined {
+      try {
+        parseCurlCommand(curl);
+      } catch (e) {
+        return (e as CurlParseError).field;
+      }
+      return undefined;
+    }
+
+    // A double-quoted body cannot hold the quoted "token" key the xoxc
+    // extraction needs, so these prove the form is matched by showing it takes
+    // the place of a later, valid single-quoted body.
+    it.each([
+      ['--data-raw "a=1"'],
+      ['--data "a=1"'],
+      ['--data-raw $"a=1"'],
+      ['--data $"a=1"'],
+    ])('should match a double-quoted body: %s', (body) => {
+      expect(xoxcFieldError(`${URL} ${body} ${LATER_BODY}`)).toBe('xoxc');
+    });
+
+    it('should extract xoxc token from --data with a plain single-quoted body', () => {
+      const result = parseCurlCommand(`${URL} --data '{"token":"xoxc-plain-data"}'`);
+      expect(result.xoxc).toBe('xoxc-plain-data');
+    });
+
+    it('should use the leftmost body flag when --data and --data-raw are both present', () => {
+      const dataFirst = `${URL} --data '{"token":"xoxc-from-data"}' --data-raw '{"token":"xoxc-from-raw"}'`;
+      expect(parseCurlCommand(dataFirst).xoxc).toBe('xoxc-from-data');
+
+      const rawFirst = `${URL} --data-raw '{"token":"xoxc-from-raw"}' --data '{"token":"xoxc-from-data"}'`;
+      expect(parseCurlCommand(rawFirst).xoxc).toBe('xoxc-from-raw');
+    });
+
+    it.each([
+      ['--data-binary'],
+      ['--data-urlencode'],
+    ])('should not read the body of unsupported flag %s', (flag) => {
+      expect(xoxcFieldError(`${URL} ${flag} '{"token":"xoxc-unsupported"}'`)).toBe('xoxc');
+    });
+  });
+
   describe('complete parsing', () => {
     it('should parse all tokens from a complete curl command', () => {
       const result = parseCurlCommand(SAMPLE_CURL_COMMAND);

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **`files download --output` is contained to the working directory**: an output path that resolves outside the current directory is now confirmed before anything is downloaded — `--yes` proceeds, an interactive terminal prompts `y/N`, and a non-interactive shell without `--yes` refuses with a non-zero exit (#191)
+  - Paths inside the current directory are unchanged and never prompt; the `'wx'` open flag is unchanged, so an existing file still fails with `EEXIST` and is never truncated
+  - The check resolves the parent directory through symlinks, so a symlinked subdirectory pointing out of the working tree is caught as well, and the message names the resolved absolute path rather than the string that was typed
+  - **Breaking for unattended scripts** that download to an absolute path or a `../` path without `--yes`: add `--yes`, or `cd` into the target directory and pass a relative path
+
 ## [0.12.0] - 2026-09-19
 
 ### Added

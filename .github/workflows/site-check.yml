@@ -41,7 +41,7 @@ jobs:
 
       - name: Install
         working-directory: web
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # No PUBLIC_GTM_ID, deliberately: a pull request build must not carry the
       # analytics tag or the consent banner. See the note in pages.yml.

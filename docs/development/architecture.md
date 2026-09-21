@@ -84,6 +84,7 @@ endpoints. Each divergence is one method, and each is a deliberate trade:
 | Method | Browser | Standard |
 |---|---|---|
 | `createDraft` | `drafts.create` | throws — no public API exists |
+| `listDrafts` | `drafts.list` | throws — no public API exists |
 | `listSavedItems` | `saved.list` | `stars.list` |
 | `searchModules` | `search.modules` | list + client-side filter (capped at 1000) |
 | `getUnreadCounts` | `client.counts` | `conversations.list` unread fields |

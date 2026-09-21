@@ -108,6 +108,47 @@ export interface SlackMessage {
   files?: SlackFile[];
 }
 
+// Raw shape returned by Slack's undocumented drafts.list web-client method.
+// Fields stay optional because this is not a public contract; src/lib/drafts.ts
+// validates the identifiers required by the stable CLI projection.
+export interface SlackDraftDestination {
+  channel_id?: string;
+  thread_ts?: string;
+  user_ids?: string[];
+  broadcast?: boolean;
+}
+
+export interface SlackDraft {
+  id?: string;
+  date_created?: number;
+  date_scheduled?: number;
+  file_ids?: string[];
+  destinations?: SlackDraftDestination[];
+  blocks?: Array<Record<string, unknown>>;
+  is_deleted?: boolean;
+  is_sent?: boolean;
+}
+
+export interface SlackDraftListResponse {
+  ok: boolean;
+  drafts?: SlackDraft[];
+  files?: SlackFile[];
+  has_more?: boolean;
+}
+
+// Stable, explicit projection emitted by `messages list-drafts`. Do not expose
+// Slack's raw draft object: this endpoint is undocumented and may add or change
+// internal fields without notice.
+export interface DraftSummary {
+  draft_id: string;
+  channel_id: string;
+  text: string;
+  date_created: number;
+  file_ids: string[];
+  thread_ts?: string;
+  date_scheduled?: number;
+}
+
 export interface SlackAuthTestResponse {
   ok: boolean;
   url: string;

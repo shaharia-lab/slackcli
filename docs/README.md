@@ -19,7 +19,7 @@ Start here if you want to *use* SlackCLI.
 | [Workspaces and profiles](user-guide/workspaces.md) | Several workspaces, several identities per workspace |
 | [Slack links and timestamps](user-guide/links-and-timestamps.md) | Paste a Slack URL anywhere an ID is expected |
 | [Conversations](user-guide/conversations.md) | List channels and DMs, read history, threads, unreads |
-| [Messages](user-guide/messages.md) | Send, reply, edit, react, draft, attach files, Block Kit |
+| [Messages](user-guide/messages.md) | Send, reply, edit, react, create/list drafts, attach files, Block Kit |
 | [Search](user-guide/search.md) | Search messages, channels, and people |
 | [Team](user-guide/team.md) | Read the workspace's own name, domain, and ID |
 | [User groups](user-guide/usergroups.md) | List and read user groups, and manage them behind `--yes` |

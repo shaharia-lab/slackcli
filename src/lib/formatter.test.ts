@@ -8,6 +8,7 @@ import {
   formatUnreadChannels,
   formatPaginationHint,
   formatFileSize,
+  formatDraftList,
   formatMessage,
   writeJson,
 } from './formatter.ts';
@@ -19,7 +20,47 @@ import type {
   UnreadChannel,
   SlackUser,
   SlackMessage,
+  DraftSummary,
 } from '../types/index.ts';
+
+describe('formatDraftList', () => {
+  it('renders destination, age, bounded text, thread, files, schedule, and draft id', () => {
+    const drafts: DraftSummary[] = [{
+      draft_id: 'Dr123',
+      channel_id: 'C123',
+      text: `Deploy\n${'x'.repeat(140)}`,
+      date_created: 1700000000,
+      file_ids: ['F1', 'F2'],
+      thread_ts: '1699999999.000100',
+      date_scheduled: 1700003600,
+    }];
+
+    const output = formatDraftList(drafts, 1700000600 * 1000);
+
+    expect(output).toContain('Active Drafts (1)');
+    expect(output).toContain('C123');
+    expect(output).toContain('10m ago');
+    expect(output).toContain('Deploy x');
+    expect(output).toContain('...');
+    expect(output).toContain('draft: Dr123');
+    expect(output).toContain('thread: 1699999999.000100');
+    expect(output).toContain('files: 2');
+    expect(output).toContain('scheduled:');
+  });
+
+  it('uses a clear placeholder for an empty draft body', () => {
+    const output = formatDraftList([{
+      draft_id: 'DrEmpty',
+      channel_id: 'D123',
+      text: '',
+      date_created: 1700000000,
+      file_ids: [],
+    }], 1700000000 * 1000);
+
+    expect(output).toContain('just now');
+    expect(output).toContain('[no text]');
+  });
+});
 
 describe('formatSavedItems', () => {
   it('renders message items with user info', () => {

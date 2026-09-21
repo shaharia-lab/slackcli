@@ -23,7 +23,7 @@ list for the version you have installed.
 |---|---|
 | `auth` | Sign in, list/select/remove workspaces, extract tokens |
 | `conversations` | List channels and DMs, read history and threads, unreads |
-| `messages` | Send, reply, edit, react, draft, attach files, Block Kit |
+| `messages` | Send, reply, edit, react, create/list drafts, attach files, Block Kit |
 | `search` | Search messages, channels, and people |
 | `team` | Read the workspace's own name, domain, and ID |
 | `usergroups` | List, read, and manage user groups ("subteams") |

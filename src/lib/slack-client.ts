@@ -1,7 +1,11 @@
 import { WebClient } from '@slack/web-api';
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
-import type { WorkspaceConfig, SlackAuthTestResponse } from '../types/index.ts';
+import type {
+  SlackAuthTestResponse,
+  SlackDraftListResponse,
+  WorkspaceConfig,
+} from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
 import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
@@ -283,6 +287,17 @@ export class SlackClient {
     };
 
     return this.request('drafts.create', params);
+  }
+
+  // List active drafts (browser auth only; Slack has no public API for drafts).
+  async listDrafts(options: { limit?: number } = {}): Promise<SlackDraftListResponse> {
+    if (this.config.auth_type === 'standard') {
+      throw new Error('Draft listing requires browser authentication');
+    }
+
+    const params: Record<string, any> = { is_active: true };
+    if (options.limit !== undefined) params.limit = options.limit;
+    return this.request('drafts.list', params);
   }
 
   // Get user info

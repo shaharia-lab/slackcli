@@ -40,18 +40,23 @@ jobs:
         include:
           - os: ubuntu-latest
             target: bun-linux-x64
+            smoke: true
             artifact: slackcli-linux
           - os: ubuntu-latest
             target: bun-linux-arm64
+            smoke: false
             artifact: slackcli-linux-arm64
           - os: macos-latest
             target: bun-darwin-x64
+            smoke: false
             artifact: slackcli-macos
           - os: macos-latest
             target: bun-darwin-arm64
+            smoke: true
             artifact: slackcli-macos-arm64
           - os: windows-latest
             target: bun-windows-x64
+            smoke: true
             artifact: slackcli-windows.exe
 
     runs-on: ${{ matrix.os }}
@@ -65,9 +70,11 @@ jobs:
         with:
           # Pinned: Bun 1.3.12 produced corrupt macOS code signatures that
           # caused the released binary to be killed on launch on Apple
-          # Silicon (issue #43, oven-sh/bun#29120). Fixed in Bun 1.3.13.
-          # Bump intentionally after reviewing Bun release notes.
-          bun-version: 1.3.13
+          # Silicon (issue #43, oven-sh/bun#29120). 1.4.1 is the first release
+          # whose --bytecode cross-compiles to Windows x64 (#137); bytecode is
+          # tied to the Bun that emits it. Bump intentionally after reviewing
+          # Bun release notes.
+          bun-version: 1.4.1
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
@@ -77,13 +84,23 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Build binary
-        run: bun build --compile --minify --target=${{ matrix.target }} --define __APP_VERSION__='"${{ steps.version.outputs.VERSION }}"' src/index.ts --outfile dist/${{ matrix.artifact }}
+        run: bun build --compile --minify --bytecode --splitting --format=esm --target=${{ matrix.target }} --define __APP_VERSION__='"${{ steps.version.outputs.VERSION }}"' src/index.ts --outfile dist/${{ matrix.artifact }}
 
       - name: Ad-hoc sign macOS binary
         if: runner.os == 'macOS'
         run: |
           codesign --force --sign - dist/${{ matrix.artifact }}
           codesign --verify --verbose dist/${{ matrix.artifact }}
+
+      # Run the (signed) binary before it ships: bytecode + --splitting change
+      # how modules are wired, and CI only exercises Linux x64 (#137). Skipped
+      # where the target arch differs from the runner's.
+      - name: Smoke test binary
+        if: matrix.smoke
+        shell: bash
+        run: |
+          ./dist/${{ matrix.artifact }} --version
+          ./dist/${{ matrix.artifact }} --help > /dev/null
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -3,7 +3,7 @@ import type {
   SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
   SlackTeam, SlackUsergroup, UsergroupMember,
-  CustomEmoji,
+  CustomEmoji, DraftSummary,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
 
@@ -23,6 +23,37 @@ import { isUsergroupEnabled } from './usergroups.ts';
 // Set process.exitCode and return instead.
 export function writeJson(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + '\n');
+}
+
+function formatDraftAge(createdAt: number, nowMs: number): string {
+  const seconds = Math.max(0, Math.floor(nowMs / 1000 - createdAt));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+export function formatDraftList(drafts: DraftSummary[], nowMs: number = Date.now()): string {
+  let output = chalk.bold(`📝 Active Drafts (${drafts.length})\n\n`);
+
+  drafts.forEach((draft, index) => {
+    const age = formatDraftAge(draft.date_created, nowMs);
+    const preview = truncateText(draft.text.replace(/\s+/g, ' ').trim(), 120);
+    const metadata = [`draft: ${draft.draft_id}`];
+    if (draft.thread_ts) metadata.push(`thread: ${draft.thread_ts}`);
+    if (draft.file_ids.length > 0) metadata.push(`files: ${draft.file_ids.length}`);
+    if (draft.date_scheduled) {
+      metadata.push(`scheduled: ${formatTimestamp(String(draft.date_scheduled))}`);
+    }
+
+    output += `  ${chalk.dim(`${index + 1}.`)} ${chalk.bold(draft.channel_id)} ${chalk.dim(`(${age})`)}\n`;
+    output += `     ${preview}\n`;
+    output += `     ${chalk.dim(metadata.join(' | '))}\n\n`;
+  });
+
+  return output;
 }
 
 // Format timestamp to human-readable date

@@ -97,7 +97,7 @@ Browser auth does not have this limitation.
 
 ## Drafts fail with `requires browser authentication`
 
-Slack apps cannot create drafts. Use a browser-authenticated profile.
+Slack apps cannot create or list drafts. Use a browser-authenticated profile.
 
 ## Truncated JSON when piping
 

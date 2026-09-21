@@ -164,6 +164,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Inspect or download a Slack file | `slackcli files info F123` | [files](docs/user-guide/files.md) |
 | Upload a file with a message | `slackcli messages send --file=./report.pdf …` | [messages](docs/user-guide/messages.md) |
 | Post rich Block Kit content | `slackcli messages send --blocks=@blocks.json …` | [messages](docs/user-guide/messages.md) |
+| Review active drafts | `slackcli messages list-drafts` | [messages](docs/user-guide/messages.md) |
 | Script it / feed an AI agent | `… --json \| jq` | [scripting & JSON](docs/user-guide/scripting.md) |
 | Juggle several workspaces | `slackcli conversations list --workspace=automation-bot` | [workspaces](docs/user-guide/workspaces.md) |
 | Fix something that broke | `slackcli auth list` | [troubleshooting](docs/user-guide/troubleshooting.md) |
@@ -224,7 +225,7 @@ flowchart LR
 | **Parse a DevTools cURL** | `slackcli auth parse-curl --login` | Locked-down browsers, or when you already copied the request. |
 | **Browser tokens by hand** | `slackcli auth login-browser --xoxd=… --xoxc=… --workspace-url=…` | Full control, or scripted provisioning. |
 
-Browser session tokens can create **drafts**, which a Slack app simply cannot do, and
+Browser session tokens can create and list **drafts**, which a Slack app simply cannot do, and
 they back `saved list` and `conversations unread` with Slack's own native endpoints
 rather than approximations. Slack app tokens are more stable and survive a browser logout.
 
@@ -298,7 +299,7 @@ slackcli conversations unread
 </details>
 
 <details>
-<summary><code>messages</code> — send, reply, edit, react, draft</summary>
+<summary><code>messages</code> — send, reply, edit, react, create/list drafts</summary>
 
 <br>
 
@@ -312,10 +313,13 @@ slackcli messages send --recipient-id=C123 --message="Done" --json   # {channel_
 slackcli messages react --permalink="$LINK" --emoji=+1
 slackcli messages edit --channel-id=C123 --timestamp=1234567890.123456 --message="Corrected"
 slackcli messages draft --recipient-id=C123 --message="Draft for later"
+slackcli messages list-drafts --json
 ```
 
 > [!NOTE]
-> `messages draft` requires browser session tokens — Slack apps cannot create drafts.
+> `messages draft` and `messages list-drafts` require browser session tokens. Slack exposes
+> no public API for drafts, so these commands use undocumented web-client endpoints that
+> may change without notice.
 
 📄 [messages](docs/user-guide/messages.md)
 

@@ -18,7 +18,7 @@ made — see [architecture](../development/architecture.md#dual-authentication).
   **browser tokens**, easiest via `auth login-auto`.
 
 A few features are browser-only, because Slack exposes no public API for them:
-drafts (`messages draft`), fast channel/people search
+draft creation and listing (`messages draft`, `messages list-drafts`), fast channel/people search
 (`search channels`, `search people` fall back to client-side filtering on
 standard auth), and fetching an arbitrary thread reply by timestamp alone
 (`conversations get`).

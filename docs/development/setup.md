@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) 1.0+ (CI pins **1.3.13** — see
+- [Bun](https://bun.sh) 1.0+ (CI pins **1.4.1** — see
   [build and release](build-and-release.md#why-bun-is-pinned))
 - TypeScript 5.x (installed as a dev dependency)
 - [pre-commit](https://pre-commit.com) — **required**, `brew install pre-commit`

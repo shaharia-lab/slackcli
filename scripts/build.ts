@@ -19,6 +19,12 @@ const result = Bun.spawnSync(
     'build',
     '--compile',
     '--minify',
+    // Precompiled bytecode roughly halves cold start for a few MB of binary
+    // (#137). --bytecode defaults the output to CJS; --format=esm keeps the
+    // module semantics of a plain build and is what --splitting requires.
+    '--bytecode',
+    '--splitting',
+    '--format=esm',
     ...(hasTarget ? [] : ['--sourcemap']),
     ...extraArgs,
     '--define',

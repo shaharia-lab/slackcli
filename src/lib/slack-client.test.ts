@@ -45,6 +45,10 @@ class TestSlackClient extends SlackClient {
       return { ok: true, channel: params.channel, ts: '1234567890.123456' };
     }
 
+    if (method === 'drafts.list') {
+      return { ok: true, drafts: [], files: [], has_more: false };
+    }
+
     if (method === 'conversations.members') {
       return {
         ok: true,
@@ -266,6 +270,33 @@ describe('SlackClient.getPermalink', () => {
     expect(response.permalink).toBe(
       'https://example.slack.com/archives/C123/p1234567890123456',
     );
+  });
+});
+
+describe('SlackClient.listDrafts', () => {
+  it('calls the browser-only drafts.list method for active drafts with the requested limit', async () => {
+    const client = new TestSlackClient();
+
+    const response = await client.listDrafts({ limit: 25 });
+
+    expect(client.calls).toEqual([{
+      method: 'drafts.list',
+      params: { is_active: true, limit: 25 },
+    }]);
+    expect(response).toEqual({ ok: true, drafts: [], files: [], has_more: false });
+  });
+
+  it('fails before making a request when the workspace uses standard authentication', async () => {
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    });
+
+    await expect(client.listDrafts({ limit: 100 }))
+      .rejects.toThrow('Draft listing requires browser authentication');
   });
 });
 

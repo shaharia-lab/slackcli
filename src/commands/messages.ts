@@ -2,7 +2,8 @@ import { Command, Option } from 'commander';
 import ora from 'ora';
 import { readFile } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { success, error, warning, writeJson } from '../lib/formatter.ts';
+import { fetchDrafts, parseDraftLimit } from '../lib/drafts.ts';
+import { error, formatDraftList, success, warning, writeJson } from '../lib/formatter.ts';
 import {
   resolveMessageTarget,
   resolveThreadTarget,
@@ -273,6 +274,44 @@ export function createMessagesCommand(): Command {
         }
       } catch (err: any) {
         spinner.fail('Failed to update message');
+        error(err.message);
+        process.exit(1);
+      }
+    });
+
+  // List active draft messages
+  messages
+    .command('list-drafts')
+    .description('List active drafts. Note: Only works with Browser Session Tokens. Slack apps cannot list drafts.')
+    .option('--limit <number>', 'Maximum number of drafts to return', '100')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output drafts as JSON', false)
+    .action(async (options) => {
+      const spinner = ora('Fetching active drafts...').start();
+
+      try {
+        const limit = parseDraftLimit(options.limit);
+        const client = await getAuthenticatedClient(options.workspace);
+        const drafts = await fetchDrafts(client, {
+          limit,
+          onProgress: (message) => { spinner.text = message; },
+        });
+
+        if (drafts.length === 0) {
+          spinner.succeed('No active drafts found');
+        } else {
+          spinner.succeed(`Found ${drafts.length} active drafts`);
+        }
+
+        if (options.json) {
+          writeJson({ draft_count: drafts.length, drafts });
+          return;
+        }
+        if (drafts.length > 0) {
+          console.log('\n' + formatDraftList(drafts));
+        }
+      } catch (err: any) {
+        spinner.fail('Failed to list drafts');
         error(err.message);
         process.exit(1);
       }

@@ -1,6 +1,6 @@
 # Send, reply, edit and react to Slack messages
 
-`slackcli messages` sends, edits, reacts to, and drafts messages.
+`slackcli messages` sends, edits, reacts to, creates, and lists draft messages.
 
 Every subcommand accepts `--workspace <id|name>`.
 
@@ -189,7 +189,8 @@ Creates an unsent draft in the Slack client — useful when you want a human to
 review and press send.
 
 **Browser auth only.** Slack apps cannot create drafts; there is no public API
-for it. With a standard token the command fails with
+for it. The command uses an undocumented Slack web-client endpoint that may
+change without notice. With a standard token the command fails with
 `Draft creation requires browser authentication`.
 
 The text is converted from Slack mrkdwn into `rich_text` blocks so the draft
@@ -206,6 +207,47 @@ timestamp and no permalink — the draft id is what a follow-up has to work with
   "draft_id": "1234567890.123456"
 }
 ```
+
+## `messages list-drafts`
+
+```bash
+# Human-readable list
+slackcli messages list-drafts
+
+# Stable structured output, capped at 25 active drafts
+slackcli messages list-drafts --limit=25 --json
+```
+
+Lists the authenticated user's active drafts. The default `--limit` is `100`;
+it must be a positive integer. Human output shows each draft's destination,
+age, message preview, draft id, and any thread, file, or scheduled-send metadata.
+
+**Browser auth only.** Slack apps cannot list drafts because Slack exposes no
+public API for it. This command uses the undocumented web-client `drafts.list`
+endpoint, which may change without notice. With a standard token it fails with
+`Draft listing requires browser authentication`.
+
+`--json` deliberately exposes a small, stable projection rather than Slack's
+raw internal draft objects:
+
+```json
+{
+  "draft_count": 1,
+  "drafts": [
+    {
+      "draft_id": "Dr1234567890",
+      "channel_id": "C1234567890",
+      "text": "Draft for later",
+      "date_created": 1789734977,
+      "file_ids": []
+    }
+  ]
+}
+```
+
+`thread_ts` and `date_scheduled` are included only when present. Deleted and
+already-sent entries are excluded, and an empty result is successful with
+`{"draft_count":0,"drafts":[]}`.
 
 ## Related
 

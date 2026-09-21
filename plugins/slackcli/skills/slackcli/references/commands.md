@@ -54,12 +54,14 @@ messages send --permalink=URL --message=T          # reply in that thread
 messages edit (--channel-id=C --timestamp=TS | --permalink=URL) (--message=T | --message-file=F) [--json]
 messages react (--channel-id=C --timestamp=TS | --permalink=URL) --emoji=NAME
 messages draft --recipient-id=C (--message=T | --message-file=F) [--json]    # browser auth only
+messages list-drafts [--limit=100] [--json]                                  # browser auth only
 ```
 
 `U…` recipient opens a DM. `--file` and `--blocks` are exclusive. `--emoji` without
 colons. Only the authenticated identity's messages can be edited.
 JSON: `send` → `{channel_id, ts, permalink?}` (`permalink` omitted if lookup fails);
 with `--file` → `{channel_id, file_id}`. `edit` → `{channel_id, ts}`. `draft` → `{channel_id, draft_id}`.
+`list-drafts` → `{draft_count, drafts[]{draft_id,channel_id,text,date_created,file_ids,thread_ts?,date_scheduled?}}`.
 
 ## search
 
@@ -124,5 +126,6 @@ slackcli canvas read F123 --json | jq -r .markdown > canvas.md
 | `not_allowed_token_type` on search | Needs `xoxp` or browser auth |
 | `not_in_channel` / missing scope | Join the channel or add the scope |
 | `Draft creation requires browser authentication` | Use a browser profile |
+| `Draft listing requires browser authentication` | Use a browser profile |
 | `target_team_must_be_specified_in_org_context` | Add `--team=T…` |
 | usergroups write refused | Confirm with user, add `--yes` |

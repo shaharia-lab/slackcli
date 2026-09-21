@@ -39,7 +39,7 @@ They hold no Slack API knowledge.
 | `canvas.ts` | `list`, `read` |
 | `conversations.ts` | `list`, `read`, `get`, `unread` |
 | `files.ts` | `info`, `read`, `download` |
-| `messages.ts` | `send`, `react`, `edit`, `draft` |
+| `messages.ts` | `send`, `react`, `edit`, `draft`, `list-drafts` |
 | `saved.ts` | `list` |
 | `search.ts` | `messages`, `channels`, `people` |
 | `update.ts` | (default action), `check` |
@@ -57,6 +57,7 @@ They hold no Slack API knowledge.
 | `curl-parser.ts` | Extracts tokens from a DevTools cURL command. |
 | `slack-url-parser.ts` | Slack URL / permalink / timestamp normalisation. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks (drafts). |
+| `drafts.ts` | Validates draft-list limits, extracts text from `rich_text`, and projects undocumented responses into the public command contract. |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
 | `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
 | `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. |
@@ -72,7 +73,7 @@ They hold no Slack API knowledge.
 
 Every shared interface: `AuthType`, `TokenType`, `StandardAuthConfig`,
 `BrowserAuthConfig`, `WorkspaceConfig`, `WorkspacesData`, `SlackChannel`,
-`SlackUser`, `SlackFile`, `SlackMessage`, `SlackAuthTestResponse`, `SavedItem`,
+`SlackUser`, `SlackFile`, `SlackMessage`, `SlackDraft`, `DraftSummary`, `SlackAuthTestResponse`, `SavedItem`,
 `SearchMatch`, `ChannelSearchResult`, `PeopleSearchResult`, `UnreadChannel`,
 `SlackCanvas`, and the per-command option interfaces.
 

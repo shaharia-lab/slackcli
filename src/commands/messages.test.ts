@@ -116,6 +116,22 @@ describe('messages command', () => {
       expect(longOptions(name)).toContain('--permalink');
     }
   });
+
+  it('exposes list-drafts as a browser-only read command with limit, workspace, and JSON options', () => {
+    const command = subcommand('list-drafts');
+    expect(command).toBeDefined();
+    expect(command?.description()).toContain('Browser Session Tokens');
+    expect(longOptions('list-drafts')).toEqual([
+      '--limit',
+      '--workspace',
+      '--json',
+    ]);
+  });
+
+  it('defaults list-drafts to a positive limit', () => {
+    const limit = subcommand('list-drafts')?.options.find((option) => option.long === '--limit');
+    expect(limit?.defaultValue).toBe('100');
+  });
 });
 
 describe('resolveMessageText', () => {

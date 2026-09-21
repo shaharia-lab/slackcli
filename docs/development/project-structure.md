@@ -58,6 +58,7 @@ They hold no Slack API knowledge.
 | `slack-url-parser.ts` | Slack URL / permalink / timestamp normalisation. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks (drafts). |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
+| `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
 | `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |

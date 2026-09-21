@@ -361,6 +361,14 @@ export function formatPeopleSearchResults(
   return output;
 }
 
+// Pick the conversation-type glyph; precedence is DM, group DM, private, public
+function channelPrefix(ch: UnreadChannel): string {
+  if (ch.is_im) return '👤';
+  if (ch.is_mpim) return '👥';
+  if (ch.is_private) return '🔒';
+  return '#';
+}
+
 // Format unread channels list
 export function formatUnreadChannels(channels: UnreadChannel[]): string {
   if (channels.length === 0) {
@@ -370,7 +378,7 @@ export function formatUnreadChannels(channels: UnreadChannel[]): string {
   let output = chalk.bold(`💬 Unread Channels (${channels.length})\n\n`);
 
   channels.forEach((ch, idx) => {
-    const prefix = ch.is_im ? '👤' : ch.is_mpim ? '👥' : ch.is_private ? '🔒' : '#';
+    const prefix = channelPrefix(ch);
     const name = ch.name || ch.id;
     const mentions = ch.mention_count > 0 ? chalk.red(` @${ch.mention_count}`) : '';
     const unreadCount = ch.unread_count ? chalk.yellow(` (${ch.unread_count} unread)`) : '';

@@ -235,17 +235,30 @@ describe('formatUnreadChannels', () => {
     expect(output).toContain('10 unread');
   });
 
-  it('uses correct prefix for DMs and group DMs', () => {
+  it('uses the correct prefix for each conversation type', () => {
     const channels: UnreadChannel[] = [
       { id: 'D1', name: 'Alice', mention_count: 0, has_unreads: true, is_im: true },
       { id: 'G1', name: 'Team Chat', mention_count: 0, has_unreads: true, is_mpim: true },
       { id: 'C1', name: 'secret', mention_count: 0, has_unreads: true, is_private: true },
+      { id: 'C2', name: 'general', mention_count: 0, has_unreads: true },
     ];
 
     const output = formatUnreadChannels(channels);
-    // DMs and group DMs should not use # prefix
-    expect(output).not.toMatch(/#\s*Alice/);
-    expect(output).not.toMatch(/#\s*Team Chat/);
+    expect(output).toMatch(/1\.\S* 👤 \S*Alice/);
+    expect(output).toMatch(/2\.\S* 👥 \S*Team Chat/);
+    expect(output).toMatch(/3\.\S* 🔒 \S*secret/);
+    expect(output).toMatch(/4\.\S* # \S*general/);
+  });
+
+  it('applies prefix precedence when several type flags are set', () => {
+    const channels: UnreadChannel[] = [
+      { id: 'D1', name: 'dm', mention_count: 0, has_unreads: true, is_im: true, is_mpim: true, is_private: true },
+      { id: 'G1', name: 'mpdm', mention_count: 0, has_unreads: true, is_mpim: true, is_private: true },
+    ];
+
+    const output = formatUnreadChannels(channels);
+    expect(output).toMatch(/1\.\S* 👤 \S*dm/);
+    expect(output).toMatch(/2\.\S* 👥 \S*mpdm/);
   });
 });
 

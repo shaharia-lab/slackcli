@@ -34,7 +34,7 @@ export async function readClipboard(): Promise<ClipboardResult> {
         args = ['-NoProfile', '-Command', 'Get-Clipboard'];
         break;
 
-      case 'linux':
+      case 'linux': {
         // Linux - try xclip first, then xsel
         const xclipResult = await tryCommand('xclip', ['-selection', 'clipboard', '-o']);
         if (xclipResult.success) {
@@ -53,6 +53,7 @@ export async function readClipboard(): Promise<ClipboardResult> {
             'Install with: sudo apt install xclip (Debian/Ubuntu)\n' +
             '          or: sudo dnf install xclip (Fedora)',
         };
+      }
 
       default:
         return {

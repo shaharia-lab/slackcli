@@ -151,6 +151,12 @@ done
   `enable`, and `disable` refuse to run with a non-zero exit when stdin is not a
   terminal and `--yes` is absent, so an unattended job must pass `--yes`
   explicitly. See [User groups](usergroups.md).
+- **`files download` needs `--yes` to write outside the working directory.** An
+  `--output` path that resolves inside the current directory is unaffected. One
+  that escapes it (`../…`, an absolute path, or a symlinked directory) is
+  refused with a non-zero exit when stdin is not a terminal and `--yes` is
+  absent. `cd` into the target directory and use a relative path, or pass
+  `--yes`. See [Files](files.md).
 - **Credentials.** `~/.config/slackcli/workspaces.json` holds live tokens at mode
   `0600`. Give a CI job its own bot-token profile rather than copying a personal
   browser session around.

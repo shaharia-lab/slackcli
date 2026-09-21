@@ -53,69 +53,89 @@ function wordCharAfter(text: string, i: number): boolean {
   return isWordCodePoint(text.codePointAt(i + 1));
 }
 
-function parseInline(text: string): RichTextElement[] {
-  const elements: RichTextElement[] = [];
+interface SpanBounds {
+  inner: string;
+  nextIndex: number;
+}
 
-  let i = 0;
-  while (i < text.length) {
-    let matched = false;
+interface MarkerMatch {
+  elements: RichTextElement[];
+  nextIndex: number;
+}
 
-    for (const [marker, styleKey] of MARKERS) {
-      if (text[i] !== marker) continue;
+// Locate the span opening at `i`: its inner text and the index to continue the walk
+// from, or null when no span starts there. The guard order is load-bearing: each
+// guard assumes the previous ones already rejected, so reordering them changes what
+// parses.
+function findSpan(text: string, marker: string, i: number): SpanBounds | null {
+  if (text[i] !== marker) return null;
 
-      // Only "_" requires word boundaries; Slack applies *bold*, ~strike~ and `code`
-      // mid-word. Without this, the underscore in one URL or identifier pairs with the
-      // underscore in a completely unrelated one later in the message, and everything
-      // between the two gets consumed as italic.
-      const needsBoundary = marker === '_';
-      if (needsBoundary && wordCharBefore(text, i)) continue;
+  // Only "_" requires word boundaries; Slack applies *bold*, ~strike~ and `code`
+  // mid-word. Without this, the underscore in one URL or identifier pairs with the
+  // underscore in a completely unrelated one later in the message, and everything
+  // between the two gets consumed as italic.
+  const needsBoundary = marker === '_';
+  if (needsBoundary && wordCharBefore(text, i)) return null;
 
-      const end = text.indexOf(marker, i + 1);
-      if (end === -1) continue;
-      // A mid-word "_" (the one in "file_name") does not close a span. Leave the text
-      // literal rather than searching on for a later candidate, which would swallow
-      // everything in between.
-      if (needsBoundary && wordCharAfter(text, end)) continue;
+  const end = text.indexOf(marker, i + 1);
+  if (end === -1) return null;
+  // A mid-word "_" (the one in "file_name") does not close a span. Leave the text
+  // literal rather than searching on for a later candidate, which would swallow
+  // everything in between.
+  if (needsBoundary && wordCharAfter(text, end)) return null;
 
-      const inner = text.substring(i + 1, end);
-      // Don't match empty content or content that starts/ends with space
-      if (inner.length === 0 || inner.startsWith(' ') || inner.endsWith(' ')) continue;
+  const inner = text.substring(i + 1, end);
+  // Don't match empty content or content that starts/ends with space
+  if (inner.length === 0 || inner.startsWith(' ') || inner.endsWith(' ')) return null;
 
-      // Flush any plain text before this marker
-      // (already handled by the outer loop collecting plain chars)
+  return { inner, nextIndex: end + 1 };
+}
 
-      const style: RichTextStyle = { [styleKey]: true };
-
-      if (styleKey === 'code') {
-        // Code spans don't nest
-        elements.push({ type: 'text', text: inner, style });
-      } else {
-        // Recursively parse inner content for nested formatting
-        const innerElements = parseInline(inner);
-        for (const el of innerElements) {
-          const mergedStyle = { ...el.style, [styleKey]: true };
-          elements.push({ type: 'text', text: el.text, style: mergedStyle });
-        }
-      }
-
-      i = end + 1;
-      matched = true;
-      break;
-    }
-
-    if (!matched) {
-      // Plain character: append to last plain element or create new one
-      const last = elements[elements.length - 1];
-      if (last && !last.style) {
-        last.text += text[i];
-      } else {
-        elements.push({ type: 'text', text: text[i] });
-      }
-      i++;
-    }
+// Build the elements for one span's inner text, applying `styleKey` on top of any
+// styles the inner text carries itself.
+function styleSpan(inner: string, styleKey: keyof RichTextStyle): RichTextElement[] {
+  // Code spans don't nest
+  if (styleKey === 'code') {
+    const style: RichTextStyle = { [styleKey]: true };
+    return [{ type: 'text', text: inner, style }];
   }
 
-  // Clean up: remove empty style objects
+  // Recursively parse inner content for nested formatting
+  return parseInline(inner).map(el => ({
+    type: 'text',
+    text: el.text,
+    style: { ...el.style, [styleKey]: true },
+  }));
+}
+
+// Try every marker at position `i`, returning the span's elements and the index to
+// continue the walk from, or null when no marker applies there.
+function tryMatchMarker(text: string, i: number): MarkerMatch | null {
+  for (const [marker, styleKey] of MARKERS) {
+    const span = findSpan(text, marker, i);
+    if (!span) continue;
+
+    return { elements: styleSpan(span.inner, styleKey), nextIndex: span.nextIndex };
+  }
+
+  return null;
+}
+
+// Plain character: append to last plain element or create new one
+function appendPlainChar(elements: RichTextElement[], char: string): void {
+  const last = elements[elements.length - 1];
+  if (last && !last.style) {
+    last.text += char;
+  } else {
+    elements.push({ type: 'text', text: char });
+  }
+}
+
+// Defensive cleanup: no current path produces an empty `style` object (plain
+// characters carry no `style` key, and every styled span sets at least one), but
+// the pre-refactor parser ran this pass and it is kept so a future marker that
+// yields an empty style cannot leak `style: {}` into the rich_text payload.
+function stripEmptyStyles(elements: RichTextElement[]): RichTextElement[] {
   return elements.map(el => {
     if (el.style && Object.keys(el.style).length === 0) {
       const { style, ...rest } = el;
@@ -123,6 +143,24 @@ function parseInline(text: string): RichTextElement[] {
     }
     return el;
   });
+}
+
+function parseInline(text: string): RichTextElement[] {
+  const elements: RichTextElement[] = [];
+
+  let i = 0;
+  while (i < text.length) {
+    const match = tryMatchMarker(text, i);
+    if (match) {
+      elements.push(...match.elements);
+      i = match.nextIndex;
+    } else {
+      appendPlainChar(elements, text[i]);
+      i++;
+    }
+  }
+
+  return stripEmptyStyles(elements);
 }
 
 export function parseMrkdwn(text: string): RichTextBlock[] {

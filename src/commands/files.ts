@@ -4,9 +4,11 @@ import { open, rm } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { isAuthPage } from '../lib/canvas-parser.ts';
 import { error, formatFileSize, warning, writeJson } from '../lib/formatter.ts';
+import { resolveOutputPath } from '../lib/output-path.ts';
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackFile } from '../types/index.ts';
+import { confirmWrite } from './usergroups.ts';
 
 const MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -139,6 +141,33 @@ export async function writeResponseToFile(response: Response, outputPath: string
   }
 }
 
+// Containment gate for `files download --output`. A path inside the working
+// directory downloads exactly as before; one that escapes it is a filesystem
+// write at a caller-chosen location, so it goes through the same confirmation
+// convention as every other write command (--yes proceeds, a TTY prompts, a
+// non-TTY without --yes refuses). SlackCLI is built to be driven by AI agents,
+// where the value of --output can originate in Slack content.
+//
+// Returns the absolute path to write to, or null when the write was declined.
+export async function confirmedOutputPath(
+  rawOutput: string,
+  assumeYes: boolean,
+): Promise<string | null> {
+  const target = resolveOutputPath(rawOutput);
+  if (!target.outside) return target.resolved;
+
+  // Name the resolved path, not the string that was typed — "../../x" says
+  // nothing about where the bytes land. warning() goes to stderr, so this is
+  // also safe for a caller parsing stdout.
+  const symlinkNote = target.real === target.resolved ? '' : ` (real path: ${target.real})`;
+  warning(`--output points outside the current directory: ${target.resolved}${symlinkNote}`);
+
+  if (await confirmWrite(`Write the downloaded file to ${target.resolved}?`, assumeYes)) {
+    return target.resolved;
+  }
+  return null;
+}
+
 export function createFilesCommand(): Command {
   const files = new Command('files')
     .description('Inspect, read, and download Slack files');
@@ -229,7 +258,18 @@ export function createFilesCommand(): Command {
     .argument('<file-id-or-url>', 'Slack file ID or URL')
     .requiredOption('--output <path>', 'Path for the downloaded file')
     .option('--workspace <id|name>', 'Workspace to use')
+    .option(
+      '--yes',
+      'Skip the confirmation prompt for an output path outside the current directory '
+        + '(required when stdin is not a TTY)',
+      false,
+    )
     .action(async (input, options) => {
+      // Gate before the spinner and before any Slack call, matching the other
+      // write commands: a declined download makes no API request at all.
+      const outputPath = await confirmedOutputPath(options.output, options.yes);
+      if (outputPath === null) process.exit(1);
+
       const spinner = ora('Downloading file...').start();
 
       try {
@@ -242,7 +282,7 @@ export function createFilesCommand(): Command {
           await response.body?.cancel();
           throw new Error('The downloaded content is a Slack sign-in page. Your token may have expired.');
         }
-        const bytesWritten = await writeResponseToFile(response, options.output);
+        const bytesWritten = await writeResponseToFile(response, outputPath);
 
         spinner.succeed(`Downloaded ${bytesWritten} bytes to ${options.output}`);
       } catch (err: any) {

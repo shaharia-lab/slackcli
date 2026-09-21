@@ -39,10 +39,14 @@ on:
 # actions below are on versions that SHA-pin their own dependencies; check
 # `action.yml` at the tag before bumping any of them.
 
+# The two write scopes this workflow needs live on the `deploy` job, not here.
+# `build` runs `npm ci` over the whole Astro dependency tree and then executes
+# the site build, so it must not hold an OIDC token or Pages write: a
+# compromised build-time dependency would otherwise be able to mint an OIDC
+# identity for this repository, or publish to Pages, without ever reaching
+# `deploy`.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # One deploy at a time; a queued run is superseded rather than racing.
 concurrency:
@@ -63,7 +67,7 @@ jobs:
 
       - name: Install
         working-directory: web
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Build
         working-directory: web
@@ -90,6 +94,14 @@ jobs:
 
   deploy:
     needs: build
+    # A job-level `permissions:` block REPLACES the workflow-level one rather
+    # than extending it, so nothing here inherits `contents: read` — it is
+    # restated deliberately. This job needs no checkout today, but a step added
+    # later would fail confusingly without it.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     environment:
       name: github-pages

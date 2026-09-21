@@ -189,6 +189,95 @@ describe('extractWorkspacesFromLocalConfig', () => {
     });
     expect(extractWorkspacesFromLocalConfig(raw)[0].workspaceUrl).toBe('https://alpha.slack.com');
   });
+
+  // Undocumented client state: every one of these shapes must cost us the
+  // workspaces, never throw out of the capture.
+  it.each([
+    ['JSON null', 'null'],
+    ['a JSON string', '"teams"'],
+    ['a JSON number', '42'],
+    ['teams set to null', '{"teams":null}'],
+    ['teams set to a string', '{"teams":"T1"}'],
+    ['teams set to a number', '{"teams":7}'],
+    ['teams set to false', '{"teams":false}'],
+    ['an empty teams object', '{"teams":{}}'],
+    ['an empty string', ''],
+  ])('returns [] without throwing for %s', (_label, raw) => {
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([]);
+  });
+
+  it.each([
+    ['a null team', null],
+    ['a string team', 'T1'],
+    ['a team with no token', { id: 'T1', domain: 'a' }],
+    ['a numeric token', { id: 'T1', domain: 'a', token: 123 }],
+    ['an xoxb token', { id: 'T1', domain: 'a', token: 'xoxb-bot-1' }],
+    ['an xoxp token', { id: 'T1', domain: 'a', token: 'xoxp-user-1' }],
+    ['a token that only contains xoxc-', { id: 'T1', domain: 'a', token: 'Bearer xoxc-1' }],
+    ['neither domain nor url', { id: 'T1', token: 'xoxc-1' }],
+    ['an empty domain and no url', { id: 'T1', domain: '', token: 'xoxc-1' }],
+    ['a non-string domain and url', { id: 'T1', domain: 5, url: ['x'], token: 'xoxc-1' }],
+  ])('skips %s', (_label, team) => {
+    expect(extractWorkspacesFromLocalConfig(JSON.stringify({ teams: { T1: team } }))).toEqual([]);
+  });
+
+  it('keeps the well-formed teams alongside malformed ones', () => {
+    const raw = JSON.stringify({
+      teams: {
+        T0: null,
+        T1: { id: 'T1', name: 'Alpha', domain: 'alpha', token: 'xoxc-alpha-1' },
+        T2: { id: 'T2', token: 'xoxb-bot-2', domain: 'beta' },
+        T3: { id: 'T3', token: 'xoxc-nohost-3' },
+        T4: { id: 'T4', url: 'https://attacker.example', token: 'xoxc-evil-4' },
+        T5: { id: 'T5', url: 'https://gamma.slack.com/', token: 'xoxc-gamma-5' },
+      },
+    });
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([
+      { workspaceUrl: 'https://alpha.slack.com', xoxc: 'xoxc-alpha-1', teamId: 'T1', teamName: 'Alpha' },
+      { workspaceUrl: 'https://gamma.slack.com', xoxc: 'xoxc-gamma-5', teamId: 'T5' },
+    ]);
+  });
+
+  it('prefers url over domain when both are present', () => {
+    const raw = JSON.stringify({
+      teams: { T1: { domain: 'ignored', url: 'https://real.slack.com/', token: 'xoxc-1' } },
+    });
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([
+      { workspaceUrl: 'https://real.slack.com', xoxc: 'xoxc-1' },
+    ]);
+  });
+
+  it('falls back to domain when url is an empty string', () => {
+    const raw = JSON.stringify({ teams: { T1: { domain: 'alpha', url: '', token: 'xoxc-1' } } });
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([
+      { workspaceUrl: 'https://alpha.slack.com', xoxc: 'xoxc-1' },
+    ]);
+  });
+
+  // An unparseable url must not fall through to domain: the team is dropped.
+  it('does not fall back to domain when url is present but unparseable', () => {
+    const raw = JSON.stringify({ teams: { T1: { domain: 'alpha', url: 'not a url', token: 'xoxc-1' } } });
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([]);
+  });
+
+  it('percent-encodes a domain so it cannot smuggle in another host', () => {
+    const raw = JSON.stringify({ teams: { T1: { domain: 'evil.net/x', token: 'xoxc-1' } } });
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([]);
+  });
+
+  it('omits teamId and teamName when they are not strings', () => {
+    const raw = JSON.stringify({ teams: { T1: { id: 1, name: null, domain: 'alpha', token: 'xoxc-1' } } });
+    const [workspace] = extractWorkspacesFromLocalConfig(raw);
+    expect(workspace).toEqual({ workspaceUrl: 'https://alpha.slack.com', xoxc: 'xoxc-1' });
+    expect(Object.keys(workspace)).toEqual(['workspaceUrl', 'xoxc']);
+  });
+
+  it('reads teams stored as an array', () => {
+    const raw = JSON.stringify({ teams: [{ domain: 'alpha', token: 'xoxc-1' }] });
+    expect(extractWorkspacesFromLocalConfig(raw)).toEqual([
+      { workspaceUrl: 'https://alpha.slack.com', xoxc: 'xoxc-1' },
+    ]);
+  });
 });
 
 describe('isSlackWorkspaceUrl', () => {
@@ -556,6 +645,267 @@ describe('captureSlackTokens', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.workspaces).toHaveLength(1);
+  });
+
+  // Separate from makeFakeSession, whose state is fixed for the whole run:
+  // these tests need it to change between polls, and to count the polls.
+  //
+  // Scripts a session whose state changes as the capture polls it: each
+  // localStorage read takes the next entry of `localConfigs` (the last one
+  // repeats), and `emitOnRead` fires intercepted requests just before the
+  // given read — Slack calling its API while the capture is mid-wait.
+  function makeScriptedSession(script: {
+    localConfigs?: Array<string | null>;
+    emitOnRead?: Record<number, Array<{ url?: unknown; postData?: unknown }>>;
+    cookies?: Array<{ name?: string; domain?: string; value?: string }>;
+    /** 1-based liveness probes that fail, as a renavigating tab's do. */
+    failingProbes?: number[];
+  }) {
+    const stats = { localConfigReads: 0, probes: 0 };
+    const handlers: Array<(params: any) => void> = [];
+    const session: CdpSession = {
+      on(method, handler) {
+        if (method === 'Network.requestWillBeSent') handlers.push(handler);
+      },
+      async send<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+        if (method === 'Storage.getCookies' || method === 'Network.getCookies') {
+          return { cookies: script.cookies ?? SLACK_COOKIES } as T;
+        }
+        if (method !== 'Runtime.evaluate') return {} as T;
+        if (!String(params?.expression ?? '').includes('localConfig_v2')) {
+          stats.probes += 1;
+          if (script.failingProbes?.includes(stats.probes)) {
+            throw new Error('CDP Runtime.evaluate failed: Execution context was destroyed');
+          }
+          return { result: { value: 1 } } as T;
+        }
+        stats.localConfigReads += 1;
+        for (const request of script.emitOnRead?.[stats.localConfigReads] ?? []) {
+          for (const handler of handlers) handler({ request });
+        }
+        const configs = script.localConfigs ?? [null];
+        const value = configs[Math.min(stats.localConfigReads, configs.length) - 1];
+        return { result: { value: value ?? undefined } } as T;
+      },
+      close() {},
+    };
+    return { session, stats };
+  }
+
+  const countingSleep = () => {
+    const calls: number[] = [];
+    return { calls, sleep: async (ms: number) => void calls.push(ms) };
+  };
+
+  it('finishes on the first poll without sleeping when a token is already there', async () => {
+    const { session, stats } = makeScriptedSession({
+      emitOnRead: { 1: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }] },
+    });
+    const { calls, sleep } = countingSleep();
+
+    const result = await captureSlackTokens(session, {
+      sleep,
+      now: advancingClock(),
+      timeoutMs: 300_000,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      xoxd: 'xoxd-session-abc',
+      workspaces: [{ workspaceUrl: 'https://alpha.slack.com', xoxc: 'xoxc-json-test-111-222' }],
+    });
+    // No liveness probe once a token is found; one read to find it plus two
+    // stable settle reads, each settle read preceded by one poll interval.
+    expect(stats.probes).toBe(0);
+    expect(stats.localConfigReads).toBe(3);
+    expect(calls).toEqual([500, 500]);
+  });
+
+  it('keeps polling until an intercepted token arrives, then stops early', async () => {
+    const { session, stats } = makeScriptedSession({
+      emitOnRead: { 4: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }] },
+    });
+    const { calls, sleep } = countingSleep();
+
+    const result = await captureSlackTokens(session, {
+      sleep,
+      now: advancingClock(),
+      timeoutMs: 300_000,
+    });
+
+    expect(result.ok).toBe(true);
+    // Reads 1–3 find nothing and are each followed by a probe and a sleep;
+    // read 4 sees the token. Nowhere near the 300s timeout.
+    expect(stats.probes).toBe(3);
+    expect(stats.localConfigReads).toBe(6);
+    expect(calls).toHaveLength(5);
+  });
+
+  it('keeps polling until localStorage is populated, then stops early', async () => {
+    const { session, stats } = makeScriptedSession({
+      localConfigs: [null, null, LOCAL_CONFIG],
+    });
+
+    const result = await captureSlackTokens(session, {
+      sleep: async () => {},
+      now: advancingClock(),
+      timeoutMs: 300_000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces.map((w) => w.workspaceUrl)).toEqual([
+      'https://alpha.slack.com',
+      'https://beta.slack.com',
+    ]);
+    expect(stats.probes).toBe(2);
+  });
+
+  it('polls once per interval until the deadline, then times out', async () => {
+    const { session, stats } = makeScriptedSession({});
+    const { calls, sleep } = countingSleep();
+
+    const result = await captureSlackTokens(session, {
+      sleep,
+      now: advancingClock(1000),
+      timeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('capture_timeout');
+    expect(result.message).toContain('completed sign-in in the browser window');
+    // Deadline is t=1000+5000; the loop head reads t=2000..5000 (four polls)
+    // and exits at t=6000.
+    expect(stats.localConfigReads).toBe(4);
+    expect(stats.probes).toBe(4);
+    expect(calls).toEqual([500, 500, 500, 500]);
+  });
+
+  it('tells a headless run its saved session probably expired on timeout', async () => {
+    const { session } = makeScriptedSession({});
+
+    const result = await captureSlackTokens(session, {
+      sleep: async () => {},
+      now: advancingClock(),
+      timeoutMs: 3000,
+      headless: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('capture_timeout');
+    expect(result.message).toContain('re-run without --headless');
+  });
+
+  // Only a *consecutive* run of failures means the browser is gone. Two SSO
+  // hops back to back fail three probes each, with one success between them.
+  it('resets the probe-failure count after a successful probe', async () => {
+    const { session } = makeScriptedSession({
+      failingProbes: [1, 2, 3, 5, 6, 7],
+      localConfigs: [null, null, null, null, null, null, null, LOCAL_CONFIG],
+    });
+
+    const result = await captureSlackTokens(session, {
+      sleep: async () => {},
+      now: advancingClock(),
+      timeoutMs: 300_000,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('declares the browser closed on the fourth consecutive failed probe', async () => {
+    const { session, stats } = makeScriptedSession({ failingProbes: [1, 2, 3, 4, 5, 6] });
+
+    const result = await captureSlackTokens(session, {
+      sleep: async () => {},
+      now: advancingClock(),
+      timeoutMs: 300_000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('browser_closed');
+    expect(stats.probes).toBe(4);
+  });
+
+  it('picks up a workspace that finishes booting during the settle window', async () => {
+    const oneTeam = JSON.stringify({
+      teams: { T111: { id: 'T111', domain: 'alpha', token: 'xoxc-alpha-token-111' } },
+    });
+    const { session } = makeScriptedSession({ localConfigs: [oneTeam, oneTeam, LOCAL_CONFIG] });
+
+    const result = await captureSlackTokens(session, {
+      sleep: async () => {},
+      now: advancingClock(),
+      timeoutMs: 300_000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces.map((w) => w.workspaceUrl)).toEqual([
+      'https://alpha.slack.com',
+      'https://beta.slack.com',
+    ]);
+  });
+
+  it('prefers the intercepted token over localStorage for the same workspace', async () => {
+    const { session } = makeScriptedSession({
+      localConfigs: [LOCAL_CONFIG],
+      emitOnRead: { 1: [{ url: 'https://alpha.slack.com/api/x', postData: 'token=xoxc-live-1' }] },
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const alpha = result.workspaces.find((w) => w.workspaceUrl === 'https://alpha.slack.com');
+    expect(alpha).toEqual({
+      workspaceUrl: 'https://alpha.slack.com',
+      xoxc: 'xoxc-live-1',
+      teamId: 'T111',
+      teamName: 'Alpha Team',
+    });
+  });
+
+  it('keeps the first intercepted token per workspace and ignores malformed events', async () => {
+    const { session } = makeScriptedSession({
+      emitOnRead: {
+        1: [
+          { url: 'https://alpha.slack.com/api/a' },
+          { url: 42, postData: 'token=xoxc-bad-url-1' },
+          { url: 'https://alpha.slack.com/api/b', postData: { token: 'xoxc-object-1' } },
+          { url: 'https://alpha.slack.com/api/c', postData: 'channel=C1' },
+          { url: 'https://alpha.slack.com/api/d', postData: 'token=xoxc-first-1' },
+          { url: 'https://alpha.slack.com/api/e', postData: 'token=xoxc-second-2' },
+          { url: 'https://beta.slack.com/api/f', postData: 'token=xoxc-beta-3' },
+        ],
+      },
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces).toEqual([
+      { workspaceUrl: 'https://alpha.slack.com', xoxc: 'xoxc-first-1' },
+      { workspaceUrl: 'https://beta.slack.com', xoxc: 'xoxc-beta-3' },
+    ]);
+  });
+
+  it('never puts a token value in a failure message', async () => {
+    const { session } = makeScriptedSession({
+      emitOnRead: { 1: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }] },
+      cookies: [],
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('no_cookie');
+    expect(result.message).not.toContain('xoxc-');
   });
 
   it('ignores non-Slack traffic', async () => {

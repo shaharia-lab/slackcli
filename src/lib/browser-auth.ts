@@ -185,32 +185,53 @@ export function extractWorkspacesFromLocalConfig(raw: string): CapturedWorkspace
   const teams = (parsed as { teams?: unknown } | null)?.teams;
   if (!teams || typeof teams !== 'object') return [];
 
-  const captured: CapturedWorkspace[] = [];
-  for (const team of Object.values(teams as Record<string, any>)) {
-    const token = team?.token;
-    if (typeof token !== 'string' || !token.startsWith('xoxc-')) continue;
+  // Per-team: one malformed entry drops that team, not its siblings.
+  return Object.values(teams)
+    .map(toCapturedWorkspace)
+    .filter((workspace): workspace is CapturedWorkspace => workspace !== null);
+}
 
-    const domain = typeof team?.domain === 'string' ? team.domain : null;
-    const url = typeof team?.url === 'string' ? team.url : null;
-    // Reduce to an origin: Slack stores `https://team.slack.com/` but has also
-    // been seen carrying a path, and this value becomes the API base that
-    // every later request is built on.
-    const workspaceUrl = url
-      ? safeOrigin(url)
-      : domain
-        ? `https://${encodeURIComponent(domain)}.slack.com`
-        : null;
-    // The gate: this URL is about to be paired with the live session cookie.
-    if (!workspaceUrl || !isSlackWorkspaceUrl(workspaceUrl)) continue;
+/** The `localConfig_v2` team fields we read — each still to be narrowed. */
+interface LocalConfigTeam {
+  token?: unknown;
+  url?: unknown;
+  domain?: unknown;
+  id?: unknown;
+  name?: unknown;
+}
 
-    captured.push({
-      workspaceUrl,
-      xoxc: token,
-      ...(typeof team?.id === 'string' ? { teamId: team.id } : {}),
-      ...(typeof team?.name === 'string' ? { teamName: team.name } : {}),
-    });
+/** One `localConfig_v2` team entry as a workspace, or null if unusable. */
+function toCapturedWorkspace(entry: unknown): CapturedWorkspace | null {
+  const team = (entry ?? {}) as LocalConfigTeam;
+  const token = team.token;
+  if (typeof token !== 'string' || !token.startsWith('xoxc-')) return null;
+
+  const workspaceUrl = workspaceUrlForTeam(team);
+  // The gate: this URL is about to be paired with the live session cookie.
+  if (!workspaceUrl || !isSlackWorkspaceUrl(workspaceUrl)) return null;
+
+  return {
+    workspaceUrl,
+    xoxc: token,
+    ...(typeof team.id === 'string' ? { teamId: team.id } : {}),
+    ...(typeof team.name === 'string' ? { teamName: team.name } : {}),
+  };
+}
+
+/**
+ * The team's origin: from `url` when it is a non-empty string, else built from
+ * `domain`. An unparseable `url` yields null — it does not fall back to
+ * `domain`.
+ */
+function workspaceUrlForTeam(team: LocalConfigTeam): string | null {
+  // Reduce to an origin: Slack stores `https://team.slack.com/` but has also
+  // been seen carrying a path, and this value becomes the API base that
+  // every later request is built on.
+  if (typeof team.url === 'string' && team.url) return safeOrigin(team.url);
+  if (typeof team.domain === 'string' && team.domain) {
+    return `https://${encodeURIComponent(team.domain)}.slack.com`;
   }
-  return captured;
+  return null;
 }
 
 /**
@@ -292,35 +313,12 @@ export async function captureSlackTokens(
   const sleep = options.sleep ?? defaultSleep;
   const now = options.now ?? (() => Date.now());
   const onProgress = options.onProgress ?? (() => {});
-  const startUrl = options.startUrl ?? SLACK_CLIENT_URL;
 
   const intercepted = new Map<string, CapturedWorkspace>();
+  registerInterceptors(session, intercepted);
 
-  session.on('Network.requestWillBeSent', (params: any) => {
-    const url = params?.request?.url;
-    const postData = params?.request?.postData;
-    if (typeof url !== 'string' || typeof postData !== 'string') return;
-
-    const origin = slackOriginFromApiUrl(url);
-    if (!origin || intercepted.has(origin)) return;
-
-    const xoxc = extractXoxcFromPostData(postData);
-    if (xoxc) {
-      intercepted.set(origin, { workspaceUrl: origin, xoxc });
-    }
-  });
-
-  try {
-    await session.send('Network.enable');
-    await session.send('Runtime.enable');
-    await session.send('Page.navigate', { url: startUrl });
-  } catch (err: any) {
-    return {
-      ok: false,
-      reason: 'devtools_unreachable',
-      message: `Lost the browser connection: ${err?.message ?? 'unknown error'}`,
-    };
-  }
+  const setupFailure = await startCapture(session, options.startUrl ?? SLACK_CLIENT_URL);
+  if (setupFailure) return setupFailure;
 
   onProgress('Waiting for Slack sign-in in the browser window…');
 
@@ -330,24 +328,14 @@ export async function captureSlackTokens(
   // localStorage each tick makes the two sources genuine alternatives rather
   // than a primary and a decoration: either one alone is enough to finish.
   const deadline = now() + timeoutMs;
-  let fromLocalConfig: CapturedWorkspace[] = [];
-  let sessionLost = false;
-
-  let consecutiveProbeFailures = 0;
-  while (now() < deadline) {
-    fromLocalConfig = await readWorkspacesFromLocalStorage(session);
-    if (fromLocalConfig.length > 0 || intercepted.size > 0) break;
-
-    if (await sessionAlive(session)) {
-      consecutiveProbeFailures = 0;
-    } else if (++consecutiveProbeFailures >= LIVENESS_FAILURES_BEFORE_DEAD) {
-      sessionLost = true;
-      break;
-    }
-    await sleep(POLL_INTERVAL_MS);
+  const poll: PollState = { fromLocalConfig: [], consecutiveProbeFailures: 0 };
+  let outcome: PollOutcome = 'waiting';
+  while (outcome === 'waiting' && now() < deadline) {
+    outcome = await pollOnce(session, intercepted, poll);
+    if (outcome === 'waiting') await sleep(POLL_INTERVAL_MS);
   }
 
-  if (sessionLost) {
+  if (outcome === 'session_lost') {
     return {
       ok: false,
       reason: 'browser_closed',
@@ -357,38 +345,17 @@ export async function captureSlackTokens(
     };
   }
 
-  if (fromLocalConfig.length === 0 && intercepted.size === 0) {
-    return {
-      ok: false,
-      reason: 'capture_timeout',
-      // Headless has no window, so "complete sign-in in the browser window" is
-      // advice the user cannot act on. The real cause there is almost always a
-      // saved session that has since expired.
-      message: options.headless
-        ? 'No Slack session was detected before the timeout.\n' +
-          '   The saved browser session has probably expired — re-run without --headless\n' +
-          '   and sign in again.'
-        : 'No Slack session was detected before the timeout.\n' +
-          '   Make sure you completed sign-in in the browser window.',
-    };
+  // Checked against the sources rather than `outcome`: a token intercepted
+  // during the final sleep still counts.
+  if (poll.fromLocalConfig.length === 0 && intercepted.size === 0) {
+    return captureTimeout(options.headless);
   }
 
-  // A workspace beyond the first surfaces a beat later, as the client boots
-  // each one — so re-read until the count stops growing rather than waiting a
-  // fixed interval. Two stable reads end it, which costs the common
-  // single-workspace case one poll instead of the full settle budget.
-  const settleDeadline = Math.min(now() + SETTLE_BUDGET_MS, deadline);
-  let stableReads = 0;
-  while (now() < settleDeadline && stableReads < 2) {
-    await sleep(POLL_INTERVAL_MS);
-    const settled = await readWorkspacesFromLocalStorage(session);
-    if (settled.length > fromLocalConfig.length) {
-      fromLocalConfig = settled;
-      stableReads = 0;
-    } else {
-      stableReads += 1;
-    }
-  }
+  const fromLocalConfig = await settleWorkspaces(session, poll.fromLocalConfig, {
+    deadline,
+    sleep,
+    now,
+  });
 
   onProgress('Session detected — reading tokens…');
 
@@ -408,6 +375,123 @@ export async function captureSlackTokens(
     xoxd,
     workspaces: mergeWorkspaces([...intercepted.values()], fromLocalConfig),
   };
+}
+
+/**
+ * Record the first `xoxc-*` token seen on each workspace's API traffic.
+ *
+ * Writes into the caller's map: the capture reads it after every poll, so
+ * the handler and the loop must share the one instance.
+ */
+function registerInterceptors(
+  session: CdpSession,
+  intercepted: Map<string, CapturedWorkspace>
+): void {
+  session.on('Network.requestWillBeSent', (params: any) => {
+    const url = params?.request?.url;
+    const postData = params?.request?.postData;
+    if (typeof url !== 'string' || typeof postData !== 'string') return;
+
+    const origin = slackOriginFromApiUrl(url);
+    if (!origin || intercepted.has(origin)) return;
+
+    const xoxc = extractXoxcFromPostData(postData);
+    if (xoxc) {
+      intercepted.set(origin, { workspaceUrl: origin, xoxc });
+    }
+  });
+}
+
+/** Enable the CDP domains the capture uses and open Slack. Null on success. */
+async function startCapture(
+  session: CdpSession,
+  startUrl: string
+): Promise<CaptureResult | null> {
+  try {
+    await session.send('Network.enable');
+    await session.send('Runtime.enable');
+    await session.send('Page.navigate', { url: startUrl });
+    return null;
+  } catch (err: any) {
+    return {
+      ok: false,
+      reason: 'devtools_unreachable',
+      message: `Lost the browser connection: ${err?.message ?? 'unknown error'}`,
+    };
+  }
+}
+
+type PollOutcome = 'waiting' | 'found' | 'session_lost';
+
+interface PollState {
+  /** The latest localStorage read. */
+  fromLocalConfig: CapturedWorkspace[];
+  consecutiveProbeFailures: number;
+}
+
+/**
+ * One tick of the sign-in wait: read localStorage, stop if either source has
+ * a token, otherwise probe that the browser is still there.
+ */
+async function pollOnce(
+  session: CdpSession,
+  intercepted: Map<string, CapturedWorkspace>,
+  state: PollState
+): Promise<PollOutcome> {
+  state.fromLocalConfig = await readWorkspacesFromLocalStorage(session);
+  if (state.fromLocalConfig.length > 0 || intercepted.size > 0) return 'found';
+
+  if (await sessionAlive(session)) {
+    state.consecutiveProbeFailures = 0;
+  } else if (++state.consecutiveProbeFailures >= LIVENESS_FAILURES_BEFORE_DEAD) {
+    return 'session_lost';
+  }
+  return 'waiting';
+}
+
+function captureTimeout(headless: boolean | undefined): CaptureResult {
+  return {
+    ok: false,
+    reason: 'capture_timeout',
+    // Headless has no window, so "complete sign-in in the browser window" is
+    // advice the user cannot act on. The real cause there is almost always a
+    // saved session that has since expired.
+    message: headless
+      ? 'No Slack session was detected before the timeout.\n' +
+        '   The saved browser session has probably expired — re-run without --headless\n' +
+        '   and sign in again.'
+      : 'No Slack session was detected before the timeout.\n' +
+        '   Make sure you completed sign-in in the browser window.',
+  };
+}
+
+/**
+ * Wait for additional workspaces to finish booting.
+ *
+ * A workspace beyond the first surfaces a beat later, as the client boots
+ * each one — so re-read until the count stops growing rather than waiting a
+ * fixed interval. Two stable reads end it, which costs the common
+ * single-workspace case one poll instead of the full settle budget.
+ */
+async function settleWorkspaces(
+  session: CdpSession,
+  initial: CapturedWorkspace[],
+  timing: { deadline: number; sleep: (ms: number) => Promise<void>; now: () => number }
+): Promise<CapturedWorkspace[]> {
+  let fromLocalConfig = initial;
+  const settleDeadline = Math.min(timing.now() + SETTLE_BUDGET_MS, timing.deadline);
+  let stableReads = 0;
+  while (timing.now() < settleDeadline && stableReads < 2) {
+    await timing.sleep(POLL_INTERVAL_MS);
+    const settled = await readWorkspacesFromLocalStorage(session);
+    if (settled.length > fromLocalConfig.length) {
+      fromLocalConfig = settled;
+      stableReads = 0;
+    } else {
+      stableReads += 1;
+    }
+  }
+  return fromLocalConfig;
 }
 
 /**

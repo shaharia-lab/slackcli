@@ -65,6 +65,9 @@ JSON output has this shape:
 ```bash
 slackcli files download F1234567890 --output ./report.pdf
 slackcli files download "$FILE_URL" --output ./message.eml
+
+# An output path outside the current directory needs confirmation
+slackcli files download F1234567890 --output ~/Downloads/report.pdf --yes
 ```
 
 The command streams the original bytes to the output path. It does not convert
@@ -72,6 +75,25 @@ binary data to text or hold the complete download in memory.
 
 The output path is required. The command refuses to overwrite an existing file.
 Choose another path or remove the existing file before you retry.
+
+### Output paths outside the current directory
+
+`--output` writes wherever you point it, and SlackCLI is built to be driven by
+AI agents, so the value can come from content an agent read out of Slack. A
+path that stays inside the current working directory downloads exactly as
+before, with no prompt. A path that escapes it — `../…`, an absolute path, or a
+directory symlinked out of the working tree — is confirmed first:
+
+- `--yes` proceeds.
+- An interactive terminal prompts `y/N`.
+- A non-interactive shell without `--yes` refuses and exits non-zero.
+
+The message names the resolved absolute path, not the string you typed, and
+names the symlink target as well when the two differ. Confirmation happens
+before any Slack API call, so a declined download requests nothing.
+
+This is a containment check, not a sandbox: `--yes` still writes anywhere you
+have permission to write. See [Scripting](scripting.md) for unattended use.
 
 ## File URLs and workspaces
 

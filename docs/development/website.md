@@ -150,7 +150,7 @@ alone, and the banner's Accept and Reject are deliberately the same control.
 | Workflow | When | What |
 |---|---|---|
 | `Site check` | pull requests touching `docs/`, `web/` or `package.json` | Builds the site and checks every internal link and fragment |
-| `Site` | pushes to `main` on the same paths, and every published release | Builds and deploys to GitHub Pages |
+| `Site` | pushes to `main` on the same paths, every published release, and manual `workflow_dispatch` | Builds and deploys to GitHub Pages |
 
 `Site` also runs on a release because the landing page bakes in the current
 version, the per-platform binary sizes and the checksums URL. Without that

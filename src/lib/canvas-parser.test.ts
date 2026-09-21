@@ -395,10 +395,13 @@ describe('canvasHtmlToMarkdown attribute and tag stripping (#213)', () => {
     );
   });
 
-  it('should keep a raw "<" in control text instead of treating it as a tag start', () => {
-    // Slack encodes a literal "<" as &lt;, so this only arises in malformed input.
-    // The old /<[^>]*>/ removed "< b <i>" here; /<[^<>]*>/ keeps the text intact.
-    expect(canvasHtmlToMarkdown(`<control data-remapped="true">a < b <i>x</i></control>`)).toBe('a < b x\n');
+  it('should strip control text tags up to the next ">" as before', () => {
+    // A raw "<" swallows everything up to the next ">", matching /<[^>]*>/g.
+    expect(canvasHtmlToMarkdown(`<control data-remapped="true">a < b <i>x</i></control>`)).toBe('a x\n');
+    // Fragments never reassemble into a tag.
+    expect(canvasHtmlToMarkdown(`<control data-remapped="true"><<i>script>x</control>`)).toBe('script>x\n');
+    // A trailing "<" with no ">" is kept verbatim.
+    expect(canvasHtmlToMarkdown(`<control data-remapped="true"><b>a</b> < b</control>`)).toBe('a < b\n');
   });
 });
 

@@ -124,10 +124,29 @@ function convertControlElements(html: string): string {
       if (linkMatch) return `[${linkMatch[2]}](${linkMatch[1]})`;
 
       // Plain text (dates, etc.)
-      const text = inner.replace(/<[^<>]*>/g, '').trim();
+      const text = stripAngleSpans(inner).trim();
       return text;
     },
   );
+}
+
+/**
+ * Remove every `<...>` span, exactly like `s.replace(/<[^>]*>/g, '')`, in
+ * linear time. The regex retries from every `<` in a run with no `>` (#213),
+ * and `/<[^<>]*>/g` would change output and can reassemble a tag from pieces.
+ */
+function stripAngleSpans(s: string): string {
+  let out = '';
+  let i = 0;
+  for (;;) {
+    const lt = s.indexOf('<', i);
+    if (lt === -1) return out + s.slice(i);
+    const gt = s.indexOf('>', lt + 1);
+    // No closing '>' after this '<' means none after any later '<' either.
+    if (gt === -1) return out + s.slice(i);
+    out += s.slice(i, lt);
+    i = gt + 1;
+  }
 }
 
 /** Convert embedded files and links. */

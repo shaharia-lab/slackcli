@@ -20,6 +20,7 @@ slackcli/
 ├── .github/workflows/            CI, tests, release, policy checks
 ├── .github/ISSUE_TEMPLATE/       Issue forms; blank issues are disabled
 ├── .github/PULL_REQUEST_TEMPLATE.md  Linked-issue reference + checklist
+├── .github/requirements/         Hash-locked pip requirements for CI (pre-commit)
 ├── .pre-commit-config.yaml       Local checks mirroring CI
 ├── CLAUDE.md                     Repository constitution + architecture notes
 ├── CONTRIBUTING.md               Contribution policy

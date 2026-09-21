@@ -78,7 +78,13 @@ Two workflows run on every push and PR to `main`.
    *startup* failure: GitHub cannot parse it, so it never resolves the `on:`
    triggers, the run carries no logs, and its scheduled runs are never created.
    `stale.yml` shipped that way and never ran once. CI runs the *same hook id* as
-   `.pre-commit-config.yaml`, so local and CI cannot drift.
+   `.pre-commit-config.yaml`, so local and CI cannot drift. `pre-commit` itself
+   is installed from `.github/requirements/pre-commit.txt`, a hash-locked
+   requirements file (`pip install --require-hashes --only-binary :all: -r
+   …`) pinning `pre-commit` and every transitive dependency, so CI never
+   resolves a floating version or builds an sdist. Dependabot bumps it (see
+   `dependabot.yml`); regenerate the hashes with the command in
+   `.github/requirements/pre-commit.in` after bumping the pin by hand.
 2. `test` — install, `bun run type-check`, `bun run build`, verify the binary
    answers `--version` and `--help`, and enforce the **150 MB binary size
    budget**.

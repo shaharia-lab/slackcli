@@ -1,0 +1,6 @@
+# Pinned pre-commit version for CI's workflow-lint job.
+# Regenerate the hash-locked pre-commit.txt after bumping this line:
+#   python3 -m venv /tmp/pctools && /tmp/pctools/bin/pip install pip-tools
+#   /tmp/pctools/bin/pip-compile --generate-hashes --strip-extras \
+#     .github/requirements/pre-commit.in
+pre-commit==4.6.2

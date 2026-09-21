@@ -14,3 +14,17 @@ updates:
     labels:
       - dependencies
       - github-actions
+
+  # Keep the hash-locked pre-commit version (.github/requirements/) current.
+  # Dependabot regenerates the hashes in pre-commit.txt along with the bump,
+  # so the pin never rots silently.
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies

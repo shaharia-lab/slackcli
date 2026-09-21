@@ -29,21 +29,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Pinned (not '3.x'): the pre-commit lock file below hashes specific
+      # published wheels, and an unannounced new CPython minor could ship
+      # before every transitive dep has a wheel for it, so a floating
+      # version could silently break `--require-hashes`.
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.x'
+          python-version: '3.13'
 
-      # Keyed on the config, so the hook environment (which builds actionlint)
-      # is rebuilt only when the pinned rev changes.
+      # Keyed on the config and the lock file, so the hook environment
+      # (which builds actionlint) is rebuilt when either the pinned rev or
+      # the pinned pre-commit version changes.
       - name: Cache pre-commit environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', '.github/requirements/pre-commit.txt') }}
 
+      # --require-hashes rejects any package (including transitive deps)
+      # missing a hash, and --only-binary :all: refuses to fall back to an
+      # sdist build, so nothing here can execute unreviewed setup code.
+      # Regenerate the lock file per the header comment in
+      # .github/requirements/pre-commit.in after bumping the pinned version.
       - name: Install pre-commit
-        run: pip install pre-commit
+        run: |
+          pip install --require-hashes --only-binary :all: -r .github/requirements/pre-commit.txt
 
       # Scoped to the one hook id on purpose: the other hooks already run as
       # their own CI steps, and `pre-commit run --all-files` here would execute

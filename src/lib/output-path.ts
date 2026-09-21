@@ -14,8 +14,13 @@ export interface OutputPathTarget {
   outside: boolean;
 }
 
-// realpath() throws for a path that does not exist yet. The caller only wants a
-// best-effort canonical form, so fall back to the path as given.
+// realpath() throws for a path that does not exist yet, which is the normal case
+// here, so fall back to the path as given.
+//
+// Falling back cannot open a hole in the containment check: every other reason
+// realpath() fails on a directory (EACCES on an ancestor, ELOOP, ENOTDIR,
+// ENAMETOOLONG) also fails the subsequent open() of a file beneath it, so a path
+// this function cannot canonicalise is not a path the download can write to.
 function canonical(candidate: string): string {
   try {
     return realpathSync(candidate);

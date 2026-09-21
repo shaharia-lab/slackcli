@@ -44,6 +44,10 @@ The few extra MB are well inside the 150 MB budget. Two things to know:
 - Bytecode is tied to the JavaScriptCore version of the Bun that emits it, so
   release binaries must be built by the Bun that CI pins. Bun 1.4.1 is also the
   first release whose `--bytecode` cross-compiles to Windows x64.
+- CI only runs the Linux x64 binary, so `release.yml` runs `--version` and
+  `--help` on each binary its own runner can execute (Linux x64, macOS arm64
+  after signing, Windows x64) before uploading it. The matrix `smoke` flag is
+  `false` for cross-arch targets.
 
 ## Versioning
 

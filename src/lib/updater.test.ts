@@ -32,50 +32,37 @@ describe('isNewerVersion', () => {
 describe('isInstalledViaHomebrew', () => {
   const originalExecPath = process.execPath;
 
-  it('detects macOS Homebrew Cellar path', () => {
-    Object.defineProperty(process, 'execPath', { value: '/usr/local/Cellar/slackcli/0.4.0/bin/slackcli', configurable: true });
-    expect(isInstalledViaHomebrew()).toBe(true);
+  afterEach(() => {
     Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
   });
 
-  it('detects macOS Apple Silicon Homebrew path', () => {
-    Object.defineProperty(process, 'execPath', { value: '/opt/homebrew/bin/slackcli', configurable: true });
-    expect(isInstalledViaHomebrew()).toBe(true);
-    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
-  });
-
-  it('detects Linux Homebrew path', () => {
-    Object.defineProperty(process, 'execPath', { value: '/home/linuxbrew/.linuxbrew/bin/slackcli', configurable: true });
-    expect(isInstalledViaHomebrew()).toBe(true);
-    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
-  });
-
-  it('returns false for direct binary install', () => {
-    Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/slackcli', configurable: true });
-    expect(isInstalledViaHomebrew()).toBe(false);
-    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
-  });
-
-  it('returns false for path in home directory', () => {
-    Object.defineProperty(process, 'execPath', { value: '/home/user/bin/slackcli', configurable: true });
-    expect(isInstalledViaHomebrew()).toBe(false);
-    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  it.each([
+    ['macOS Homebrew Cellar path', '/usr/local/Cellar/slackcli/0.4.0/bin/slackcli', true],
+    ['macOS Apple Silicon Homebrew path', '/opt/homebrew/bin/slackcli', true],
+    ['Linux Homebrew path', '/home/linuxbrew/.linuxbrew/bin/slackcli', true],
+    ['direct binary install', '/usr/local/bin/slackcli', false],
+    ['path in home directory', '/home/user/bin/slackcli', false],
+  ])('for %s (%s) returns %p', (_label, execPath, expected) => {
+    Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
+    expect(isInstalledViaHomebrew()).toBe(expected);
   });
 });
 
 describe('getUpdateCommand', () => {
   const originalExecPath = process.execPath;
 
+  afterEach(() => {
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  });
+
   it('returns brew command for Homebrew installs', () => {
     Object.defineProperty(process, 'execPath', { value: '/opt/homebrew/bin/slackcli', configurable: true });
     expect(getUpdateCommand()).toBe('brew upgrade slackcli');
-    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
   });
 
   it('returns slackcli update for direct installs', () => {
     Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/slackcli', configurable: true });
     expect(getUpdateCommand()).toBe('slackcli update');
-    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
   });
 });
 
@@ -88,10 +75,13 @@ describe('getCurrentVersion', () => {
 describe('performUpdate', () => {
   const originalExecPath = process.execPath;
 
+  afterEach(() => {
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  });
+
   it('bails early when running under bun without downloading', async () => {
     Object.defineProperty(process, 'execPath', { value: '/Users/me/.bun/bin/bun', configurable: true });
     await expect(performUpdate()).resolves.toBeUndefined();
-    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
   });
 });
 

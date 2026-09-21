@@ -25,10 +25,12 @@ it before you start rather than working without the check.
 
 ## The lockfile is binding in CI
 
-`bun.lock` is committed, and every CI workflow installs with `bun install
---frozen-lockfile`. Locally you keep using plain `bun install` — but whenever you
-change `package.json`, **commit the regenerated `bun.lock` alongside it**.
-Otherwise the install step fails with:
+`bun.lock` is committed, and every CI job that installs the project's
+dependencies does so with `bun install --frozen-lockfile` (`ci.yml`, both jobs in
+`test.yml`, and `release.yml`; the site workflows install `web/` with `npm ci`,
+which is already lockfile-bound). Locally you keep using plain `bun install` —
+but whenever you change `package.json`, **commit the regenerated `bun.lock`
+alongside it**. Otherwise the install step fails with:
 
 ```
 error: lockfile had changes, but lockfile is frozen

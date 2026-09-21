@@ -37,8 +37,8 @@ pre-commit install     # required — do not skip
 ```
 
 If you change `package.json`, run `bun install` and **commit the regenerated
-`bun.lock` in the same change**. CI installs with `bun install
---frozen-lockfile`, so a `package.json` the committed lockfile cannot satisfy
+`bun.lock` in the same change**. CI installs the project's dependencies with
+`bun install --frozen-lockfile`, so a `package.json` the lockfile cannot satisfy
 fails the install step with `error: lockfile had changes, but lockfile is
 frozen` instead of silently resolving fresh versions nobody reviewed.
 

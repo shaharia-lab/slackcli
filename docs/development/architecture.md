@@ -114,6 +114,30 @@ why they are heavily unit-tested.
 If you touch either function, assume there are legacy config files in the wild
 that predate the `profile` and `user_id` fields — the tests encode that.
 
+### Credentials go through a `SecretStore`
+
+Secrets (`token`, `xoxc_token`, `xoxd_token`) are never read or written on a
+record directly. `src/lib/secret-store.ts` defines a small `SecretStore`
+interface (`get`/`set`/`delete` on string keys of the form
+`<profile key>:<token|xoxc|xoxd>`), and `workspaces.ts` splits every config into
+metadata (`metadataOf()`) plus secrets (`storeCredentials()` /
+`loadCredentials()` / `deleteCredentials()`).
+
+- The only backend today is `FileSecretStore`, which keeps the secrets inline on
+  the record under their legacy field names — so `workspaces.json` is unchanged.
+  It mutates the loaded document; `saveWorkspaces()` still does the one write.
+- `get` returns `null` only when a secret does not exist. A backend that is
+  unavailable or refuses access throws `SecretStoreError` (`reason`
+  `unavailable` / `access_denied`); a record whose secret is missing surfaces as
+  `MissingCredentialError`. Keep those three cases distinct.
+- Only `getWorkspace()` resolves secrets. `auth list` and `auth set-default`
+  work from metadata; `auth remove` and `auth logout` delete credentials before
+  the record, so a failing backend leaves the profile listed and retryable.
+- The document-level operations (`putWorkspace`, `readWorkspace`,
+  `dropWorkspace`, `dropAllWorkspaces`) take the document and a store and do no
+  I/O — test new credential behaviour there, with an in-memory store, never
+  against the real `~/.config/slackcli`.
+
 ## Authentication flows
 
 `src/lib/auth.ts` orchestrates login and is the only place that decides a token

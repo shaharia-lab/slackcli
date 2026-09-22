@@ -52,6 +52,7 @@ They hold no Slack API knowledge.
 | `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter. |
 | `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
+| `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` backend, and helpers that split a config into metadata and secrets. |
 | `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. |
 | `browser-launcher.ts` | Finds and launches a local Chromium-family browser; owns the profile directory. |
 | `cdp-client.ts` | Minimal Chrome DevTools Protocol client over Bun's WebSocket. |

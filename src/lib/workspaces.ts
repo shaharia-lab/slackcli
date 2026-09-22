@@ -2,6 +2,14 @@ import { mkdir, readFile, writeFile, exists } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { WorkspacesData, WorkspaceConfig } from '../types/index.ts';
+import {
+  FileSecretStore,
+  deleteCredentials,
+  loadCredentials,
+  metadataOf,
+  storeCredentials,
+  type SecretStore,
+} from './secret-store.ts';
 
 const CONFIG_DIR = join(homedir(), '.config', 'slackcli');
 const WORKSPACES_FILE = join(CONFIG_DIR, 'workspaces.json');
@@ -34,6 +42,12 @@ export async function loadWorkspaces(): Promise<WorkspacesData> {
 export async function saveWorkspaces(data: WorkspacesData): Promise<void> {
   await ensureConfigDir();
   await writeFile(WORKSPACES_FILE, JSON.stringify(data, null, 2), { mode: 0o600 });
+}
+
+// The credential backend for a loaded document. Secrets are read and written
+// only through this; today it is always the inline file backend (#219).
+function secretStoreFor(data: WorkspacesData): SecretStore {
+  return new FileSecretStore(data);
 }
 
 // ---------------------------------------------------------------------------
@@ -170,42 +184,76 @@ export function deriveStorageKey(
   return `${config.workspace_id}-${n}`;
 }
 
-// Add or update a workspace. Returns the profile key it was stored under.
-export async function addWorkspace(
+// ---------------------------------------------------------------------------
+// Credential-aware document operations. Each works on a loaded document and a
+// SecretStore without touching the filesystem, so the IO wrappers below stay
+// thin and the credential routing is unit-testable against any backend.
+// ---------------------------------------------------------------------------
+
+// Store `config` in `data` (metadata on the record, secrets via `store`).
+// Returns the profile key it was stored under.
+export async function putWorkspace(
+  data: WorkspacesData,
+  store: SecretStore,
   config: WorkspaceConfig,
   profile?: string,
 ): Promise<string> {
-  const data = await loadWorkspaces();
-
   const key = deriveStorageKey(data, config, profile);
 
   // Only persist a `profile` field when the key carries meaning (an explicit
   // name or an auto-generated one). A first identity stored under its team_id
   // stays shaped exactly like a pre-profiles record.
-  const stored: WorkspaceConfig = key === config.workspace_id
-    ? config
-    : { ...config, profile: key };
+  const metadata = metadataOf(config);
+  const stored = key === config.workspace_id
+    ? metadata
+    : { ...metadata, profile: key };
 
-  data.workspaces[key] = stored;
+  // Re-keying a profile to a different auth type leaves the old type's secrets
+  // unreachable, so drop them before the record is replaced.
+  const previous = data.workspaces[key];
+  if (previous && previous.auth_type !== config.auth_type) {
+    await deleteCredentials(store, key, previous.auth_type);
+  }
+
+  // The record holds metadata only until the store attaches the secrets; the
+  // document is not persisted in between.
+  data.workspaces[key] = stored as WorkspaceConfig;
+  await storeCredentials(store, key, config);
 
   // Set as default if it's the first workspace
   if (!data.default_workspace) {
     data.default_workspace = key;
   }
 
-  await saveWorkspaces(data);
   return key;
 }
 
-// Remove a workspace by profile key, workspace id, or name.
-export async function removeWorkspace(identifier: string): Promise<void> {
-  const data = await loadWorkspaces();
+// Resolve a selector and rebuild its full config from the store. Returns null
+// when nothing matches.
+export async function readWorkspace(
+  data: WorkspacesData,
+  store: SecretStore,
+  identifier?: string,
+): Promise<WorkspaceConfig | null> {
+  const resolved = resolveWorkspace(data, identifier);
+  if (!resolved) return null;
+  return loadCredentials(store, resolved.key, metadataOf(resolved.config));
+}
 
+// Delete a profile's credentials, then its record. Credentials go first so a
+// failing backend leaves the profile listed (and the removal retryable) rather
+// than orphaning secrets nothing references any more.
+export async function dropWorkspace(
+  data: WorkspacesData,
+  store: SecretStore,
+  identifier: string,
+): Promise<void> {
   const resolved = resolveWorkspace(data, identifier);
   if (!resolved) {
     throw new Error(`Workspace ${identifier} not found`);
   }
 
+  await deleteCredentials(store, resolved.key, resolved.config.auth_type);
   delete data.workspaces[resolved.key];
 
   // Update default if we removed it
@@ -213,7 +261,35 @@ export async function removeWorkspace(identifier: string): Promise<void> {
     const remainingIds = Object.keys(data.workspaces);
     data.default_workspace = remainingIds.length > 0 ? remainingIds[0] : undefined;
   }
+}
 
+// Delete every profile's credentials and records.
+export async function dropAllWorkspaces(
+  data: WorkspacesData,
+  store: SecretStore,
+): Promise<void> {
+  for (const [key, config] of Object.entries(data.workspaces)) {
+    await deleteCredentials(store, key, config.auth_type);
+  }
+  data.workspaces = {};
+  data.default_workspace = undefined;
+}
+
+// Add or update a workspace. Returns the profile key it was stored under.
+export async function addWorkspace(
+  config: WorkspaceConfig,
+  profile?: string,
+): Promise<string> {
+  const data = await loadWorkspaces();
+  const key = await putWorkspace(data, secretStoreFor(data), config, profile);
+  await saveWorkspaces(data);
+  return key;
+}
+
+// Remove a workspace by profile key, workspace id, or name.
+export async function removeWorkspace(identifier: string): Promise<void> {
+  const data = await loadWorkspaces();
+  await dropWorkspace(data, secretStoreFor(data), identifier);
   await saveWorkspaces(data);
 }
 
@@ -231,9 +307,10 @@ export async function setDefaultWorkspace(identifier: string): Promise<void> {
 }
 
 // Get workspace by profile key, id, or name (or the default when omitted).
+// Only this path resolves secrets; listing and set-default use metadata alone.
 export async function getWorkspace(identifier?: string): Promise<WorkspaceConfig | null> {
   const data = await loadWorkspaces();
-  return resolveWorkspace(data, identifier)?.config ?? null;
+  return readWorkspace(data, secretStoreFor(data), identifier);
 }
 
 // Get all workspaces paired with their profile keys.
@@ -242,8 +319,10 @@ export async function getAllWorkspaceEntries(): Promise<ResolvedWorkspace[]> {
   return Object.entries(data.workspaces).map(([key, config]) => ({ key, config }));
 }
 
-// Clear all workspaces
+// Clear all workspaces, deleting every profile's credentials first.
 export async function clearAllWorkspaces(): Promise<void> {
+  const data = await loadWorkspaces();
+  await dropAllWorkspaces(data, secretStoreFor(data));
   await saveWorkspaces({ workspaces: {} });
 }
 

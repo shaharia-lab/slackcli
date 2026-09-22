@@ -32,6 +32,12 @@ export interface BrowserAuthConfig {
 
 export type WorkspaceConfig = StandardAuthConfig | BrowserAuthConfig;
 
+// A workspace record without its secrets. Credentials are persisted and
+// resolved through a SecretStore (src/lib/secret-store.ts), never through this.
+export type WorkspaceMetadata =
+  | Omit<StandardAuthConfig, 'token'>
+  | Omit<BrowserAuthConfig, 'xoxc_token' | 'xoxd_token'>;
+
 export interface WorkspacesData {
   default_workspace?: string;
   workspaces: Record<string, WorkspaceConfig>;

@@ -151,7 +151,63 @@ slackcli auth logout                      # clear all workspaces + browser profi
 slackcli auth logout --keep-browser-session
 ```
 
-Credentials live in `~/.config/slackcli/workspaces.json` (mode `0600`, inside a
-`0700` directory). Nothing is sent anywhere except Slack.
+Workspace metadata (workspace ID/name, auth type, profile) always lives in
+`~/.config/slackcli/workspaces.json` (mode `0600`, inside a `0700` directory).
+Where the *credentials* themselves live depends on the storage backend — see
+below. Nothing is sent anywhere except Slack.
+
+## Where credentials are stored
+
+By default every credential (`xoxb`/`xoxp` token, or the `xoxc`/`xoxd` pair) is
+stored inline in `workspaces.json`, exactly as described above — this is the
+**file backend**, and it is still the default everywhere, including macOS.
+
+On macOS you can opt a profile into storing its credentials in the **macOS
+Keychain** instead, via `--secret-backend keychain` on any login path:
+
+```bash
+slackcli auth login --token=xoxb-... --workspace-name="My Team" --secret-backend=keychain
+slackcli auth login-browser --xoxd=... --xoxc=... --workspace-url=https://... --secret-backend=keychain
+slackcli auth login-auto --secret-backend=keychain
+slackcli auth parse-curl --login --secret-backend=keychain
+```
+
+`workspaces.json` still holds that profile's metadata, plus a
+`"secret_backend": "keychain"` marker — no token value. `auth list` shows which
+backend each profile uses. The flag only takes effect on a **new** profile; a
+token refresh of an existing profile (e.g. running `auth login` again for the
+same identity) keeps whatever backend it is already on, so an ordinary refresh
+never silently downgrades a Keychain profile back to plaintext.
+
+**Move an existing profile to a different backend** with `auth migrate-secrets`:
+
+```bash
+slackcli auth migrate-secrets --to keychain --profile T1234567   # one profile
+slackcli auth migrate-secrets --to keychain                      # every profile
+slackcli auth migrate-secrets --to file --profile T1234567 --yes # back to file, unattended
+```
+
+Migration writes the credentials to the new backend, reads them back and
+verifies every byte matches, and only then removes the old copy — a failure at
+any point leaves the original untouched, so it is always safe to re-run.
+
+**Keychain requirements and limitations:**
+
+- macOS only; `--secret-backend keychain` is refused on every other platform,
+  and `auth migrate-secrets --to keychain` fails the same way.
+- Implemented by shelling out to the built-in `security` CLI (`security
+  add/find/delete-generic-password`, service `slackcli`) rather than an FFI
+  binding to Security.framework — the same trade-off `cdp-client.ts` makes
+  against Playwright, to avoid a new dependency and stay inside the 150MB
+  binary budget. One consequence: `security add-generic-password -w <value>`
+  has no way to pass the secret except as a command-line argument, so it is
+  briefly visible to other processes on the same host via `ps` while the write
+  is in flight (not persisted, not logged, but not hidden from a concurrently
+  running `ps` either). Keychain access itself may prompt for the login
+  password or Touch ID, per your Keychain Access settings for the item.
+- The Keychain is not a sandbox against another process running as your user —
+  it protects credentials at rest (other users, backups, casual file
+  inspection, syncing tools that read `~/.config`), not against something else
+  running as you.
 
 Next: [workspaces and profiles](workspaces.md).

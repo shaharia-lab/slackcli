@@ -7,6 +7,7 @@ import {
   removeWorkspace,
   clearAllWorkspaces,
   getDefaultWorkspaceId,
+  migrateSecrets,
 } from '../lib/workspaces.ts';
 import { success, error, info, warning, formatWorkspace } from '../lib/formatter.ts';
 import chalk from 'chalk';
@@ -15,6 +16,30 @@ import { readClipboard } from '../lib/clipboard.ts';
 import { readInteractiveInput, isInteractiveTerminal, hasPipedInput } from '../lib/interactive-input.ts';
 import { clearBrowserProfile } from '../lib/browser-launcher.ts';
 import { isSlackWorkspaceUrl } from '../lib/browser-auth.ts';
+import { confirmWrite } from './usergroups.ts';
+import type { SecretBackend } from '../types/index.ts';
+
+// Validates the `--secret-backend` flag shared by every login path. Exits the
+// process on an invalid value or on `keychain` requested off macOS — both are
+// deliberately checked here, before any network call, rather than left to
+// surface later from deep inside MacOSKeychainSecretStore's own runtime guard.
+// `platform` is injectable (same convention as browser-launcher.ts's
+// findBrowser) so the off-macOS branch is testable on every CI runner, not
+// just a real Mac.
+export function resolveSecretBackend(
+  value: string,
+  platform: string = process.platform,
+): SecretBackend {
+  if (value !== 'file' && value !== 'keychain') {
+    error(`--secret-backend must be "file" or "keychain" (got "${value}")`);
+    process.exit(1);
+  }
+  if (value === 'keychain' && platform !== 'darwin') {
+    error('--secret-backend keychain is only available on macOS.');
+    process.exit(1);
+  }
+  return value;
+}
 
 export function createAuthCommand(): Command {
   const auth = new Command('auth')
@@ -27,14 +52,17 @@ export function createAuthCommand(): Command {
     .requiredOption('--token <token>', 'Slack bot or user token')
     .requiredOption('--workspace-name <name>', 'Workspace name for identification')
     .option('--profile <name>', 'Store under a named profile (keeps multiple identities for one workspace)')
+    .option('--secret-backend <backend>', 'Where to store credentials for a NEW profile: file (default) or keychain (macOS only)', 'file')
     .action(async (options) => {
+      const secretBackend = resolveSecretBackend(options.secretBackend);
       const spinner = ora('Authenticating...').start();
 
       try {
         const { config, profileKey } = await authenticateStandard(
           options.token,
           options.workspaceName,
-          options.profile
+          options.profile,
+          secretBackend
         );
 
         spinner.succeed('Authentication successful!');
@@ -60,7 +88,9 @@ export function createAuthCommand(): Command {
     .requiredOption('--workspace-url <url>', 'Workspace URL (e.g., https://myteam.slack.com)')
     .option('--workspace-name <name>', 'Optional workspace name for identification')
     .option('--profile <name>', 'Store under a named profile (keeps multiple identities for one workspace)')
+    .option('--secret-backend <backend>', 'Where to store credentials for a NEW profile: file (default) or keychain (macOS only)', 'file')
     .action(async (options) => {
+      const secretBackend = resolveSecretBackend(options.secretBackend);
       const spinner = ora('Authenticating...').start();
 
       try {
@@ -69,7 +99,8 @@ export function createAuthCommand(): Command {
           options.xoxc,
           options.workspaceUrl,
           options.workspaceName,
-          options.profile
+          options.profile,
+          secretBackend
         );
 
         spinner.succeed('Authentication successful!');
@@ -93,7 +124,9 @@ export function createAuthCommand(): Command {
     .option('--workspace-url <url>', 'Open a specific workspace (e.g., https://myteam.slack.com)')
     .option('--headless', 'Run without a visible window (only works if already signed in)')
     .option('--timeout <seconds>', 'How long to wait for sign-in', '300')
+    .option('--secret-backend <backend>', 'Where to store credentials for a NEW profile: file (default) or keychain (macOS only)', 'file')
     .action(async (options) => {
+      const secretBackend = resolveSecretBackend(options.secretBackend);
       const timeoutSeconds = Number(options.timeout);
       if (
         !Number.isFinite(timeoutSeconds) ||
@@ -119,6 +152,7 @@ export function createAuthCommand(): Command {
           headless: options.headless === true,
           workspaceUrl: options.workspaceUrl,
           timeoutMs: timeoutSeconds * 1000,
+          secretBackend,
           // The spinner owns the terminal line, so progress has to go through it.
           onProgress: (line) => {
             spinner.text = line;
@@ -284,7 +318,9 @@ export function createAuthCommand(): Command {
     .argument('[curl-command]', 'cURL command (or use --from-clipboard / interactive mode)')
     .option('--login', 'Automatically login with extracted tokens')
     .option('--from-clipboard', 'Read cURL command from system clipboard')
+    .option('--secret-backend <backend>', 'With --login: where to store credentials for a NEW profile: file (default) or keychain (macOS only)', 'file')
     .action(async (curlCommand, options) => {
+      const secretBackend = options.login ? resolveSecretBackend(options.secretBackend) : 'file';
       try {
         let curlInput = curlCommand;
 
@@ -355,7 +391,14 @@ export function createAuthCommand(): Command {
         if (options.login) {
           const spinner = ora('Authenticating with extracted tokens...').start();
           try {
-            const { config, profileKey } = await authenticateBrowser(parsed.xoxd, parsed.xoxc, parsed.workspaceUrl, parsed.workspaceName);
+            const { config, profileKey } = await authenticateBrowser(
+              parsed.xoxd,
+              parsed.xoxc,
+              parsed.workspaceUrl,
+              parsed.workspaceName,
+              undefined,
+              secretBackend
+            );
             spinner.succeed('Authentication successful!');
             success(`Authenticated as workspace: ${config.workspace_name}`);
             info(`Workspace ID: ${config.workspace_id}`);
@@ -378,6 +421,53 @@ export function createAuthCommand(): Command {
         error('Failed to parse cURL command', err.message);
         console.log(chalk.yellow('\n💡 Tip: Right-click on a Slack API request in browser DevTools'));
         console.log(chalk.yellow('   → Copy → Copy as cURL, then paste here\n'));
+        process.exit(1);
+      }
+    });
+
+  // Move stored credentials to a different SecretStore backend
+  auth
+    .command('migrate-secrets')
+    .description('Move stored credentials to a different backend (e.g. file -> macOS Keychain)')
+    .requiredOption('--to <backend>', 'Target backend: file or keychain (macOS only)')
+    .option('--profile <name>', 'Migrate only this profile (default: every configured profile)')
+    .option('--yes', 'Skip the confirmation prompt', false)
+    .action(async (options) => {
+      const target = resolveSecretBackend(options.to);
+
+      const prompt = options.profile
+        ? `Migrate profile "${options.profile}" to the ${target} backend?`
+        : `Migrate every configured profile to the ${target} backend?`;
+      if (!(await confirmWrite(prompt, options.yes))) {
+        process.exit(1);
+      }
+
+      const spinner = ora('Migrating credentials...').start();
+      try {
+        const { results, failed } = await migrateSecrets(target, options.profile);
+        const moved = results.filter((r) => r.migrated);
+        const already = results.filter((r) => !r.migrated);
+
+        if (moved.length === 0 && failed.length === 0) {
+          spinner.succeed(
+            already.length > 0
+              ? `Already on the ${target} backend — nothing to migrate.`
+              : 'No matching profile found.'
+          );
+        } else if (failed.length === 0) {
+          spinner.succeed(`Migrated ${moved.length} profile${moved.length === 1 ? '' : 's'} to ${target}.`);
+        } else {
+          spinner.warn(`Migrated ${moved.length}, ${failed.length} failed.`);
+        }
+
+        moved.forEach((r) => success(`${r.key}: ${r.from} -> ${r.to}`));
+        already.forEach((r) => info(`${r.key}: already on ${r.to}`));
+        failed.forEach((f) => error(`${f.key}: ${f.error}`));
+
+        if (failed.length > 0) process.exit(1);
+      } catch (err: any) {
+        spinner.fail('Migration failed');
+        error(err.message);
         process.exit(1);
       }
     });

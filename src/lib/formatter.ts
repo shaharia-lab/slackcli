@@ -86,9 +86,15 @@ export function formatWorkspace(
     ? `\n  Profile: ${chalk.cyan(profileKey)}`
     : '';
 
+  // Only surface storage when it isn't the default, same rule as the profile
+  // line — an all-file setup (still nearly everyone's) prints exactly as before.
+  const secretLine = config.secret_backend && config.secret_backend !== 'file'
+    ? `\n  Secrets: ${chalk.cyan(config.secret_backend)}`
+    : '';
+
   return `${chalk.bold(config.workspace_name)} ${defaultBadge}
   ID: ${config.workspace_id}${profileLine}
-  Auth: ${authType}`;
+  Auth: ${authType}${secretLine}`;
 }
 
 // Format channel list

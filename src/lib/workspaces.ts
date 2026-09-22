@@ -1,9 +1,12 @@
 import { mkdir, readFile, writeFile, exists } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
-import type { WorkspacesData, WorkspaceConfig } from '../types/index.ts';
+import type { WorkspacesData, WorkspaceConfig, SecretBackend } from '../types/index.ts';
 import {
   FileSecretStore,
+  MacOSKeychainSecretStore,
+  RoutingSecretStore,
+  credentialsMatch,
   deleteCredentials,
   loadCredentials,
   metadataOf,
@@ -45,9 +48,11 @@ export async function saveWorkspaces(data: WorkspacesData): Promise<void> {
 }
 
 // The credential backend for a loaded document. Secrets are read and written
-// only through this; today it is always the inline file backend (#219).
+// only through this. A RoutingSecretStore lets different profiles in the same
+// document live on different backends (file vs. macOS Keychain) at once, so
+// migrating one profile never disturbs another (#219 part 2).
 function secretStoreFor(data: WorkspacesData): SecretStore {
-  return new FileSecretStore(data);
+  return new RoutingSecretStore(data);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,22 +196,32 @@ export function deriveStorageKey(
 // ---------------------------------------------------------------------------
 
 // Store `config` in `data` (metadata on the record, secrets via `store`).
+// `backend` picks which SecretStore backend a NEW profile's secrets are
+// tagged for; it has no effect on a refreshed existing profile, which keeps
+// whatever backend it already migrated to (see migrateWorkspaceCredentials).
 // Returns the profile key it was stored under.
 export async function putWorkspace(
   data: WorkspacesData,
   store: SecretStore,
   config: WorkspaceConfig,
   profile?: string,
+  backend: SecretBackend = 'file',
 ): Promise<string> {
   const key = deriveStorageKey(data, config, profile);
 
   // Only persist a `profile` field when the key carries meaning (an explicit
   // name or an auto-generated one). A first identity stored under its team_id
-  // stays shaped exactly like a pre-profiles record.
+  // stays shaped exactly like a pre-profiles record. Same for `secret_backend`:
+  // omit it for the default ('file') so an all-file document round-trips with
+  // no new fields at all.
   const metadata = metadataOf(config);
-  const stored = key === config.workspace_id
-    ? metadata
-    : { ...metadata, profile: key };
+  const existingBackend = data.workspaces[key]?.secret_backend;
+  const effectiveBackend = existingBackend ?? backend;
+  const stored = {
+    ...metadata,
+    ...(key === config.workspace_id ? {} : { profile: key }),
+    ...(effectiveBackend === 'file' ? {} : { secret_backend: effectiveBackend }),
+  };
 
   const previous = data.workspaces[key];
 
@@ -282,11 +297,157 @@ export async function dropAllWorkspaces(
 export async function addWorkspace(
   config: WorkspaceConfig,
   profile?: string,
+  backend: SecretBackend = 'file',
 ): Promise<string> {
   const data = await loadWorkspaces();
-  const key = await putWorkspace(data, secretStoreFor(data), config, profile);
+  const key = await putWorkspace(data, secretStoreFor(data), config, profile, backend);
   await saveWorkspaces(data);
   return key;
+}
+
+// ---------------------------------------------------------------------------
+// Migration between SecretStore backends (#219 part 2).
+//
+// The concrete backend instances for the two ends of a migration are passed
+// in explicitly (rather than resolved via the document, as secretStoreFor()
+// does) because the OLD backend has to stay addressable by its own identity
+// even after the record's `secret_backend` field flips to the new one in step
+// 4 below — a RoutingSecretStore would silently start reading the new
+// backend for that key the moment the flip happens.
+// ---------------------------------------------------------------------------
+export interface SecretBackends {
+  file: SecretStore;
+  keychain: SecretStore;
+}
+
+// Build the concrete backend pair for a loaded document. `keychain` may be
+// overridden (tests inject a fake one; production leaves the real one).
+export function secretBackendsFor(
+  data: WorkspacesData,
+  keychain: SecretStore = new MacOSKeychainSecretStore(),
+): SecretBackends {
+  return { file: new FileSecretStore(data), keychain };
+}
+
+export interface MigrationResult {
+  key: string;
+  authType: WorkspaceConfig['auth_type'];
+  from: SecretBackend;
+  to: SecretBackend;
+  // false when the profile was already on the target backend — a safe no-op,
+  // not an error, so a retried or repeated migration reports cleanly.
+  migrated: boolean;
+}
+
+// Move one profile's credentials from its current backend to `target`,
+// verifying every byte before anything old is touched:
+//
+//   1. Read + validate the credentials on the CURRENT backend.
+//   2. Write them to the TARGET backend (cleaning up on a write failure).
+//   3. Read them back from the target and compare — verification failure
+//      cleans up the target and leaves the source and the document untouched.
+//   4. Flip `secret_backend` in the in-memory document by replacing the
+//      record with fresh metadata. When the OLD backend was 'file', this
+//      already clears its inline secret — metadata never carried one. When it
+//      was 'keychain', the external entry is untouched here on purpose — see
+//      migrateSecrets for why deleting it is the caller's job, not this
+//      function's.
+//
+// On any failure before step 4, `data` is not mutated at all, so the caller's
+// eventual saveWorkspaces() (if it even runs) persists nothing new — the
+// on-disk file is exactly as if migration had not been attempted. That is
+// what makes a failed or interrupted migration safe to just retry.
+export async function migrateWorkspaceCredentials(
+  data: WorkspacesData,
+  backends: SecretBackends,
+  identifier: string,
+  target: SecretBackend,
+): Promise<MigrationResult> {
+  const resolved = resolveWorkspace(data, identifier);
+  if (!resolved) {
+    throw new Error(`Workspace ${identifier} not found`);
+  }
+
+  const key = resolved.key;
+  const authType = resolved.config.auth_type;
+  const from = resolved.config.secret_backend ?? 'file';
+
+  if (from === target) {
+    return { key, authType, from, to: target, migrated: false };
+  }
+
+  const fromStore = backends[from];
+  const toStore = backends[target];
+  const metadata = metadataOf(resolved.config);
+
+  const current = await loadCredentials(fromStore, key, metadata);
+
+  try {
+    await storeCredentials(toStore, key, current);
+  } catch (err) {
+    await deleteCredentials(toStore, key, authType).catch(() => {});
+    throw err;
+  }
+
+  const verified = await loadCredentials(toStore, key, metadata);
+  if (!credentialsMatch(current, verified)) {
+    await deleteCredentials(toStore, key, authType).catch(() => {});
+    throw new Error(
+      `Migration verification failed for "${key}": credentials read back from ${target} ` +
+      `did not match what was written. Nothing on ${from} was touched.`
+    );
+  }
+
+  // metadataOf() only strips secrets, not `secret_backend` — this record's own
+  // metadata still carries the OLD backend's tag, so it must be dropped
+  // explicitly rather than merely conditionally overwritten, or migrating back
+  // to 'file' would silently leave the stale 'keychain' tag in place.
+  const { secret_backend: _oldBackend, ...baseMetadata } = metadata as typeof metadata & {
+    secret_backend?: SecretBackend;
+  };
+  data.workspaces[key] = {
+    ...baseMetadata,
+    ...(target === 'file' ? {} : { secret_backend: target }),
+  } as WorkspaceConfig;
+
+  return { key, authType, from, to: target, migrated: true };
+}
+
+// IO wrapper: migrate one profile (or, with no identifier, every profile) to
+// `target`. Saves the document only after each profile's new-backend copy is
+// verified, and deletes the old-backend copy only after that save succeeds —
+// so an interruption ever leaves at most one extra, orphaned-but-harmless
+// copy sitting on the old backend, never a profile with neither backend
+// holding valid credentials. Continues past a single profile's failure (like
+// authenticateAuto's partial-success handling) so one bad profile does not
+// block migrating the rest; failures are returned, not thrown.
+export async function migrateSecrets(
+  target: SecretBackend,
+  identifier?: string,
+): Promise<{ results: MigrationResult[]; failed: Array<{ key: string; error: string }> }> {
+  const data = await loadWorkspaces();
+  const keys = identifier
+    ? [resolveWorkspace(data, identifier)?.key ?? identifier]
+    : Object.keys(data.workspaces);
+
+  const results: MigrationResult[] = [];
+  const failed: Array<{ key: string; error: string }> = [];
+
+  for (const key of keys) {
+    const backends = secretBackendsFor(data);
+    try {
+      const result = await migrateWorkspaceCredentials(data, backends, key, target);
+      if (result.migrated) {
+        await saveWorkspaces(data);
+        await deleteCredentials(backends[result.from], result.key, result.authType);
+      }
+      results.push(result);
+    } catch (err: any) {
+      failed.push({ key, error: err?.message ?? 'Unknown error' });
+    }
+  }
+
+  return { results, failed };
 }
 
 // Remove a workspace by profile key, workspace id, or name.

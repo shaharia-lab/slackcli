@@ -157,6 +157,10 @@ done
   refused with a non-zero exit when stdin is not a terminal and `--yes` is
   absent. `cd` into the target directory and use a relative path, or pass
   `--yes`. See [Files](files.md).
+- **`auth migrate-secrets` needs `--yes`.** Same rule: refuses to run with a
+  non-zero exit when stdin is not a terminal and `--yes` is absent. See
+  [Authentication](authentication.md#where-credentials-are-stored).
 - **Credentials.** `~/.config/slackcli/workspaces.json` holds live tokens at mode
-  `0600`. Give a CI job its own bot-token profile rather than copying a personal
-  browser session around.
+  `0600`, unless a profile was moved to the macOS Keychain backend — give a CI
+  job its own bot-token profile rather than copying a personal browser session
+  around.

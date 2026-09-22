@@ -7,17 +7,22 @@ import {
   readWorkspace,
   dropWorkspace,
   dropAllWorkspaces,
+  migrateWorkspaceCredentials,
+  secretBackendsFor,
+  type SecretBackends,
 } from './workspaces.ts';
 import {
   FileSecretStore,
   MissingCredentialError,
   SecretStoreError,
+  metadataOf,
   type SecretStore,
 } from './secret-store.ts';
 import type {
   WorkspacesData,
   StandardAuthConfig,
   BrowserAuthConfig,
+  WorkspaceConfig,
 } from '../types/index.ts';
 
 // Test builders --------------------------------------------------------------
@@ -452,5 +457,147 @@ describe('dropAllWorkspaces', () => {
     await putWorkspace(data, store, standard());
     store.failOn = 'delete';
     await expect(dropAllWorkspaces(data, store)).rejects.toBeInstanceOf(SecretStoreError);
+  });
+});
+
+// Backend selection + migration (#219 part 2) --------------------------------
+
+describe('putWorkspace backend selection', () => {
+  it('tags a new profile only when the backend is not the default', async () => {
+    const data: WorkspacesData = { workspaces: {} };
+    const store = new MemoryStore();
+    await putWorkspace(data, store, standard(), undefined, 'file');
+    expect(data.workspaces.T1).not.toHaveProperty('secret_backend');
+  });
+
+  it('tags a new profile explicitly stored on keychain', async () => {
+    const data: WorkspacesData = { workspaces: {} };
+    const store = new MemoryStore();
+    await putWorkspace(data, store, browser(), 'work', 'keychain');
+    expect(data.workspaces.work.secret_backend).toBe('keychain');
+  });
+
+  it('keeps an existing profile on its migrated backend across a token refresh, ignoring the default backend arg', async () => {
+    const data: WorkspacesData = {
+      workspaces: { T1: { ...metadataOf(standard()), secret_backend: 'keychain' } as WorkspaceConfig },
+    };
+    const store = new MemoryStore();
+    // Refresh call as `auth login` makes it: no explicit backend, so the
+    // Commander default 'file' is passed — it must NOT downgrade the profile.
+    await putWorkspace(data, store, standard({ token: 'xoxb-refreshed' }), undefined, 'file');
+    expect(data.workspaces.T1.secret_backend).toBe('keychain');
+  });
+});
+
+// A fake keychain-shaped store for migration tests, independent of the real
+// MacOSKeychainSecretStore so these run on any platform.
+class FakeKeychainStore implements SecretStore {
+  public readonly backend = 'keychain';
+  public secrets = new Map<string, string>();
+  public failOn?: 'get' | 'set' | 'delete';
+
+  private check(op: 'get' | 'set' | 'delete'): void {
+    if (this.failOn === op) throw new SecretStoreError('keychain', 'access_denied', `${op} denied`);
+  }
+  async get(key: string): Promise<string | null> {
+    this.check('get');
+    return this.secrets.get(key) ?? null;
+  }
+  async set(key: string, value: string): Promise<void> {
+    this.check('set');
+    this.secrets.set(key, value);
+  }
+  async delete(key: string): Promise<void> {
+    this.check('delete');
+    this.secrets.delete(key);
+  }
+}
+
+function backendsWith(data: WorkspacesData, keychain: FakeKeychainStore): SecretBackends {
+  return secretBackendsFor(data, keychain);
+}
+
+describe('migrateWorkspaceCredentials', () => {
+  it('is a no-op when the profile is already on the target backend', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain = new FakeKeychainStore();
+    const result = await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'file');
+    expect(result).toEqual({ key: 'T1', authType: 'standard', from: 'file', to: 'file', migrated: false });
+  });
+
+  it('copies credentials to the new backend, verifies them, and flips the metadata tag', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain = new FakeKeychainStore();
+    const result = await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain');
+    expect(result).toEqual({ key: 'T1', authType: 'standard', from: 'file', to: 'keychain', migrated: true });
+    expect(keychain.secrets.get('T1:token')).toBe('xoxb-abc');
+    expect(data.workspaces.T1.secret_backend).toBe('keychain');
+    // The record itself is replaced by fresh (token-free) metadata as part of
+    // the same flip, so a migrated-away-from-file token never lingers inline —
+    // it is gone from `data` the instant migration succeeds, not deferred.
+    expect((data.workspaces.T1 as Partial<StandardAuthConfig>).token).toBeUndefined();
+  });
+
+  it('migrates a browser identity (both xoxc and xoxd)', async () => {
+    const data: WorkspacesData = { workspaces: { T1: browser() } };
+    const keychain = new FakeKeychainStore();
+    await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain');
+    expect(keychain.secrets.get('T1:xoxc')).toBe('xoxc-abc');
+    expect(keychain.secrets.get('T1:xoxd')).toBe('xoxd-abc');
+  });
+
+  it('omits secret_backend when migrating back to file, matching a fresh file record', async () => {
+    const data: WorkspacesData = {
+      workspaces: { T1: { ...metadataOf(standard()), secret_backend: 'keychain' } as WorkspaceConfig },
+    };
+    const keychain = new FakeKeychainStore();
+    keychain.secrets.set('T1:token', 'xoxb-abc');
+    await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'file');
+    expect(data.workspaces.T1).not.toHaveProperty('secret_backend');
+  });
+
+  it('throws for an unknown workspace', async () => {
+    const data: WorkspacesData = { workspaces: {} };
+    await expect(
+      migrateWorkspaceCredentials(data, backendsWith(data, new FakeKeychainStore()), 'nope', 'keychain'),
+    ).rejects.toThrow('Workspace nope not found');
+  });
+
+  it('leaves the document untouched and cleans up the target when writing to it fails', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain = new FakeKeychainStore();
+    keychain.failOn = 'set';
+    await expect(
+      migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain'),
+    ).rejects.toBeInstanceOf(SecretStoreError);
+    expect(data.workspaces.T1).toEqual(standard());
+    expect(keychain.secrets.size).toBe(0);
+  });
+
+  it('cleans up the target and leaves the source alone when the read-back does not match', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    // A keychain whose `get` silently returns something other than what was
+    // written — simulating a corrupted or racing write.
+    const keychain = new FakeKeychainStore();
+    const originalGet = keychain.get.bind(keychain);
+    keychain.get = async (key: string) => (await originalGet(key)) === null ? null : 'tampered-value';
+
+    await expect(
+      migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain'),
+    ).rejects.toThrow('verification failed');
+    expect(data.workspaces.T1).toEqual(standard());
+    expect(keychain.secrets.size).toBe(0); // cleaned up, not left dangling
+  });
+
+  it('is retryable: a second run after a failure starts clean and succeeds', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain = new FakeKeychainStore();
+    keychain.failOn = 'set';
+    await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain').catch(() => {});
+
+    keychain.failOn = undefined;
+    const result = await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain');
+    expect(result.migrated).toBe(true);
+    expect(keychain.secrets.get('T1:token')).toBe('xoxb-abc');
   });
 });

@@ -100,4 +100,8 @@ Re-run with --workspace=<profile> (see "slackcli auth list").
 }
 ```
 
-It holds live credentials. Do not commit it, sync it, or hand it around.
+It holds live credentials, except for a profile stored with
+`"secret_backend": "keychain"` — there the token fields above are absent and
+the credentials live in the macOS Keychain instead. See
+[authentication: where credentials are stored](authentication.md#where-credentials-are-stored).
+Do not commit this file, sync it, or hand it around.

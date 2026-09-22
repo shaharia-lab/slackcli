@@ -123,9 +123,14 @@ interface (`get`/`set`/`delete` on string keys of the form
 metadata (`metadataOf()`) plus secrets (`storeCredentials()` /
 `loadCredentials()` / `deleteCredentials()`).
 
-- The only backend today is `FileSecretStore`, which keeps the secrets inline on
-  the record under their legacy field names — so `workspaces.json` is unchanged.
-  It mutates the loaded document; `saveWorkspaces()` still does the one write.
+- `FileSecretStore` keeps secrets inline on the record under their legacy field
+  names — so an all-file `workspaces.json` is byte-for-byte unchanged. It
+  mutates the loaded document; `saveWorkspaces()` still does the one write.
+- `MacOSKeychainSecretStore` (macOS only) shells out to the `security` CLI
+  (service `slackcli`, account `<profile key>:<token|xoxc|xoxd>`) rather than
+  an FFI binding — the `cdp-client.ts` trade-off again. Its `SecurityCliRunner`
+  is injectable, the same seam `cdp-client.test.ts` uses for an untestable
+  transport, so it is fully unit-tested without a real Mac or keychain.
 - `get` returns `null` only when a secret does not exist. A backend that is
   unavailable or refuses access throws `SecretStoreError` (`reason`
   `unavailable` / `access_denied`); a record whose secret is missing surfaces as
@@ -137,6 +142,49 @@ metadata (`metadataOf()`) plus secrets (`storeCredentials()` /
   `dropWorkspace`, `dropAllWorkspaces`) take the document and a store and do no
   I/O — test new credential behaviour there, with an in-memory store, never
   against the real `~/.config/slackcli`.
+
+### Multiple backends in one document: `RoutingSecretStore` and migration
+
+A profile's `secret_backend` field (absent = `'file'`) says which backend its
+credentials are on. `workspaces.ts`'s `secretStoreFor()` wraps every document
+in a `RoutingSecretStore`, which re-reads that field on every call and
+dispatches to `FileSecretStore` or the Keychain store accordingly — so one
+document can hold some profiles on each backend at once, and a profile mid
+re-tag is never read from the wrong place.
+
+`putWorkspace()` only applies its `backend` argument to a **brand-new**
+profile; refreshing an existing one (a plain token rotation via `auth login`)
+always keeps whatever backend it is already tagged with, ignoring the
+argument. Otherwise an ordinary refresh — which passes Commander's `'file'`
+default, not the user's original choice — would silently migrate a Keychain
+profile back to plaintext. The only sanctioned way to change an existing
+profile's backend is `migrateWorkspaceCredentials()` /
+`auth migrate-secrets`.
+
+Migration takes explicit `{ file, keychain }` backend instances
+(`secretBackendsFor()`), never the routing store — the routing store starts
+reading the *new* backend the instant the metadata flips mid-migration, so the
+function needs a reference to the *old* backend that survives that flip.
+Order, all covered by `workspaces.test.ts`'s failure-injection tests:
+
+1. Read + validate credentials on the current backend.
+2. Write them to the target backend; a write failure cleans up the target and
+   leaves everything else untouched.
+3. Read them back from the target and compare byte-for-byte
+   (`credentialsMatch()`); a mismatch cleans up the target the same way.
+4. Flip `secret_backend` on the in-memory record — replacing it with fresh
+   metadata, which also clears an old *file* backend's inline secret as a side
+   effect, not a separate step.
+
+The **IO wrapper** (`migrateSecrets()`) then does two things the document-level
+function deliberately does not: `saveWorkspaces()` to persist the flip
+durably, and only *after* that succeeds, deletes the old backend's copy. That
+ordering — durably commit the new copy before removing the last old one — is
+the same rule `putWorkspace()` follows for an auth-type switch; breaking it
+either way risks a state with neither backend holding a valid credential.
+Migrating "every profile" loops one profile at a time through this same
+sequence rather than batching, so an interruption mid-batch leaves the
+document in a valid, resumable state and a re-run only touches what is left.
 
 ## Authentication flows
 

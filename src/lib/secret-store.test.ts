@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import {
   FileSecretStore,
+  MacOSKeychainSecretStore,
   MissingCredentialError,
+  RoutingSecretStore,
   SecretStoreError,
+  credentialsMatch,
   deleteCredentials,
   loadCredentials,
   metadataOf,
@@ -10,6 +13,7 @@ import {
   secretKey,
   storeCredentials,
   type SecretStore,
+  type SecurityCliResult,
 } from './secret-store.ts';
 import type {
   BrowserAuthConfig,
@@ -273,5 +277,154 @@ describe('FileSecretStore', () => {
     await storeCredentials(store, 'work', config);
     expect(data.workspaces.work).toEqual(config);
     expect(await loadCredentials(store, 'work', metadataOf(data.workspaces.work))).toEqual(config);
+  });
+});
+
+describe('MacOSKeychainSecretStore', () => {
+  // A fake `security` CLI: scripted responses per call, and records every
+  // invocation so tests can assert on the exact argv used.
+  function fakeRunner(script: SecurityCliResult[]) {
+    const calls: string[][] = [];
+    let i = 0;
+    const run = async (args: string[]) => {
+      calls.push(args);
+      const result = script[Math.min(i, script.length - 1)];
+      i++;
+      return result;
+    };
+    return { run, calls };
+  }
+
+  const ok = (stdout = ''): SecurityCliResult => ({ code: 0, stdout, stderr: '' });
+  const notFound: SecurityCliResult = { code: 44, stdout: '', stderr: 'SecKeychainSearchCopyNext: The specified item could not be found in the keychain.' };
+  const denied: SecurityCliResult = { code: 51, stdout: '', stderr: 'security: SecKeychainItemCopyContent: The user name or passphrase you entered is not correct.' };
+  const missingBinary: SecurityCliResult = { code: -1, stdout: '', stderr: 'security: command not found (ENOENT)' };
+
+  it('reads a secret and uses the documented service/account shape', async () => {
+    const { run, calls } = fakeRunner([ok('xoxb-secret')]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    expect(await store.get('T1:token')).toBe('xoxb-secret');
+    expect(calls[0]).toEqual(['find-generic-password', '-a', 'T1:token', '-s', 'slackcli', '-w']);
+  });
+
+  it('returns null, not an error, when the item is not found', async () => {
+    const { run } = fakeRunner([notFound]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    expect(await store.get('T1:token')).toBeNull();
+  });
+
+  it('writes with -U so a refresh updates in place rather than failing "already exists"', async () => {
+    const { run, calls } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    await store.set('T1:token', 'xoxb-new');
+    expect(calls[0]).toEqual(['add-generic-password', '-a', 'T1:token', '-s', 'slackcli', '-w', 'xoxb-new', '-U']);
+  });
+
+  it('treats deleting an absent item as success', async () => {
+    const { run } = fakeRunner([notFound]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    await store.delete('T1:token'); // does not throw
+  });
+
+  it('raises access_denied on a keychain failure, distinct from not-found', async () => {
+    const { run } = fakeRunner([denied]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    const err = await store.get('T1:token').catch((e) => e);
+    expect(err).toBeInstanceOf(SecretStoreError);
+    expect(err.reason).toBe('access_denied');
+    expect(err.backend).toBe('keychain');
+  });
+
+  it('raises unavailable, not access_denied, when the security binary is missing', async () => {
+    const { run } = fakeRunner([missingBinary]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    const err = await store.set('T1:token', 'x').catch((e) => e);
+    expect(err).toBeInstanceOf(SecretStoreError);
+    expect(err.reason).toBe('unavailable');
+  });
+
+  it('refuses to run at all off macOS, without ever invoking the CLI', async () => {
+    const { run, calls } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'linux');
+    const err = await store.get('T1:token').catch((e) => e);
+    expect(err).toBeInstanceOf(SecretStoreError);
+    expect(err.reason).toBe('unavailable');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('never leaks the secret value into an error message', async () => {
+    const { run } = fakeRunner([{ code: 1, stdout: '', stderr: 'unexpected failure' }]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    const err = await store.set('T1:token', 'super-secret-value').catch((e) => e);
+    expect(err.message).not.toContain('super-secret-value');
+  });
+});
+
+describe('runSecurityCli (the real, non-injected default)', () => {
+  it('is exported as a plain function, so a caller can spawn the real "security" CLI', async () => {
+    const { runSecurityCli } = await import('./secret-store.ts');
+    expect(typeof runSecurityCli).toBe('function');
+  });
+});
+
+describe('credentialsMatch', () => {
+  it('is true only for identical secrets of the same auth type', () => {
+    expect(credentialsMatch(standard(), standard())).toBe(true);
+    expect(credentialsMatch(standard({ token: 'a' }), standard({ token: 'b' }))).toBe(false);
+    expect(credentialsMatch(standard(), browser())).toBe(false);
+  });
+
+  it('checks both browser secrets, not just one', () => {
+    expect(credentialsMatch(browser(), browser({ xoxc_token: 'different' }))).toBe(false);
+    expect(credentialsMatch(browser(), browser({ xoxd_token: 'different' }))).toBe(false);
+  });
+});
+
+describe('RoutingSecretStore', () => {
+  it('defaults an untagged record to the file backend', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain: SecretStore = { backend: 'keychain', get: async () => { throw new Error('should not be called'); }, set: async () => {}, delete: async () => {} };
+    const store = new RoutingSecretStore(data, keychain);
+    expect(await store.get('T1:token')).toBe('xoxb-abc');
+  });
+
+  it('routes a record tagged "keychain" to the injected keychain store', async () => {
+    const data: WorkspacesData = { workspaces: { T1: { ...metadataOf(standard()), secret_backend: 'keychain' } as WorkspaceConfig } };
+    const calls: string[] = [];
+    const keychain: SecretStore = {
+      backend: 'keychain',
+      get: async (k) => { calls.push(`get:${k}`); return 'from-keychain'; },
+      set: async () => {},
+      delete: async () => {},
+    };
+    const store = new RoutingSecretStore(data, keychain);
+    expect(await store.get('T1:token')).toBe('from-keychain');
+    expect(calls).toEqual(['get:T1:token']);
+  });
+
+  it('re-reads the backend tag on every call, so a mid-flight retag takes effect immediately', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain: SecretStore = { backend: 'keychain', get: async () => 'from-keychain', set: async () => {}, delete: async () => {} };
+    const store = new RoutingSecretStore(data, keychain);
+    expect(await store.get('T1:token')).toBe('xoxb-abc'); // file, still untagged
+    (data.workspaces.T1 as WorkspaceConfig & { secret_backend?: string }).secret_backend = 'keychain';
+    expect(await store.get('T1:token')).toBe('from-keychain'); // now routed to keychain
+  });
+
+  it('writes and deletes through the routed backend too', async () => {
+    const data: WorkspacesData = { workspaces: { T1: { ...metadataOf(standard()), secret_backend: 'keychain' } as WorkspaceConfig } };
+    const written: Array<[string, string]> = [];
+    const deleted: string[] = [];
+    const keychain: SecretStore = {
+      backend: 'keychain',
+      get: async () => null,
+      set: async (k, v) => { written.push([k, v]); },
+      delete: async (k) => { deleted.push(k); },
+    };
+    const store = new RoutingSecretStore(data, keychain);
+    await store.set('T1:token', 'new-value');
+    await store.delete('T1:token');
+    expect(written).toEqual([['T1:token', 'new-value']]);
+    expect(deleted).toEqual(['T1:token']);
   });
 });

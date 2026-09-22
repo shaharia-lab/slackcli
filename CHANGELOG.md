@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`messages list-drafts`**: lists active drafts for browser-authenticated profiles, with a human-readable preview or a stable `{draft_count, drafts}` JSON projection instead of Slack's raw internal response (#146)
   - Defaults to 100 drafts and accepts a positive-integer `--limit`; Slack apps fail loudly because Slack provides no public drafts API
   - Uses the undocumented web-client `drafts.list` endpoint, which may change without notice
+- **macOS Keychain credential storage (opt-in)**: `--secret-backend keychain` on `auth login`, `auth login-browser`, `auth login-auto`, and `auth parse-curl --login` stores a new profile's tokens in the macOS Keychain instead of inline in `workspaces.json`, via the built-in `security` CLI (#219)
+  - `auth migrate-secrets --to <file|keychain> [--profile <name>]` moves an existing profile's (or every profile's) credentials between backends, verifying the new copy before the old one is ever removed — safe to re-run after a failure or interruption
+  - The file backend stays the default everywhere, including macOS; `workspaces.json`'s shape for an all-file setup is unchanged
+  - `auth list` shows which backend each profile uses
 
 ### Changed
 - **Faster startup**: release binaries are now compiled with Bun's `--bytecode`, cutting `slackcli --help` cold start from ~130 ms to ~80 ms on Linux x64; CI and releases move from Bun 1.3.13 to 1.4.1 (#137)

@@ -1,6 +1,11 @@
 import { SlackClient } from './slack-client.ts';
 import { addWorkspace, getWorkspace } from './workspaces.ts';
-import type { StandardAuthConfig, BrowserAuthConfig, WorkspaceConfig } from '../types/index.ts';
+import type {
+  StandardAuthConfig,
+  BrowserAuthConfig,
+  WorkspaceConfig,
+  SecretBackend,
+} from '../types/index.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
 import {
   captureSlackTokens,
@@ -22,7 +27,8 @@ export interface AuthResult {
 export async function authenticateStandard(
   token: string,
   workspaceName: string,
-  profile?: string
+  profile?: string,
+  secretBackend: SecretBackend = 'file'
 ): Promise<AuthResult> {
   // Create a temporary config to test the token
   const tempConfig: StandardAuthConfig = {
@@ -47,7 +53,7 @@ export async function authenticateStandard(
     };
 
     // Save the workspace
-    const profileKey = await addWorkspace(config, profile);
+    const profileKey = await addWorkspace(config, profile, secretBackend);
 
     return { config, profileKey };
   } catch (error: any) {
@@ -61,7 +67,8 @@ export async function authenticateBrowser(
   xoxcToken: string,
   workspaceUrl: string,
   workspaceName?: string,
-  profile?: string
+  profile?: string,
+  secretBackend: SecretBackend = 'file'
 ): Promise<AuthResult> {
   // Extract workspace name from URL if not provided
   const defaultName = extractSlackWorkspaceName(workspaceUrl);
@@ -90,7 +97,7 @@ export async function authenticateBrowser(
     };
 
     // Save the workspace
-    const profileKey = await addWorkspace(config, profile);
+    const profileKey = await addWorkspace(config, profile, secretBackend);
 
     return { config, profileKey };
   } catch (error: any) {
@@ -110,6 +117,7 @@ export interface AutoLoginOptions {
   workspaceUrl?: string;
   timeoutMs?: number;
   onProgress?: (line: string) => void;
+  secretBackend?: SecretBackend;
 }
 
 /** Thrown when the browser capture never produced tokens. Carries the reason
@@ -188,7 +196,9 @@ export async function authenticateAuto(
         capture.xoxd,
         workspace.xoxc,
         workspace.workspaceUrl,
-        workspace.teamName
+        workspace.teamName,
+        undefined,
+        options.secretBackend ?? 'file'
       );
       saved.push(config);
     } catch (err: any) {

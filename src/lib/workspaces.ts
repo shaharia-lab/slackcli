@@ -217,10 +217,17 @@ export async function putWorkspace(
   const metadata = metadataOf(config);
   const existingBackend = data.workspaces[key]?.secret_backend;
   const effectiveBackend = existingBackend ?? backend;
+  // A pending old-backend cleanup (migrateOneWorkspace) must survive an
+  // ordinary refresh the same way secret_backend does — otherwise a routine
+  // `auth login` between a migration's flip and its cleanup retry silently
+  // orphans the marker, and with it any hope of ever removing that leftover
+  // copy through the CLI.
+  const existingPending = data.workspaces[key]?.secret_cleanup_pending;
   const stored = {
     ...metadata,
     ...(key === config.workspace_id ? {} : { profile: key }),
     ...(effectiveBackend === 'file' ? {} : { secret_backend: effectiveBackend }),
+    ...(existingPending ? { secret_cleanup_pending: existingPending } : {}),
   };
 
   const previous = data.workspaces[key];

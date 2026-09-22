@@ -488,6 +488,24 @@ describe('putWorkspace backend selection', () => {
     await putWorkspace(data, store, standard({ token: 'xoxb-refreshed' }), undefined, 'file');
     expect(data.workspaces.T1.secret_backend).toBe('keychain');
   });
+
+  it('keeps a pending old-backend cleanup marker across a token refresh', async () => {
+    const data: WorkspacesData = {
+      workspaces: {
+        T1: {
+          ...metadataOf(standard()),
+          secret_backend: 'keychain',
+          secret_cleanup_pending: 'file',
+        } as WorkspaceConfig,
+      },
+    };
+    const store = new MemoryStore();
+    // An ordinary `auth login` refresh between a migration's flip and its
+    // cleanup retry must not erase the marker — that would orphan the
+    // leftover file-backend copy with no CLI path left to remove it.
+    await putWorkspace(data, store, standard({ token: 'xoxb-refreshed' }), undefined, 'file');
+    expect(data.workspaces.T1.secret_cleanup_pending).toBe('file');
+  });
 });
 
 // A fake keychain-shaped store for migration tests, independent of the real

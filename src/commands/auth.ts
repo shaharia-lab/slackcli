@@ -446,9 +446,13 @@ export function createAuthCommand(): Command {
       try {
         const { results, failed } = await migrateSecrets(target, options.profile);
         const moved = results.filter((r) => r.migrated);
-        const already = results.filter((r) => !r.migrated);
+        const already = results.filter((r) => !r.migrated && !r.pendingCleanup);
+        // The new backend already holds a verified copy for every one of
+        // these — only the old copy's removal is outstanding, so this is
+        // never counted as a failure, just flagged for a later retry.
+        const pendingCleanup = results.filter((r) => r.pendingCleanup);
 
-        if (moved.length === 0 && failed.length === 0) {
+        if (moved.length === 0 && pendingCleanup.length === 0 && failed.length === 0) {
           spinner.succeed(
             already.length > 0
               ? `Already on the ${target} backend — nothing to migrate.`
@@ -460,8 +464,11 @@ export function createAuthCommand(): Command {
           spinner.warn(`Migrated ${moved.length}, ${failed.length} failed.`);
         }
 
-        moved.forEach((r) => success(`${r.key}: ${r.from} -> ${r.to}`));
+        moved.filter((r) => !r.pendingCleanup).forEach((r) => success(`${r.key}: ${r.from} -> ${r.to}`));
         already.forEach((r) => info(`${r.key}: already on ${r.to}`));
+        pendingCleanup.forEach((r) => warning(
+          `${r.key}: now on ${r.to}, but the old ${r.pendingCleanup} copy could not be removed yet — re-run this command to retry.`
+        ));
         failed.forEach((f) => error(`${f.key}: ${f.error}`));
 
         if (failed.length > 0) process.exit(1);

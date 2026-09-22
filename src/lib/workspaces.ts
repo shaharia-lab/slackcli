@@ -337,6 +337,14 @@ export interface MigrationResult {
   // false when the profile was already on the target backend — a safe no-op,
   // not an error, so a retried or repeated migration reports cleanly.
   migrated: boolean;
+  // The backend that still holds a (now redundant) copy not yet confirmed
+  // deleted — either from this call's own flip or a previous one that didn't
+  // finish — or null once nothing is outstanding. Note this can differ from
+  // `from` when the pending copy is left over from an EARLIER migration (e.g.
+  // this call is itself a no-op because the profile is already on `target`).
+  // Never a failure signal on its own: `to` already holds a verified copy
+  // regardless. migrateSecrets keeps retrying the delete.
+  pendingCleanup: SecretBackend | null;
 }
 
 // Move one profile's credentials from its current backend to `target`,
@@ -344,14 +352,14 @@ export interface MigrationResult {
 //
 //   1. Read + validate the credentials on the CURRENT backend.
 //   2. Write them to the TARGET backend (cleaning up on a write failure).
-//   3. Read them back from the target and compare — verification failure
-//      cleans up the target and leaves the source and the document untouched.
+//   3. Read them back from the target and compare — a failed read-back or a
+//      mismatch both clean up the target and leave the source untouched.
 //   4. Flip `secret_backend` in the in-memory document by replacing the
-//      record with fresh metadata. When the OLD backend was 'file', this
-//      already clears its inline secret — metadata never carried one. When it
-//      was 'keychain', the external entry is untouched here on purpose — see
-//      migrateSecrets for why deleting it is the caller's job, not this
-//      function's.
+//      record with fresh metadata, and mark `secret_cleanup_pending: from` —
+//      the OLD backend's copy still exists (deleting it is `migrateSecrets`'s
+//      job, not this function's, since it must happen only after this flip is
+//      durably saved) and this field is what makes that deletion retryable
+//      across separate process runs if it fails or is never reached.
 //
 // On any failure before step 4, `data` is not mutated at all, so the caller's
 // eventual saveWorkspaces() (if it even runs) persists nothing new — the
@@ -371,9 +379,14 @@ export async function migrateWorkspaceCredentials(
   const key = resolved.key;
   const authType = resolved.config.auth_type;
   const from = resolved.config.secret_backend ?? 'file';
+  const existingPending = (resolved.config as { secret_cleanup_pending?: SecretBackend })
+    .secret_cleanup_pending;
 
   if (from === target) {
-    return { key, authType, from, to: target, migrated: false };
+    // Already on the target backend — but if a PRIOR migration's old-copy
+    // cleanup never finished, that is still outstanding work, surfaced here
+    // so migrateSecrets retries it even when this call itself is a no-op.
+    return { key, authType, from, to: target, migrated: false, pendingCleanup: existingPending ?? null };
   }
 
   const fromStore = backends[from];
@@ -384,41 +397,73 @@ export async function migrateWorkspaceCredentials(
 
   try {
     await storeCredentials(toStore, key, current);
+    const verified = await loadCredentials(toStore, key, metadata);
+    if (!credentialsMatch(current, verified)) {
+      throw new Error(
+        `Migration verification failed for "${key}": credentials read back from ${target} ` +
+        `did not match what was written. Nothing on ${from} was touched.`
+      );
+    }
   } catch (err) {
+    // Covers a failed write AND a failed or mismatched read-back alike: either
+    // way the target must not keep a partial or unverified copy.
     await deleteCredentials(toStore, key, authType).catch(() => {});
     throw err;
-  }
-
-  const verified = await loadCredentials(toStore, key, metadata);
-  if (!credentialsMatch(current, verified)) {
-    await deleteCredentials(toStore, key, authType).catch(() => {});
-    throw new Error(
-      `Migration verification failed for "${key}": credentials read back from ${target} ` +
-      `did not match what was written. Nothing on ${from} was touched.`
-    );
   }
 
   // metadataOf() only strips secrets, not `secret_backend` — this record's own
   // metadata still carries the OLD backend's tag, so it must be dropped
   // explicitly rather than merely conditionally overwritten, or migrating back
   // to 'file' would silently leave the stale 'keychain' tag in place.
-  const { secret_backend: _oldBackend, ...baseMetadata } = metadata as typeof metadata & {
-    secret_backend?: SecretBackend;
-  };
+  const { secret_backend: _oldBackend, secret_cleanup_pending: _oldPending, ...baseMetadata } =
+    metadata as typeof metadata & { secret_backend?: SecretBackend; secret_cleanup_pending?: SecretBackend };
   data.workspaces[key] = {
     ...baseMetadata,
     ...(target === 'file' ? {} : { secret_backend: target }),
+    secret_cleanup_pending: from,
   } as WorkspaceConfig;
 
-  return { key, authType, from, to: target, migrated: true };
+  return { key, authType, from, to: target, migrated: true, pendingCleanup: from };
+}
+
+// Migrate one profile to `target`, including the save-before-cleanup
+// sequencing described above. `save` persists the document; the IO wrapper
+// passes the real saveWorkspaces(), and tests inject a fake, so this whole
+// sequence — flip, durable save, then best-effort old-copy cleanup with
+// retry — is exercised without ever touching the real filesystem.
+//
+// A cleanup failure here is NEVER thrown: by the time it runs, `target`
+// already holds a verified, saved, authoritative copy, so the profile is
+// fully usable regardless. It just leaves `secret_cleanup_pending` set in the
+// saved document, so the very next call for this profile — even one that
+// requests a no-op migration, since migrateWorkspaceCredentials's `from ===
+// target` branch reports it via `pendingCleanup` — retries the delete.
+export async function migrateOneWorkspace(
+  data: WorkspacesData,
+  backends: SecretBackends,
+  key: string,
+  target: SecretBackend,
+  save: (data: WorkspacesData) => Promise<void>,
+): Promise<MigrationResult> {
+  const result = await migrateWorkspaceCredentials(data, backends, key, target);
+  if (result.migrated) {
+    await save(data);
+  }
+  if (!result.pendingCleanup) return result;
+
+  const pendingBackend = result.pendingCleanup;
+  try {
+    await deleteCredentials(backends[pendingBackend], result.key, result.authType);
+    delete (data.workspaces[result.key] as { secret_cleanup_pending?: SecretBackend }).secret_cleanup_pending;
+    await save(data);
+    return { ...result, pendingCleanup: null };
+  } catch {
+    return result; // still pending; the next call (any target) retries it
+  }
 }
 
 // IO wrapper: migrate one profile (or, with no identifier, every profile) to
-// `target`. Saves the document only after each profile's new-backend copy is
-// verified, and deletes the old-backend copy only after that save succeeds —
-// so an interruption ever leaves at most one extra, orphaned-but-harmless
-// copy sitting on the old backend, never a profile with neither backend
-// holding valid credentials. Continues past a single profile's failure (like
+// `target`. Continues past a single profile's failure (like
 // authenticateAuto's partial-success handling) so one bad profile does not
 // block migrating the rest; failures are returned, not thrown.
 export async function migrateSecrets(
@@ -436,12 +481,7 @@ export async function migrateSecrets(
   for (const key of keys) {
     const backends = secretBackendsFor(data);
     try {
-      const result = await migrateWorkspaceCredentials(data, backends, key, target);
-      if (result.migrated) {
-        await saveWorkspaces(data);
-        await deleteCredentials(backends[result.from], result.key, result.authType);
-      }
-      results.push(result);
+      results.push(await migrateOneWorkspace(data, backends, key, target, saveWorkspaces));
     } catch (err: any) {
       failed.push({ key, error: err?.message ?? 'Unknown error' });
     }

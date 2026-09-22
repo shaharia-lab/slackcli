@@ -8,6 +8,7 @@ import {
   dropWorkspace,
   dropAllWorkspaces,
   migrateWorkspaceCredentials,
+  migrateOneWorkspace,
   secretBackendsFor,
   type SecretBackends,
 } from './workspaces.ts';
@@ -522,16 +523,35 @@ describe('migrateWorkspaceCredentials', () => {
     const data: WorkspacesData = { workspaces: { T1: standard() } };
     const keychain = new FakeKeychainStore();
     const result = await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'file');
-    expect(result).toEqual({ key: 'T1', authType: 'standard', from: 'file', to: 'file', migrated: false });
+    expect(result).toEqual({
+      key: 'T1', authType: 'standard', from: 'file', to: 'file', migrated: false, pendingCleanup: null,
+    });
+  });
+
+  it('surfaces a still-pending old-backend cleanup even on an already-on-target no-op', async () => {
+    const data: WorkspacesData = {
+      workspaces: {
+        T1: { ...metadataOf(standard()), secret_cleanup_pending: 'keychain' } as WorkspaceConfig,
+      },
+    };
+    const keychain = new FakeKeychainStore();
+    const result = await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'file');
+    expect(result).toEqual({
+      key: 'T1', authType: 'standard', from: 'file', to: 'file', migrated: false, pendingCleanup: 'keychain',
+    });
   });
 
   it('copies credentials to the new backend, verifies them, and flips the metadata tag', async () => {
     const data: WorkspacesData = { workspaces: { T1: standard() } };
     const keychain = new FakeKeychainStore();
     const result = await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain');
-    expect(result).toEqual({ key: 'T1', authType: 'standard', from: 'file', to: 'keychain', migrated: true });
+    expect(result).toEqual({
+      key: 'T1', authType: 'standard', from: 'file', to: 'keychain', migrated: true, pendingCleanup: 'file',
+    });
     expect(keychain.secrets.get('T1:token')).toBe('xoxb-abc');
     expect(data.workspaces.T1.secret_backend).toBe('keychain');
+    // Marked pending so migrateSecrets knows to delete the file copy next.
+    expect(data.workspaces.T1.secret_cleanup_pending).toBe('file');
     // The record itself is replaced by fresh (token-free) metadata as part of
     // the same flip, so a migrated-away-from-file token never lingers inline —
     // it is gone from `data` the instant migration succeeds, not deferred.
@@ -599,5 +619,87 @@ describe('migrateWorkspaceCredentials', () => {
     const result = await migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain');
     expect(result.migrated).toBe(true);
     expect(keychain.secrets.get('T1:token')).toBe('xoxb-abc');
+  });
+
+  it('cleans up the target when the read-back itself throws, not just when it mismatches', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain = new FakeKeychainStore();
+    // `keychain` is the migration TARGET here, so its only `get` call is the
+    // verification read-back (the source read goes through the file backend).
+    keychain.get = async () => {
+      throw new SecretStoreError('keychain', 'access_denied', 'transient read failure');
+    };
+
+    await expect(
+      migrateWorkspaceCredentials(data, backendsWith(data, keychain), 'T1', 'keychain'),
+    ).rejects.toBeInstanceOf(SecretStoreError);
+    expect(data.workspaces.T1).toEqual(standard());
+    expect(keychain.secrets.size).toBe(0); // cleaned up, not left dangling
+  });
+});
+
+describe('migrateOneWorkspace (save-then-cleanup sequencing)', () => {
+  // Records every call, standing in for saveWorkspaces() without touching disk.
+  function recordingSave(data: WorkspacesData) {
+    const calls: WorkspacesData[] = [];
+    const save = async (d: WorkspacesData) => { calls.push(JSON.parse(JSON.stringify(d))); };
+    return { save, calls };
+  }
+
+  it('saves once for the flip and again once cleanup succeeds, deleting the old copy', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain = new FakeKeychainStore();
+    const { save, calls } = recordingSave(data);
+
+    const result = await migrateOneWorkspace(data, backendsWith(data, keychain), 'T1', 'keychain', save);
+
+    expect(result.pendingCleanup).toBeNull();
+    expect(calls).toHaveLength(2);
+    // The flip was already durable in the first save, before cleanup ran.
+    expect(calls[0].workspaces.T1.secret_backend).toBe('keychain');
+    expect(data.workspaces.T1).not.toHaveProperty('secret_cleanup_pending');
+  });
+
+  it('a delete-after-save failure is reported via pendingCleanup, never thrown', async () => {
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const keychain = new FakeKeychainStore();
+    const { save, calls } = recordingSave(data);
+    // The write+verify above already succeeded before this flag is checked by
+    // `delete`, so this isolates a failure in the OLD backend's cleanup step.
+    const backends = backendsWith(data, keychain);
+    const flakyFile = backends.file;
+    backends.file = {
+      backend: 'file',
+      get: (k) => flakyFile.get(k),
+      set: (k, v) => flakyFile.set(k, v),
+      delete: async () => { throw new SecretStoreError('file', 'access_denied', 'locked'); },
+    };
+
+    const result = await migrateOneWorkspace(data, backends, 'T1', 'keychain', save);
+
+    expect(result.migrated).toBe(true);
+    expect(result.pendingCleanup).toBe('file');
+    // Flip was still saved durably — only the cleanup attempt failed.
+    expect(calls).toHaveLength(1);
+    expect(data.workspaces.T1.secret_backend).toBe('keychain');
+    expect(data.workspaces.T1.secret_cleanup_pending).toBe('file');
+  });
+
+  it('retries a pending cleanup on a later call and clears it once it succeeds', async () => {
+    const data: WorkspacesData = {
+      workspaces: { T1: { ...metadataOf(standard()), secret_backend: 'keychain', secret_cleanup_pending: 'file' } as WorkspaceConfig },
+    };
+    const keychain = new FakeKeychainStore();
+    keychain.secrets.set('T1:token', 'xoxb-abc');
+    const { save, calls } = recordingSave(data);
+
+    // Requesting the SAME target again (already-on-target no-op) must still
+    // pick up and finish the outstanding cleanup.
+    const result = await migrateOneWorkspace(data, backendsWith(data, keychain), 'T1', 'keychain', save);
+
+    expect(result.migrated).toBe(false);
+    expect(result.pendingCleanup).toBeNull();
+    expect(calls).toHaveLength(1); // only the cleanup save; no flip to save
+    expect(data.workspaces.T1).not.toHaveProperty('secret_cleanup_pending');
   });
 });

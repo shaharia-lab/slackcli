@@ -57,6 +57,7 @@ They hold no Slack API knowledge.
 | `browser-launcher.ts` | Finds and launches a local Chromium-family browser; owns the profile directory. |
 | `cdp-client.ts` | Minimal Chrome DevTools Protocol client over Bun's WebSocket. |
 | `curl-parser.ts` | Extracts tokens from a DevTools cURL command. |
+| `curl-input.ts` | Resolves `auth parse-curl`'s input source (argument → `--from-clipboard` → piped stdin → interactive prompt) into a typed result; clipboard, stdin and TTY are injectable for tests. |
 | `slack-url-parser.ts` | Slack URL / permalink / timestamp normalisation. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks (drafts). |
 | `drafts.ts` | Validates draft-list limits, extracts text from `rich_text`, and projects undocumented responses into the public command contract. |

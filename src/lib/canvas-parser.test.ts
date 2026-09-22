@@ -522,7 +522,8 @@ describe('stripTags', () => {
       let s = '';
       const len = rand(16);
       for (let i = 0; i < len; i++) s += alphabet[rand(alphabet.length)];
-      const once = s.replace(TAGS, '');
+      // One global regex pass: the reference output, not a sanitizer.
+      const once = s.split(TAGS).join('');
       const result = stripTags(s);
       expect(result).not.toMatch(TAG);
       if (TAG.test(once)) rejoined++;

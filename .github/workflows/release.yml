@@ -141,7 +141,7 @@ jobs:
       - name: Generate SHA256 checksums
         run: |
           cd release
-          sha256sum * > checksums.txt
+          sha256sum -- * > checksums.txt
           cat checksums.txt
 
       - name: Expose Homebrew checksums

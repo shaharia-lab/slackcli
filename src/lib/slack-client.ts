@@ -80,9 +80,9 @@ async function resolveRedirect(response: Response, currentUrl: URL): Promise<URL
 }
 
 export class SlackClient {
-  private config: WorkspaceConfig;
-  private webClient?: WebClient;
-  private rateLimiter: RateLimiter;
+  private readonly config: WorkspaceConfig;
+  private readonly webClient?: WebClient;
+  private readonly rateLimiter: RateLimiter;
 
   constructor(config: WorkspaceConfig, options: SlackClientOptions = {}) {
     this.config = config;

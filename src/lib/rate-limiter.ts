@@ -30,7 +30,7 @@ export class RateLimiter {
   private readonly minIntervalMs: number;
   private inFlight = 0;
   private lastStartedAt = 0;
-  private waiters: Array<() => void> = [];
+  private readonly waiters: Array<() => void> = [];
   private pumping = false;
 
   constructor(options: RateLimiterOptions) {

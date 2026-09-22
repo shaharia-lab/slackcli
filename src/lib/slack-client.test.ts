@@ -219,6 +219,209 @@ describe('SlackClient.fetchFile', () => {
     expect(requests[1]!.headers.has('Origin')).toBe(false);
     expect(requests[1]!.headers.has('Authorization')).toBe(false);
   });
+
+  const FILE_URL = 'https://files.slack.com/files-pri/T123-F123/report.txt';
+
+  function standardClient(): SlackClient {
+    return new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    });
+  }
+
+  // Serves the scripted responses in order and records every request.
+  function scriptFetch(responses: Array<() => Response>): Array<{ url: string; headers: Headers }> {
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({ url: String(input), headers: new Headers(init?.headers) });
+      const next = responses[requests.length - 1];
+      if (!next) throw new Error(`Unexpected request #${requests.length}`);
+      return next();
+    }) as typeof fetch;
+    return requests;
+  }
+
+  function redirectTo(location: string | null, status = 302): () => Response {
+    return () => new Response(null, { status, headers: location === null ? {} : { location } });
+  }
+
+  const ok = (body = 'report') => () => new Response(body, { status: 200 });
+
+  it.each([
+    ['a non-HTTPS URL', 'http://files.slack.com/files-pri/T123-F123/report.txt', 'Download failed: URL is not hosted by Slack'],
+    ['a look-alike host', 'https://files.slack.com.evil.com/report.txt', 'Download failed: URL is not hosted by Slack'],
+    ['the bare slack.com apex', 'https://slack.com/report.txt', 'Download failed: URL is not hosted by Slack'],
+    ['an unparseable URL', 'not a url', 'Download failed: invalid Slack file URL'],
+  ])('rejects %s before any request', async (_label, url, message) => {
+    const requests = scriptFetch([]);
+
+    await expect(new TestSlackClient().fetchFile(url)).rejects.toThrow(message);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('accepts a Slack host regardless of case', async () => {
+    const requests = scriptFetch([ok()]);
+
+    await new TestSlackClient().fetchFile('https://FILES.Slack.COM/files-pri/T123-F123/report.txt');
+
+    expect(requests[0]!.headers.get('Cookie')).toBe('d=xoxd-test');
+  });
+
+  it('URL-encodes the browser cookie value', async () => {
+    const requests = scriptFetch([ok()]);
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-a/b+c=',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+
+    await client.fetchFile(FILE_URL);
+
+    expect(requests[0]!.headers.get('Cookie')).toBe('d=xoxd-a%2Fb%2Bc%3D');
+  });
+
+  it('drops bearer credentials on an off-Slack hop and restores them when a later hop returns to Slack', async () => {
+    const requests = scriptFetch([
+      redirectTo('https://downloads.example.com/signed/file.txt'),
+      redirectTo('https://files-edge.slack.com/files-pri/T123-F123/report.txt'),
+      ok(),
+    ]);
+
+    const response = await standardClient().fetchFile(FILE_URL);
+
+    expect(await response.text()).toBe('report');
+    expect(requests.map((r) => r.url)).toEqual([
+      FILE_URL,
+      'https://downloads.example.com/signed/file.txt',
+      'https://files-edge.slack.com/files-pri/T123-F123/report.txt',
+    ]);
+    expect(requests.map((r) => r.headers.get('Authorization'))).toEqual([
+      'Bearer xoxb-test',
+      null,
+      'Bearer xoxb-test',
+    ]);
+  });
+
+  it('restores browser credentials when a later hop returns to Slack', async () => {
+    const requests = scriptFetch([
+      redirectTo('https://downloads.example.com/signed/file.txt'),
+      redirectTo('https://files.slack.com/files-pri/T123-F123/final.txt'),
+      ok(),
+    ]);
+
+    await new TestSlackClient().fetchFile(FILE_URL);
+
+    expect(requests.map((r) => [r.headers.get('Cookie'), r.headers.get('Origin')])).toEqual([
+      ['d=xoxd-test', 'https://app.slack.com'],
+      [null, null],
+      ['d=xoxd-test', 'https://app.slack.com'],
+    ]);
+  });
+
+  it('does not forward credentials to a look-alike host reached by redirect', async () => {
+    const requests = scriptFetch([redirectTo('https://files.slack.com.evil.com/report.txt'), ok()]);
+
+    await standardClient().fetchFile(FILE_URL);
+
+    expect(requests[1]!.url).toBe('https://files.slack.com.evil.com/report.txt');
+    expect(requests[1]!.headers.has('Authorization')).toBe(false);
+  });
+
+  it.each([301, 302, 303, 307, 308])('follows a %i redirect', async (status) => {
+    const requests = scriptFetch([redirectTo('https://files.slack.com/next.txt', status), ok()]);
+
+    const response = await standardClient().fetchFile(FILE_URL);
+
+    expect(await response.text()).toBe('report');
+    expect(requests[1]!.url).toBe('https://files.slack.com/next.txt');
+  });
+
+  it('treats a non-redirect 3xx as a failed download', async () => {
+    const requests = scriptFetch([redirectTo('https://files.slack.com/next.txt', 304)]);
+
+    await expect(standardClient().fetchFile(FILE_URL)).rejects.toThrow('Download failed: HTTP 304');
+    expect(requests).toHaveLength(1);
+  });
+
+  it('resolves a relative Location against the current URL', async () => {
+    const requests = scriptFetch([redirectTo('../F999/other.txt'), ok()]);
+
+    await standardClient().fetchFile(FILE_URL);
+
+    expect(requests[1]!.url).toBe('https://files.slack.com/files-pri/F999/other.txt');
+    expect(requests[1]!.headers.get('Authorization')).toBe('Bearer xoxb-test');
+  });
+
+  it('rejects a redirect with no Location and releases its body', async () => {
+    let cancelled = false;
+    scriptFetch([
+      () =>
+        new Response(
+          new ReadableStream({
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 302 },
+        ),
+    ]);
+
+    await expect(standardClient().fetchFile(FILE_URL)).rejects.toThrow(
+      'Download failed: redirect had no destination',
+    );
+    expect(cancelled).toBe(true);
+  });
+
+  it('rejects a redirect to an unparseable destination', async () => {
+    const requests = scriptFetch([redirectTo('https://[invalid')]);
+
+    await expect(standardClient().fetchFile(FILE_URL)).rejects.toThrow(
+      'Download failed: redirect destination is invalid',
+    );
+    expect(requests).toHaveLength(1);
+  });
+
+  it('rejects a redirect to a non-HTTPS destination without following it', async () => {
+    const requests = scriptFetch([redirectTo('http://files.slack.com/report.txt')]);
+
+    await expect(standardClient().fetchFile(FILE_URL)).rejects.toThrow(
+      'Download failed: redirect destination is not secure',
+    );
+    expect(requests).toHaveLength(1);
+  });
+
+  it('fails on a non-OK final status', async () => {
+    scriptFetch([
+      redirectTo('https://downloads.example.com/signed/file.txt'),
+      () => new Response('gone', { status: 404 }),
+    ]);
+
+    await expect(standardClient().fetchFile(FILE_URL)).rejects.toThrow('Download failed: HTTP 404');
+  });
+
+  it('follows at most five redirects', async () => {
+    const hops = Array.from({ length: 5 }, (_, i) => redirectTo(`https://files.slack.com/hop-${i + 1}`));
+    const requests = scriptFetch([...hops, ok()]);
+
+    const response = await standardClient().fetchFile(FILE_URL);
+
+    expect(await response.text()).toBe('report');
+    expect(requests).toHaveLength(6);
+  });
+
+  it('fails on the sixth redirect without following it', async () => {
+    const hops = Array.from({ length: 6 }, (_, i) => redirectTo(`https://files.slack.com/hop-${i + 1}`));
+    const requests = scriptFetch(hops);
+
+    await expect(standardClient().fetchFile(FILE_URL)).rejects.toThrow('Download failed: too many redirects');
+    expect(requests).toHaveLength(6);
+  });
 });
 
 describe('SlackClient.updateMessage', () => {

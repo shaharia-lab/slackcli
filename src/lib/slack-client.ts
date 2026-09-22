@@ -26,6 +26,59 @@ export interface ExternalUploadCompleteResponse {
   files?: Array<{ id?: string; title?: string }>;
 }
 
+const FILE_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_FILE_REDIRECTS = 5;
+
+function isSlackHost(url: URL): boolean {
+  return url.hostname.toLowerCase().endsWith('.slack.com');
+}
+
+// Parse a file URL and refuse anything that is not HTTPS on a Slack host, so
+// credentials are never attached to the first request of a foreign URL.
+function assertSlackFileUrl(url: string): URL {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new Error('Download failed: invalid Slack file URL');
+  }
+  if (parsedUrl.protocol !== 'https:' || !isSlackHost(parsedUrl)) {
+    throw new Error('Download failed: URL is not hosted by Slack');
+  }
+  return parsedUrl;
+}
+
+function buildFileAuthHeaders(config: WorkspaceConfig): Record<string, string> {
+  if (config.auth_type === 'standard') {
+    return { Authorization: `Bearer ${config.token}` };
+  }
+  return {
+    Cookie: `d=${encodeURIComponent(config.xoxd_token)}`,
+    Origin: 'https://app.slack.com',
+  };
+}
+
+// Returns the next URL for a redirect response, or null when the response is
+// not a redirect. The redirect body is always released before validating.
+async function resolveRedirect(response: Response, currentUrl: URL): Promise<URL | null> {
+  if (!FILE_REDIRECT_STATUSES.has(response.status)) return null;
+
+  const location = response.headers.get('location');
+  await response.body?.cancel();
+  if (!location) throw new Error('Download failed: redirect had no destination');
+
+  let nextUrl: URL;
+  try {
+    nextUrl = new URL(location, currentUrl);
+  } catch {
+    throw new Error('Download failed: redirect destination is invalid');
+  }
+  if (nextUrl.protocol !== 'https:') {
+    throw new Error('Download failed: redirect destination is not secure');
+  }
+  return nextUrl;
+}
+
 export class SlackClient {
   private config: WorkspaceConfig;
   private webClient?: WebClient;
@@ -617,46 +670,20 @@ export class SlackClient {
   // Fetch a Slack-hosted file with the configured authentication. Returning the
   // response lets callers either buffer textual content or stream binary bytes.
   async fetchFile(url: string): Promise<Response> {
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      throw new Error('Download failed: invalid Slack file URL');
-    }
-    if (parsedUrl.protocol !== 'https:' || !parsedUrl.hostname.toLowerCase().endsWith('.slack.com')) {
-      throw new Error('Download failed: URL is not hosted by Slack');
-    }
+    let currentUrl = assertSlackFileUrl(url);
+    const authHeaders = buildFileAuthHeaders(this.config);
 
-    const authHeaders: Record<string, string> = {};
-
-    if (this.config.auth_type === 'standard') {
-      authHeaders['Authorization'] = `Bearer ${this.config.token}`;
-    } else if (this.config.auth_type === 'browser') {
-      const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-      authHeaders['Cookie'] = `d=${encodedXoxdToken}`;
-      authHeaders['Origin'] = 'https://app.slack.com';
-    }
-
-    let currentUrl = parsedUrl;
-    for (let redirects = 0; redirects <= 5; redirects += 1) {
-      const isSlackHost = currentUrl.hostname.toLowerCase().endsWith('.slack.com');
+    for (let redirects = 0; redirects <= MAX_FILE_REDIRECTS; redirects += 1) {
+      // Decided per hop: credentials go only to Slack hosts, never to a
+      // redirected download host, and come back if a later hop returns to Slack.
       const response = await fetch(currentUrl, {
-        headers: isSlackHost ? authHeaders : {},
+        headers: isSlackHost(currentUrl) ? authHeaders : {},
         redirect: 'manual',
       });
 
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const location = response.headers.get('location');
-        await response.body?.cancel();
-        if (!location) throw new Error('Download failed: redirect had no destination');
-        try {
-          currentUrl = new URL(location, currentUrl);
-        } catch {
-          throw new Error('Download failed: redirect destination is invalid');
-        }
-        if (currentUrl.protocol !== 'https:') {
-          throw new Error('Download failed: redirect destination is not secure');
-        }
+      const nextUrl = await resolveRedirect(response, currentUrl);
+      if (nextUrl) {
+        currentUrl = nextUrl;
         continue;
       }
 

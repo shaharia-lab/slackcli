@@ -258,7 +258,7 @@
   scrollbar-width: thin;
   scrollbar-color: var(--ink-faint) transparent;
 }
-.term__l { display: block; white-space: pre-wrap; word-break: break-word; }
+.term__l { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Blank spacer lines must still take a line box. */
 .term__l:empty::after { content: "\00a0"; }
 /* Hiding is opt-in: only a terminal whose script is actually running stamps
@@ -687,7 +687,7 @@
      target. */
   .copyline { flex-direction: column; }
   .copyline .codeblock {
-    white-space: pre-wrap; word-break: break-word;
+    white-space: pre-wrap; overflow-wrap: anywhere;
     border-right: var(--bw) solid var(--code-border);
     border-bottom: 0;
     border-radius: var(--radius) var(--radius) 0 0;

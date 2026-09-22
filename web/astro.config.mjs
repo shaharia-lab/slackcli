@@ -41,12 +41,14 @@ const starlightHead = [
 // markup. See consentBannerSnippet() in site.config.mjs.
 const gtm = gtmId();
 if (gtm) {
-  starlightHead.push({ tag: 'script', content: consentDefaultSnippet() });
-  starlightHead.push({ tag: 'script', content: gtmSnippet(gtm) });
-  starlightHead.push({
-    tag: 'script',
-    content: consentBannerSnippet(url('/docs/user-guide/workspaces/#config-file')),
-  });
+  starlightHead.push(
+    { tag: 'script', content: consentDefaultSnippet() },
+    { tag: 'script', content: gtmSnippet(gtm) },
+    {
+      tag: 'script',
+      content: consentBannerSnippet(url('/docs/user-guide/workspaces/#config-file')),
+    },
+  );
 }
 
 /**

@@ -376,8 +376,12 @@ export function formatPeopleSearchResults(
     const realName = profile.real_name || user.real_name || '';
     const email = profile.email ? chalk.dim(`<${profile.email}>`) : '';
     const title = profile.title ? chalk.dim(`- ${profile.title}`) : '';
+    const position = chalk.dim(`${idx + 1}.`);
+    const handle = chalk.bold(`@${displayName}`);
+    const realNamePart = realName ? `(${realName})` : '';
+    const id = chalk.dim(`(${user.id})`);
 
-    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${displayName}`)} ${realName ? `(${realName})` : ''} ${chalk.dim(`(${user.id})`)} ${email}\n`;
+    output += `  ${position} ${handle} ${realNamePart} ${id} ${email}\n`;
     if (title) {
       output += `     ${title}\n`;
     }
@@ -408,8 +412,10 @@ export function formatUnreadChannels(channels: UnreadChannel[]): string {
     const name = ch.name || ch.id;
     const mentions = ch.mention_count > 0 ? chalk.red(` @${ch.mention_count}`) : '';
     const unreadCount = ch.unread_count ? chalk.yellow(` (${ch.unread_count} unread)`) : '';
+    const position = chalk.dim(`${idx + 1}.`);
+    const id = chalk.dim(`(${ch.id})`);
 
-    output += `  ${chalk.dim(`${idx + 1}.`)} ${prefix} ${chalk.bold(name)} ${chalk.dim(`(${ch.id})`)}${mentions}${unreadCount}\n`;
+    output += `  ${position} ${prefix} ${chalk.bold(name)} ${id}${mentions}${unreadCount}\n`;
   });
 
   output += '\n';
@@ -432,8 +438,10 @@ export function formatCanvasList(canvases: SlackCanvas[]): string {
     const title = canvas.title || canvas.name || 'Untitled';
     const created = canvas.created ? formatTimestamp(String(canvas.created)) : '';
     const size = canvas.size ? chalk.dim(`${Math.round(canvas.size / 1024)}KB`) : '';
+    const position = chalk.dim(`${idx + 1}.`);
+    const id = chalk.dim(`(${canvas.id})`);
 
-    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(title)} ${chalk.dim(`(${canvas.id})`)} ${size}\n`;
+    output += `  ${position} ${chalk.bold(title)} ${id} ${size}\n`;
     if (created) {
       output += `     ${chalk.dim(created)}\n`;
     }
@@ -503,7 +511,9 @@ export function formatUsergroupList(groups: SlackUsergroup[]): string {
     const handle = g.handle ? chalk.cyan(`@${g.handle}`) : chalk.dim('(no handle)');
     const count = typeof g.user_count === 'number' ? chalk.dim(`${g.user_count} members`) : '';
     const disabled = isUsergroupEnabled(g) ? '' : chalk.yellow(' [disabled]');
-    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(g.name)} ${handle} ${chalk.dim(`(${g.id})`)} ${count}${disabled}\n`;
+    const position = chalk.dim(`${idx + 1}.`);
+    const id = chalk.dim(`(${g.id})`);
+    output += `  ${position} ${chalk.bold(g.name)} ${handle} ${id} ${count}${disabled}\n`;
     if (g.description) {
       output += `     ${chalk.dim(g.description)}\n`;
     }
@@ -523,10 +533,13 @@ export function formatEmojiList(emoji: CustomEmoji[]): string {
   );
 
   emoji.forEach((e) => {
+    const name = chalk.cyan(`:${e.name}:`);
     if (e.is_alias) {
-      output += `  ${chalk.cyan(`:${e.name}:`)} ${chalk.dim(`→ :${e.alias_for}:`)}\n`;
+      const target = chalk.dim(`→ :${e.alias_for}:`);
+      output += `  ${name} ${target}\n`;
     } else {
-      output += `  ${chalk.cyan(`:${e.name}:`)}${e.url ? ` ${chalk.dim(e.url)}` : ''}\n`;
+      const url = e.url ? ' ' + chalk.dim(e.url) : '';
+      output += `  ${name}${url}\n`;
     }
   });
 
@@ -550,7 +563,10 @@ export function formatUsergroup(group: SlackUsergroup, members: UsergroupMember[
       const real = m.real_name && m.real_name !== display ? ` (${m.real_name})` : '';
       const bot = m.is_bot ? chalk.dim(' [bot]') : '';
       const gone = m.deleted ? chalk.dim(' [deactivated]') : '';
-      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${display}`)}${chalk.dim(real)} ${chalk.dim(`(${m.id})`)}${bot}${gone}\n`;
+      const position = chalk.dim(`${idx + 1}.`);
+      const handle = chalk.bold(`@${display}`);
+      const id = chalk.dim(`(${m.id})`);
+      output += `  ${position} ${handle}${chalk.dim(real)} ${id}${bot}${gone}\n`;
     });
   }
 

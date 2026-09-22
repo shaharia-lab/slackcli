@@ -25,7 +25,8 @@ async function fetchAllSavedItems(
   let cursor: string | undefined;
 
   do {
-    options.onProgress?.(`Fetching saved items${rawItems.length > 0 ? ` (${rawItems.length} so far)` : ''}...`);
+    const soFar = rawItems.length > 0 ? ` (${rawItems.length} so far)` : '';
+    options.onProgress?.(`Fetching saved items${soFar}...`);
     const response = await client.listSavedItems({ count: PAGE_SIZE, cursor });
 
     isBrowserFormat = !!response.saved_items;

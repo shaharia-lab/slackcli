@@ -87,7 +87,8 @@ function resolveTarget(target, fromFile) {
   // leading `../` segments that have to be stripped to name a repo path.
   const climbed = resolved.startsWith('../');
   const repoPath = climbed ? resolved.replace(/^(\.\.\/)+/, '') : `docs/${resolved}`;
-  return `${REPO_BLOB}/${repoPath}${hash ? `#${hash}` : ''}`;
+  const hashSuffix = hash ? `#${hash}` : '';
+  return `${REPO_BLOB}/${repoPath}${hashSuffix}`;
 }
 
 function rewriteLinks(body, fromFile) {
@@ -173,12 +174,13 @@ function transform(raw, page) {
 
   const lead = leadParagraph(body);
   const description = page.description ?? (lead ? summarise(plain(lead)) : '');
+  const editUrl = `${REPO_BLOB}/docs/${page.file}`;
 
   const front = [
     '---',
     `title: ${yaml(title)}`,
     description ? `description: ${yaml(description)}` : null,
-    `editUrl: ${yaml(`${REPO_BLOB}/docs/${page.file}`)}`,
+    `editUrl: ${yaml(editUrl)}`,
     '---',
     '',
   ]

@@ -372,4 +372,29 @@ describe('enrichSavedItems', () => {
       'Fetching user information...',
     ]);
   });
+
+  it('reports the running item count on every page after the first', async () => {
+    const messages: string[] = [];
+    let callCount = 0;
+    const client = createMockClient({
+      listSavedItems: () => {
+        callCount++;
+        const next = callCount < 3 ? { next_cursor: `page${callCount + 1}` } : {};
+        return Promise.resolve({
+          saved_items: [
+            { item_type: 'channel', item_id: `C${callCount}`, date_created: '1700000000' },
+            { item_type: 'channel', item_id: `C${callCount}x`, date_created: '1700000000' },
+          ],
+          response_metadata: next,
+        });
+      },
+    });
+
+    await enrichSavedItems(client, { onProgress: (m) => messages.push(m) });
+    expect(messages).toEqual([
+      'Fetching saved items...',
+      'Fetching saved items (2 so far)...',
+      'Fetching saved items (4 so far)...',
+    ]);
+  });
 });

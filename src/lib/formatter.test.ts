@@ -14,6 +14,10 @@ import {
   formatMessage,
   formatTimestamp,
   writeJson,
+  formatCanvasList,
+  formatUsergroupList,
+  formatEmojiList,
+  formatUsergroup,
 } from './formatter.ts';
 import type {
   SavedItem,
@@ -25,6 +29,10 @@ import type {
   SlackMessage,
   SlackChannel,
   DraftSummary,
+  SlackCanvas,
+  SlackUsergroup,
+  UsergroupMember,
+  CustomEmoji,
 } from '../types/index.ts';
 
 describe('formatDraftList', () => {
@@ -522,7 +530,7 @@ describe('writeJson', () => {
   }, 30000);
 });
 
-// Byte-exact output with ANSI colour forced on (#205). The rest of this file
+// Byte-exact output with ANSI colour forced on (#205, #206). The rest of this file
 // runs with chalk's non-TTY default (no escape codes), so it only guards the
 // plain text; these tests pin every styled segment of the formatters whose
 // template literals were un-nested. The expected strings are built from raw
@@ -549,6 +557,7 @@ describe('formatter output with colour enabled', () => {
   const blue = sgr(34, 39);
   const gray = sgr(90, 39);
   const green = sgr(32, 39);
+  const red = sgr(31, 39);
 
   const users = new Map<string, SlackUser>([
     ['U1', { id: 'U1', name: 'alice', real_name: 'Alice' }],
@@ -724,6 +733,139 @@ describe('formatter output with colour enabled', () => {
         + '\n'
         + '  ' + dim('2.') + ' #' + bold('quiet') + ' ' + dim('(C2)') + ' \n'
         + '\n',
+      );
+    });
+  });
+
+  describe('formatPeopleSearchResults', () => {
+    it('renders real name, email and title when present, and keeps the spacing when absent', () => {
+      const people: PeopleSearchResult[] = [
+        {
+          id: 'U1', name: 'alice',
+          profile: { display_name: 'ali', real_name: 'Alice Doe', email: 'a@x.io', title: 'Engineer' },
+        },
+        { id: 'U2', name: 'bob' },
+      ];
+
+      expect(formatPeopleSearchResults('a', people, 2)).toBe(
+        bold('👥 People matching "a" (2 total)\n\n')
+        + '  ' + dim('1.') + ' ' + bold('@ali') + ' (Alice Doe) ' + dim('(U1)') + ' ' + dim('<a@x.io>') + '\n'
+        + '     ' + dim('- Engineer') + '\n'
+        + '\n'
+        + '  ' + dim('2.') + ' ' + bold('@bob') + '  ' + dim('(U2)') + ' \n'
+        + '\n',
+      );
+    });
+  });
+
+  describe('formatUnreadChannels', () => {
+    it('renders mention and unread badges only when non-zero', () => {
+      const channels: UnreadChannel[] = [
+        { id: 'C1', name: 'eng', mention_count: 2, unread_count: 5, has_unreads: true },
+        { id: 'D1', mention_count: 0, has_unreads: true, is_im: true },
+      ];
+
+      expect(formatUnreadChannels(channels)).toBe(
+        bold('💬 Unread Channels (2)\n\n')
+        + '  ' + dim('1.') + ' # ' + bold('eng') + ' ' + dim('(C1)') + red(' @2') + yellow(' (5 unread)') + '\n'
+        + '  ' + dim('2.') + ' 👤 ' + bold('D1') + ' ' + dim('(D1)') + '\n'
+        + '\n',
+      );
+    });
+  });
+
+  describe('formatCanvasList', () => {
+    it('renders size, created date and permalink when present', () => {
+      const canvases: SlackCanvas[] = [
+        { id: 'F1', title: 'Roadmap', size: 3072, created: 1700000000, permalink: 'https://x.slack.com/F1' },
+        { id: 'F2', name: 'notes' },
+        { id: 'F3' },
+      ];
+
+      expect(formatCanvasList(canvases)).toBe(
+        bold('📄 Canvases (3)\n\n')
+        + '  ' + dim('1.') + ' ' + bold('Roadmap') + ' ' + dim('(F1)') + ' ' + dim('3KB') + '\n'
+        + '     ' + dim(formatTimestamp('1700000000')) + '\n'
+        + '     ' + dim('https://x.slack.com/F1') + '\n'
+        + '\n'
+        + '  ' + dim('2.') + ' ' + bold('notes') + ' ' + dim('(F2)') + ' \n'
+        + '\n'
+        + '  ' + dim('3.') + ' ' + bold('Untitled') + ' ' + dim('(F3)') + ' \n'
+        + '\n',
+      );
+    });
+  });
+
+  describe('formatUsergroupList', () => {
+    it('renders handle, member count, disabled badge and description', () => {
+      const groups: SlackUsergroup[] = [
+        { id: 'S1', name: 'Eng', handle: 'eng', user_count: 4, description: 'Engineers' },
+        { id: 'S2', name: 'Old', date_delete: 1700000000, user_count: 0 },
+        { id: 'S3', name: 'Bare' },
+      ];
+
+      expect(formatUsergroupList(groups)).toBe(
+        bold('👥 User Groups (3)\n\n')
+        + '  ' + dim('1.') + ' ' + bold('Eng') + ' ' + cyan('@eng') + ' ' + dim('(S1)') + ' ' + dim('4 members') + '\n'
+        + '     ' + dim('Engineers') + '\n'
+        + '\n'
+        + '  ' + dim('2.') + ' ' + bold('Old') + ' ' + dim('(no handle)') + ' ' + dim('(S2)') + ' ' + dim('0 members') + yellow(' [disabled]') + '\n'
+        + '\n'
+        + '  ' + dim('3.') + ' ' + bold('Bare') + ' ' + dim('(no handle)') + ' ' + dim('(S3)') + ' \n'
+        + '\n',
+      );
+    });
+
+    it('renders the empty message when there are no groups', () => {
+      expect(formatUsergroupList([])).toBe(dim('No user groups found.\n'));
+    });
+  });
+
+  describe('formatEmojiList', () => {
+    it('renders alias rows, URL rows and rows without a URL', () => {
+      const emoji: CustomEmoji[] = [
+        { name: 'parrot', url: 'https://emoji.slack-edge.com/parrot.gif', is_alias: false },
+        { name: 'bird', is_alias: true, alias_for: 'parrot' },
+        { name: 'nourl', is_alias: false },
+      ];
+
+      expect(formatEmojiList(emoji)).toBe(
+        bold('😀 Custom emoji (3 — 2 original, 1 alias)\n\n')
+        + '  ' + cyan(':parrot:') + ' ' + dim('https://emoji.slack-edge.com/parrot.gif') + '\n'
+        + '  ' + cyan(':bird:') + ' ' + dim('→ :parrot:') + '\n'
+        + '  ' + cyan(':nourl:') + '\n',
+      );
+    });
+  });
+
+  describe('formatUsergroup', () => {
+    it('renders the header, details and members with bot and deactivated markers', () => {
+      const group: SlackUsergroup = { id: 'S1', name: 'Eng', handle: 'eng', description: 'Engineers' };
+      const members: UsergroupMember[] = [
+        { id: 'U1', name: 'alice', display_name: 'ali', real_name: 'Alice Doe' },
+        { id: 'U2', name: 'bot', real_name: 'bot', is_bot: true },
+        { id: 'U3', deleted: true, is_bot: true },
+      ];
+
+      expect(formatUsergroup(group, members)).toBe(
+        bold('👥 Eng') + ' ' + cyan('@eng') + green(' [enabled]') + '\n\n'
+        + '  ' + dim('ID:') + '      S1\n'
+        + '  ' + dim('About:') + '   Engineers\n'
+        + '  ' + dim('Members:') + ' 3\n'
+        + '\n'
+        + '  ' + dim('1.') + ' ' + bold('@ali') + dim(' (Alice Doe)') + ' ' + dim('(U1)') + '\n'
+        + '  ' + dim('2.') + ' ' + bold('@bot') + ' ' + dim('(U2)') + dim(' [bot]') + '\n'
+        + '  ' + dim('3.') + ' ' + bold('@U3') + ' ' + dim('(U3)') + dim(' [bot]') + dim(' [deactivated]') + '\n',
+      );
+    });
+
+    it('renders a disabled group with no handle, description or members', () => {
+      const group: SlackUsergroup = { id: 'S2', name: 'Old', date_delete: 1700000000 };
+
+      expect(formatUsergroup(group, [])).toBe(
+        bold('👥 Old') + ' ' + dim('(no handle)') + yellow(' [disabled]') + '\n\n'
+        + '  ' + dim('ID:') + '      S2\n'
+        + '  ' + dim('Members:') + ' 0\n',
       );
     });
   });

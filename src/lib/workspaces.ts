@@ -208,17 +208,20 @@ export async function putWorkspace(
     ? metadata
     : { ...metadata, profile: key };
 
-  // Re-keying a profile to a different auth type leaves the old type's secrets
-  // unreachable, so drop them before the record is replaced.
   const previous = data.workspaces[key];
-  if (previous && previous.auth_type !== config.auth_type) {
-    await deleteCredentials(store, key, previous.auth_type);
-  }
 
   // The record holds metadata only until the store attaches the secrets; the
   // document is not persisted in between.
   data.workspaces[key] = stored as WorkspaceConfig;
   await storeCredentials(store, key, config);
+
+  // Re-keying a profile to a different auth type leaves the old type's secrets
+  // unreachable. Drop them only once the new ones are stored, so a failing
+  // store never leaves the profile with neither set. The kinds of the two auth
+  // types never overlap, so this cannot delete what was just written.
+  if (previous && previous.auth_type !== config.auth_type) {
+    await deleteCredentials(store, key, previous.auth_type);
+  }
 
   // Set as default if it's the first workspace
   if (!data.default_workspace) {

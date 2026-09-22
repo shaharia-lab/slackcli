@@ -25,6 +25,10 @@ export const CREDENTIAL_KINDS: Record<AuthType, readonly CredentialKind[]> = {
   browser: ['xoxc', 'xoxd'],
 };
 
+// Every kind, for cleaning up after a record whose auth_type is missing or
+// unknown (a hand-edited or damaged file) — deleting an absent kind is a no-op.
+const ALL_CREDENTIAL_KINDS: readonly CredentialKind[] = ['token', 'xoxc', 'xoxd'];
+
 // Where each kind lives on a WorkspaceConfig record.
 const CREDENTIAL_FIELDS: Record<CredentialKind, 'token' | 'xoxc_token' | 'xoxd_token'> = {
   token: 'token',
@@ -126,8 +130,16 @@ export async function loadCredentials(
   ref: string,
   metadata: WorkspaceMetadata,
 ): Promise<WorkspaceConfig> {
+  const kinds = CREDENTIAL_KINDS[metadata.auth_type] as readonly CredentialKind[] | undefined;
+  if (!kinds) {
+    throw new Error(
+      `Profile "${ref}" has an unknown auth type (${String(metadata.auth_type)}). ` +
+      `Remove it with "slackcli auth remove" and authenticate again.`
+    );
+  }
+
   const secrets: Partial<Record<CredentialKind, string>> = {};
-  for (const kind of CREDENTIAL_KINDS[metadata.auth_type]) {
+  for (const kind of kinds) {
     const value = await store.get(secretKey(ref, kind));
     if (value === null) throw new MissingCredentialError(ref, kind);
     secrets[kind] = value;
@@ -143,13 +155,15 @@ export async function loadCredentials(
   };
 }
 
-// Delete every secret for profile `ref`. Deleting an absent secret is a no-op.
+// Delete every secret for profile `ref`. Deleting an absent secret is a no-op,
+// so an unrecognised auth type deletes every kind rather than failing: remove
+// and logout are how a user recovers from a damaged record.
 export async function deleteCredentials(
   store: SecretStore,
   ref: string,
   authType: AuthType,
 ): Promise<void> {
-  for (const kind of CREDENTIAL_KINDS[authType]) {
+  for (const kind of CREDENTIAL_KINDS[authType] ?? ALL_CREDENTIAL_KINDS) {
     await store.delete(secretKey(ref, kind));
   }
 }

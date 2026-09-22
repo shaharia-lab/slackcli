@@ -297,6 +297,18 @@ describe('putWorkspace', () => {
     expect(data.workspaces.work.auth_type).toBe('standard');
   });
 
+  it('keeps the old credentials when storing the new auth type fails', async () => {
+    const data: WorkspacesData = { workspaces: {} };
+    const store = new MemoryStore();
+    await putWorkspace(data, store, browser(), 'work');
+    store.failOn = 'set';
+    await expect(
+      putWorkspace(data, store, standard({ token_type: 'user' }), 'work'),
+    ).rejects.toBeInstanceOf(SecretStoreError);
+    expect(store.secrets.get('work:xoxc')).toBe('xoxc-abc');
+    expect(store.secrets.get('work:xoxd')).toBe('xoxd-abc');
+  });
+
   it('propagates a store failure', async () => {
     const data: WorkspacesData = { workspaces: {} };
     const store = new MemoryStore();
@@ -383,6 +395,43 @@ describe('dropWorkspace', () => {
     expect(data.workspaces.T1).toBeDefined();
     expect(data.default_workspace).toBe('T1');
     expect(store.secrets.get('T1:token')).toBe('xoxb-abc');
+  });
+});
+
+// A hand-edited or damaged record: no usable auth_type.
+function damagedData(): WorkspacesData {
+  const record = { ...browser({ workspace_id: 'TX', workspace_name: 'Broken' }) } as Record<string, unknown>;
+  delete record.auth_type;
+  return {
+    default_workspace: 'T1',
+    workspaces: { T1: standard(), TX: record as never },
+  };
+}
+
+describe('damaged records', () => {
+  it('can still be removed, and every credential field goes with them', async () => {
+    const data = damagedData();
+    const store = new MemoryStore();
+    store.secrets.set('TX:xoxc', 'c');
+    store.secrets.set('TX:xoxd', 'd');
+    store.secrets.set('TX:token', 't');
+    await dropWorkspace(data, store, 'TX');
+    expect(Object.keys(data.workspaces)).toEqual(['T1']);
+    expect(store.secrets.size).toBe(0);
+  });
+
+  it('do not stop logout from clearing the file', async () => {
+    const data = damagedData();
+    await dropAllWorkspaces(data, new FileSecretStore(data));
+    expect(serialize(data)).toEqual({ workspaces: {} });
+  });
+
+  it('fail to load with a clear error instead of a TypeError', async () => {
+    const data = damagedData();
+    const err = await readWorkspace(data, new FileSecretStore(data), 'TX').catch((e) => e);
+    expect(err).not.toBeInstanceOf(TypeError);
+    expect(err.message).toContain('unknown auth type');
+    expect(err.message).not.toContain('xoxc-abc');
   });
 });
 

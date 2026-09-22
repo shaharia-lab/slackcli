@@ -46,6 +46,36 @@ const LIST_WITH_MENTION = `<div data-section-style='5'><ul>
 <li class=''>Assigned to <@U099ABC123><br/></li>
 </ul></div>`;
 
+const NESTED_ORDERED_LIST = `<div data-section-style='6'><ul>
+<li class=''>A<br/></li>
+<ul>
+<li class=''>A.i<br/></li>
+<li class=''>A.ii<br/></li>
+</ul>
+<li class=''>B<br/></li>
+</ul></div>`;
+
+const NESTED_CHECKLIST = `<div data-section-style='7'><ul>
+<li class='checked'>Parent done<br/></li>
+<ul>
+<li class='checked'>Child done<br/></li>
+<li class=''>Child todo<br/></li>
+</ul>
+<li class=''>Parent todo<br/></li>
+</ul></div>`;
+
+const ORDERED_LIST_WITH_EMPTY_ITEMS = `<div data-section-style='6'><ul>
+<li class=''>One<br/></li>
+<li class=''></li>
+<li class=''><br/></li>
+<li class=''>Two<br/></li>
+</ul></div>`;
+
+const UNKNOWN_STYLE_LIST = `<div data-section-style='9'><ul>
+<li class=''>Item A<br/></li>
+<li class=''>Item B<br/></li>
+</ul></div>`;
+
 const CODE_BLOCK = `<pre class='prettyprint'>const x = 1;\nconst y = 2;</pre>`;
 
 const CODE_BLOCK_WITH_FORMATTING = `<pre class='prettyprint'>{<br>    <i>"key"</i>: "value"<br>}</pre>`;
@@ -187,6 +217,24 @@ describe('canvasHtmlToMarkdown', () => {
       expect(result).toContain('- Parent');
       expect(result).toContain('  - Child 1');
       expect(result).toContain('  - Child 2');
+    });
+
+    it('should restart numbering in nested ordered lists and resume the parent count', () => {
+      expect(canvasHtmlToMarkdown(NESTED_ORDERED_LIST)).toBe('1. A\n  1. A.i\n  2. A.ii\n2. B\n');
+    });
+
+    it('should convert nested checklists with per-item checked state', () => {
+      expect(canvasHtmlToMarkdown(NESTED_CHECKLIST)).toBe(
+        '- [x] Parent done\n  - [x] Child done\n  - [ ] Child todo\n- [ ] Parent todo\n',
+      );
+    });
+
+    it('should skip items with no text without consuming an ordered number', () => {
+      expect(canvasHtmlToMarkdown(ORDERED_LIST_WITH_EMPTY_ITEMS)).toBe('1. One\n2. Two\n');
+    });
+
+    it('should render an unrecognised section style as a bullet list', () => {
+      expect(canvasHtmlToMarkdown(UNKNOWN_STYLE_LIST)).toBe('- Item A\n- Item B\n');
     });
 
     it('should preserve user mentions inside list items', () => {

@@ -180,6 +180,10 @@ function convertEmbeds(html: string): string {
   return result;
 }
 
+/** Canvas `data-section-style` values; anything else renders as a bullet list. */
+const ORDERED_STYLE = '6';
+const CHECKLIST_STYLE = '7';
+
 /** Convert lists with data-section-style context. */
 function convertLists(html: string): string {
   // Process each <div data-section-style="N"> block
@@ -206,23 +210,27 @@ function convertListBlock(html: string, style: string, depth: number): string {
       const text = part.content.replace(/<\/?[a-zA-Z][^>]*>/g, '').trim();
       if (!text) continue;
 
-      if (style === '7') {
-        // Checklist
-        result += `${indent}- [${isChecked ? 'x' : ' '}] ${text}\n`;
-      } else if (style === '6') {
-        // Ordered list
-        result += `${indent}${itemIndex}. ${text}\n`;
-        itemIndex++;
-      } else {
-        // Bullet list (default)
-        result += `${indent}- ${text}\n`;
-      }
+      result += formatListItem(style, indent, text, isChecked, itemIndex);
+      if (style === ORDERED_STYLE) itemIndex++;
     } else if (part.type === 'nested') {
       result += convertListBlock(part.content, style, depth + 1);
     }
   }
 
   return result;
+}
+
+/** Format one list item line for the canvas list style. */
+function formatListItem(style: string, indent: string, text: string, isChecked: boolean, index: number): string {
+  switch (style) {
+    case CHECKLIST_STYLE:
+      return `${indent}- [${isChecked ? 'x' : ' '}] ${text}\n`;
+    case ORDERED_STYLE:
+      return `${indent}${index}. ${text}\n`;
+    default:
+      // Bullet list
+      return `${indent}- ${text}\n`;
+  }
 }
 
 /** Split list HTML into top-level items and nested <ul> blocks. */

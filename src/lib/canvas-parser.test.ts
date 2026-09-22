@@ -186,6 +186,13 @@ describe('canvasHtmlToMarkdown', () => {
       const result = canvasHtmlToMarkdown(ENTITIES);
       expect(result).toContain('Fish & Chips <3 "tasty"');
     });
+
+    it('should decode every occurrence of each supported entity', () => {
+      const html = `<p class='line'>a &amp; b &amp; c &lt;x&gt; &lt;y&gt; &quot;q&quot; it&#39;s &#39;ok&#39; one&nbsp;two&nbsp;three</p>`;
+      const result = canvasHtmlToMarkdown(html);
+      expect(result).toContain(`a & b & c <x> <y> "q" it's 'ok' one two three`);
+      expect(result).not.toMatch(/&(?:amp|lt|gt|quot|#39|nbsp);/);
+    });
   });
 
   describe('lists', () => {
@@ -375,6 +382,16 @@ describe('canvasHtmlToMarkdown', () => {
     it('should strip zero-width space paragraphs', () => {
       const result = canvasHtmlToMarkdown(EMPTY_PARAGRAPH);
       expect(result.trim()).toBe('');
+    });
+
+    it('should strip every zero-width space inside paragraph text and table cells', () => {
+      const html =
+        `<p class='line'>\u200Bfoo\u200Bbar\u200B</p>` +
+        `<table><tr><td>\u200Bcell\u200Bone\u200B</td></tr></table>`;
+      const result = canvasHtmlToMarkdown(html);
+      expect(result).not.toContain('\u200B');
+      expect(result).toContain('foobar');
+      expect(result).toContain('| cellone |');
     });
 
     it('should preserve Slack mentions while stripping HTML tags', () => {

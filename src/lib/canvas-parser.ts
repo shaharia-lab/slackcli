@@ -323,7 +323,7 @@ function convertBlocks(html: string): string {
   result = result.replace(
     /<p\b[^>]*>([\s\S]*?)<\/p>/gi,
     (_m, c: string) => {
-      const text = c.replace(/\u200B/g, '').trim();
+      const text = c.replaceAll('\u200B', '').trim();
       if (!text) return '\n';
       return `${text}\n\n`;
     },
@@ -388,7 +388,7 @@ function convertCellContent(html: string): string {
   // Reuse the shared inline conversion
   result = convertInline(result);
   // Strip remaining HTML tags but preserve Slack mentions (<@U...>, <#C...>)
-  result = result.replace(/<\/?[a-zA-Z][^>]*>/g, '').replace(/\u200B/g, '').trim();
+  result = result.replace(/<\/?[a-zA-Z][^>]*>/g, '').replaceAll('\u200B', '').trim();
   return result;
 }
 
@@ -398,10 +398,10 @@ function stripTags(html: string): string {
 
 function decodeEntities(html: string): string {
   return html
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ');
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&nbsp;', ' ');
 }

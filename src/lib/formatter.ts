@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import type {
-  SlackCanvas, SlackChannel, SlackFile, SlackMessage, SlackUser, WorkspaceConfig,
+  SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
   SlackTeam, SlackUsergroup, UsergroupMember,
   CustomEmoji, DraftSummary,

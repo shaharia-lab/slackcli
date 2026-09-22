@@ -11,7 +11,7 @@ import {
 } from '../lib/workspaces.ts';
 import { success, error, info, warning, formatWorkspace } from '../lib/formatter.ts';
 import chalk from 'chalk';
-import { parseCurlCommand, CurlParseError, type ParsedCurlResult } from '../lib/curl-parser.ts';
+import { parseCurlCommand, type ParsedCurlResult } from '../lib/curl-parser.ts';
 import { resolveCurlInput, type CurlInputResult } from '../lib/curl-input.ts';
 import { clearBrowserProfile } from '../lib/browser-launcher.ts';
 import { isSlackWorkspaceUrl } from '../lib/browser-auth.ts';

@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { checkForUpdates, performUpdate, getCurrentVersion } from '../lib/updater.ts';
+import { checkForUpdates, performUpdate } from '../lib/updater.ts';
 import { success, error, info } from '../lib/formatter.ts';
 
 export function createUpdateCommand(): Command {

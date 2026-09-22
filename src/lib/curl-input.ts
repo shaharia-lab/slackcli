@@ -57,12 +57,8 @@ const defaultDeps: CurlInputDeps = {
     }),
 };
 
-function isBlank(input: string | undefined): boolean {
-  return !input || input.trim() === '';
-}
-
-function withInput(input: string | undefined, source: CurlInputSource): CurlInputResult {
-  return isBlank(input) ? { ok: false, reason: 'empty', source } : { ok: true, input: input as string, source };
+function withInput(input: string, source: CurlInputSource): CurlInputResult {
+  return input.trim() === '' ? { ok: false, reason: 'empty', source } : { ok: true, input, source };
 }
 
 async function fromClipboard(

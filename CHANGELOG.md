@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A whitespace-only `-H 'Cookie:'` header no longer hides a later `-b`/`--cookie`
 
 ### Security
+- **Canvas heading, blockquote and table-cell tag stripping cannot reassemble a tag**: removing one tag no longer joins the text around it into a new one (`<<b>script>` → `<script>`), and a zero-width space in a table cell can no longer split a tag so that it survives. Output for other input is unchanged, and the stripper runs in linear time (#231)
 - **`files download --output` is contained to the working directory**: an output path that resolves outside the current directory is now confirmed before anything is downloaded — `--yes` proceeds, an interactive terminal prompts `y/N`, and a non-interactive shell without `--yes` refuses with a non-zero exit (#191)
   - Paths inside the current directory are unchanged and never prompt; the `'wx'` open flag is unchanged, so an existing file still fails with `EEXIST` and is never truncated
   - The check resolves the parent directory through symlinks, so a symlinked subdirectory pointing out of the working tree is caught as well, and the message names the resolved absolute path rather than the string that was typed

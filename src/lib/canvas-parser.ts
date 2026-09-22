@@ -387,13 +387,71 @@ function convertCellContent(html: string): string {
   let result = html.replace(/<\/?(?:h[1-6]|p|div)\b[^>]*>/gi, '');
   // Reuse the shared inline conversion
   result = convertInline(result);
-  // Strip remaining HTML tags but preserve Slack mentions (<@U...>, <#C...>)
-  result = result.replace(/<\/?[a-zA-Z][^>]*>/g, '').replaceAll('\u200B', '').trim();
-  return result;
+  // Strip remaining HTML tags but preserve Slack mentions (<@U...>, <#C...>).
+  // Zero-width spaces go first so one cannot split a tag and survive the strip.
+  return stripTags(result.replaceAll('\u200B', '')).trim();
 }
 
-function stripTags(html: string): string {
-  return html.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+/** Whether the `<` at `out[p]` opens a tag: `<` or `</` followed by a letter. */
+function opensTag(out: string[], p: number): boolean {
+  const c = out[p + 1] === '/' ? out[p + 2] : out[p + 1];
+  return c !== undefined && /^[a-zA-Z]$/.test(c);
+}
+
+/**
+ * Remove HTML tags (`<\/?[a-zA-Z][^>]*>`) but keep Slack mentions such as
+ * `<@U123>`, in linear time. Output matches `s.replace(/<\/?[a-zA-Z][^>]*>/g, '')`
+ * unless that would leave a tag behind (`<<b>script>` → `<script>`); then the
+ * pieces are stripped again as they rejoin, so no tag survives. Exported for
+ * tests.
+ */
+export function stripTags(html: string): string {
+  const once = removeTags(html, false);
+  return removeTags(once, false) === once ? once : removeTags(once, true);
+}
+
+/**
+ * One left-to-right scan that drops each `<`…`>` tag at its closing `>`.
+ * With `rejoin`, a `<` just before a removed tag is re-checked against the
+ * characters that now follow it; without it, the scan behaves like one
+ * global regex pass.
+ */
+function removeTags(html: string, rejoin: boolean): string {
+  const out: string[] = [];
+  // Positions in `out` of each '<' that may still open a tag. A '<' before a
+  // kept '>' never can: `[^>]*` does not cross it, and it is never removed.
+  const opens: number[] = [];
+  // opens[0..known) are known not to open a tag.
+  let known = 0;
+  for (const ch of html) {
+    if (ch !== '>') {
+      if (ch === '<') opens.push(out.length);
+      out.push(ch);
+      continue;
+    }
+    let j = known;
+    while (j < opens.length && !opensTag(out, opens[j])) j++;
+    if (j === opens.length) {
+      out.push(ch);
+      opens.length = 0;
+      known = 0;
+      continue;
+    }
+    // Drop the earliest tag this '>' closes, as the regex would.
+    const start = opens[j];
+    out.length = start;
+    if (!rejoin) {
+      // The regex resumes after the tag and never revisits an earlier '<'.
+      opens.length = 0;
+      known = 0;
+      continue;
+    }
+    opens.length = j;
+    // Only a '<' within two characters of the cut sees new characters after it.
+    known = j;
+    while (known > 0 && opens[known - 1] >= start - 2) known--;
+  }
+  return out.join('');
 }
 
 function decodeEntities(html: string): string {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { canvasHtmlToMarkdown, isAuthPage } from './canvas-parser.ts';
+import { canvasHtmlToMarkdown, isAuthPage, stripTags } from './canvas-parser.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures — based on real Slack Canvas HTML exports
@@ -485,6 +485,73 @@ describe('canvasHtmlToMarkdown attribute and tag stripping (#213)', () => {
     expect(canvasHtmlToMarkdown(`<control data-remapped="true"><<i>script>x</control>`)).toBe('script>x\n');
     // A trailing "<" with no ">" is kept verbatim.
     expect(canvasHtmlToMarkdown(`<control data-remapped="true"><b>a</b> < b</control>`)).toBe('a < b\n');
+  });
+});
+
+describe('stripTags', () => {
+  const TAG = /<\/?[a-zA-Z][^>]*>/;
+  const TAGS = /<\/?[a-zA-Z][^>]*>/g;
+
+  it('should remove tags and keep text and Slack mentions', () => {
+    expect(stripTags('<b>bold</b> <@U123> <#C456|general> <i>x</i>')).toBe('bold <@U123> <#C456|general> x');
+  });
+
+  it('should leave strings without tags unchanged', () => {
+    for (const s of ['', 'plain', 'a < b > c', '<>', '</>', '<1>', '<', '>', '< b>', '<@U1>']) {
+      expect(stripTags(s)).toBe(s);
+    }
+  });
+
+  it('should not let stripped pieces rejoin into a tag', () => {
+    expect(stripTags('<<b>script>alert(1)<</b>/script>')).toBe('alert(1)');
+    expect(stripTags('<<<b>b>b>x')).toBe('x');
+    expect(stripTags('<</i>/b>x')).toBe('x');
+    expect(stripTags('<<b>@U1>')).toBe('<@U1>');
+  });
+
+  it('should match one regex pass unless that leaves a tag, and never leave one', () => {
+    // Deterministic LCG (high bits; the low bits cycle) so a failure is reproducible.
+    let seed = 231;
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return (seed >>> 16) % n;
+    };
+    const alphabet = ['<', '<', '>', '>', '/', 'a', 'B', '@'];
+    let rejoined = 0;
+    for (let run = 0; run < 5000; run++) {
+      let s = '';
+      const len = rand(16);
+      for (let i = 0; i < len; i++) s += alphabet[rand(alphabet.length)];
+      const once = s.replace(TAGS, '');
+      const result = stripTags(s);
+      expect(result).not.toMatch(TAG);
+      if (TAG.test(once)) rejoined++;
+      else expect(result).toBe(once);
+    }
+    // The sample must exercise the rejoin path, not only the plain pass.
+    expect(rejoined).toBeGreaterThan(20);
+  });
+
+  it('should stay linear on deeply nested tag fragments', () => {
+    const depth = 50_000;
+    const start = performance.now();
+    const result = stripTags(`${'<'.repeat(depth)}${'b>'.repeat(depth)}x`);
+    expect(result).toBe('x');
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+});
+
+describe('canvasHtmlToMarkdown tag reassembly', () => {
+  it('should not let a zero-width space hide a tag inside a table cell', () => {
+    const result = canvasHtmlToMarkdown(
+      `<table><tr><td><\u200Bscript>x</td><td><<b>script>y</td></tr></table>`,
+    );
+    expect(result).not.toContain('<script');
+    expect(result).toContain('| x | y |');
+  });
+
+  it('should not let stripped pieces rejoin into a tag inside a heading', () => {
+    expect(canvasHtmlToMarkdown(`<h1><<b>script>T</h1>`)).toBe('# T\n');
   });
 });
 

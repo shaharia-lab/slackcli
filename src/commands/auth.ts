@@ -233,7 +233,8 @@ export function createAuthCommand(): Command {
         );
 
         result.saved.forEach((config) => {
-          success(`${config.workspace_name} ${chalk.dim(`(${config.workspace_id})`)}`);
+          const workspaceId = chalk.dim(`(${config.workspace_id})`);
+          success(`${config.workspace_name} ${workspaceId}`);
         });
 
         // Partial success is still success — surface the misses without
@@ -410,9 +411,10 @@ export function createAuthCommand(): Command {
         console.log(`  Name: ${chalk.cyan(parsed.workspaceName)}`);
         console.log(`  URL:  ${chalk.cyan(parsed.workspaceUrl)}\n`);
 
+        const tokenLength = (token: string) => chalk.gray(`(${token.length} chars)`);
         console.log(chalk.bold('Tokens:'));
-        console.log(`  xoxd: ${chalk.green(parsed.xoxd.substring(0, 20))}...${chalk.gray(`(${parsed.xoxd.length} chars)`)}`);
-        console.log(`  xoxc: ${chalk.green(parsed.xoxc.substring(0, 20))}...${chalk.gray(`(${parsed.xoxc.length} chars)`)}\n`);
+        console.log(`  xoxd: ${chalk.green(parsed.xoxd.substring(0, 20))}...${tokenLength(parsed.xoxd)}`);
+        console.log(`  xoxc: ${chalk.green(parsed.xoxc.substring(0, 20))}...${tokenLength(parsed.xoxc)}\n`);
 
         // If --login flag is set, authenticate directly
         if (options.login) {

@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import chalk from 'chalk';
 import {
+  formatChannelList,
   formatSavedItems,
   warning,
   formatSearchMessages,
@@ -10,6 +12,7 @@ import {
   formatFileSize,
   formatDraftList,
   formatMessage,
+  formatTimestamp,
   writeJson,
 } from './formatter.ts';
 import type {
@@ -20,6 +23,7 @@ import type {
   UnreadChannel,
   SlackUser,
   SlackMessage,
+  SlackChannel,
   DraftSummary,
 } from '../types/index.ts';
 
@@ -516,4 +520,211 @@ describe('writeJson', () => {
     expect(out.length).toBe(expected.length);
     expect(out).toBe(expected);
   }, 30000);
+});
+
+// Byte-exact output with ANSI colour forced on (#205). The rest of this file
+// runs with chalk's non-TTY default (no escape codes), so it only guards the
+// plain text; these tests pin every styled segment of the formatters whose
+// template literals were un-nested. The expected strings are built from raw
+// SGR codes rather than chalk, so a change in which segment is styled fails.
+describe('formatter output with colour enabled', () => {
+  let savedLevel: typeof chalk.level;
+  beforeEach(() => {
+    savedLevel = chalk.level;
+    chalk.level = 3;
+  });
+  afterEach(() => {
+    chalk.level = savedLevel;
+  });
+
+  // Mirrors chalk: a styled string that spans lines is closed and reopened
+  // around each line break.
+  const sgr = (open: number, close: number) => (s: string) =>
+    s.split('\n').map((line) => '\u001b[' + open + 'm' + line + '\u001b[' + close + 'm').join('\n');
+  const bold = sgr(1, 22);
+  const dim = sgr(2, 22);
+  const cyan = sgr(36, 39);
+  const yellow = sgr(33, 39);
+  const magenta = sgr(35, 39);
+  const blue = sgr(34, 39);
+  const gray = sgr(90, 39);
+  const green = sgr(32, 39);
+
+  const users = new Map<string, SlackUser>([
+    ['U1', { id: 'U1', name: 'alice', real_name: 'Alice' }],
+    ['U2', { id: 'U2', name: 'bob' }],
+  ]);
+  const ts = '1700000000.000100';
+  const when = formatTimestamp(ts);
+
+  describe('formatChannelList', () => {
+    it('renders public, private, group DM and DM rows, with archived suffixes', () => {
+      const channels: SlackChannel[] = [
+        { id: 'C1', name: 'general', topic: { value: 'Company news' } },
+        { id: 'C2', name: 'old-news', is_archived: true },
+        { id: 'G1', name: 'secret', is_private: true },
+        { id: 'G2', name: 'old-secret', is_private: true, is_archived: true },
+        { id: 'M1', name: 'mpdm-a--b', is_mpim: true },
+        { id: 'M2', is_mpim: true },
+        { id: 'D1', is_im: true, user: 'U1' },
+        { id: 'D2', is_im: true, user: 'U2' },
+        { id: 'D3', is_im: true, user: 'U404' },
+        { id: 'D4', is_im: true },
+      ];
+
+      expect(formatChannelList(channels, users)).toBe(
+        bold('📋 Conversations (10)\n')
+        + cyan('\nPublic Channels:\n')
+        + '  1. #general ' + dim('(C1)') + '\n'
+        + '     ' + dim('Company news') + '\n'
+        + '  2. #old-news ' + dim('(C2)') + gray(' [archived]') + '\n'
+        + yellow('\nPrivate Channels:\n')
+        + '  1. 🔒 secret ' + dim('(G1)') + '\n'
+        + '  2. 🔒 old-secret ' + dim('(G2)') + gray(' [archived]') + '\n'
+        + magenta('\nGroup Messages:\n')
+        + '  1. 👥 mpdm-a--b ' + dim('(M1)') + '\n'
+        + '  2. 👥 Group ' + dim('(M2)') + '\n'
+        + blue('\nDirect Messages:\n')
+        + '  1. 👤 @Alice ' + dim('(D1)') + '\n'
+        + '  2. 👤 @bob ' + dim('(D2)') + '\n'
+        + '  3. 👤 @Unknown User ' + dim('(D3)') + '\n'
+        + '  4. 👤 @Unknown User ' + dim('(D4)') + '\n',
+      );
+    });
+
+    it('renders only the header when there are no conversations', () => {
+      expect(formatChannelList([], users)).toBe(bold('📋 Conversations (0)\n'));
+    });
+
+    it('omits sections that have no conversations', () => {
+      const output = formatChannelList([{ id: 'D1', is_im: true, user: 'U1' }], users);
+      expect(output).toBe(
+        bold('📋 Conversations (1)\n')
+        + blue('\nDirect Messages:\n')
+        + '  1. 👤 @Alice ' + dim('(D1)') + '\n',
+      );
+    });
+  });
+
+  describe('formatMessage', () => {
+    it('renders the header, ts line and reply count of a thread parent', () => {
+      const msg: SlackMessage = { type: 'message', user: 'U1', text: 'line one\nline two', ts, reply_count: 3 };
+
+      expect(formatMessage(msg, users, 2)).toBe(
+        '  ' + dim('[' + when + ']') + ' ' + bold('@Alice') + '\n'
+        + '    line one\n'
+        + '    line two\n'
+        + '    ' + dim('ts: ' + ts) + '\n'
+        + '    ' + cyan('💬 3 replies') + '\n',
+      );
+    });
+
+    it('renders a reply with its thread indicator and thread_ts', () => {
+      const msg: SlackMessage = {
+        type: 'message', bot_id: 'B1', text: 'reply', ts, thread_ts: '1699999999.000001', reply_count: 1,
+      };
+
+      expect(formatMessage(msg, users)).toBe(
+        dim('[' + when + ']') + ' ' + bold('@B1') + dim(' (in thread)') + '\n'
+        + '  reply\n'
+        + '  ' + dim('ts: ' + ts) + dim(' | thread_ts: 1699999999.000001') + '\n',
+      );
+    });
+
+    it('renders file metadata, a file without metadata, and a deleted file', () => {
+      const msg: SlackMessage = {
+        type: 'message', user: 'U404', text: 'files', ts,
+        files: [
+          { id: 'F1', name: 'doc.pdf', size: 2048, mimetype: 'application/pdf', permalink: 'https://x.slack.com/F1' },
+          { id: 'F2', mimetype: 'text/plain' },
+          { id: 'F3' },
+          { id: 'F4', mode: 'tombstone' },
+        ],
+      };
+
+      expect(formatMessage(msg, users)).toBe(
+        dim('[' + when + ']') + ' ' + bold('@Unknown') + '\n'
+        + '  files\n'
+        + '  ' + dim('ts: ' + ts) + '\n'
+        + '  ' + yellow('📎') + ' ' + yellow('doc.pdf') + ' ' + dim('(2.0 KB, application/pdf)') + '\n'
+        + '     ' + dim('https://x.slack.com/F1') + '\n'
+        + '  ' + yellow('📎') + ' ' + yellow('(unnamed file)') + ' ' + dim('(text/plain)') + '\n'
+        + '  ' + yellow('📎') + ' ' + yellow('(unnamed file)') + '\n'
+        + '  ' + yellow('📎') + ' ' + dim('(deleted file)') + '\n',
+      );
+    });
+  });
+
+  describe('formatSavedItems', () => {
+    it('renders message, file and unknown items', () => {
+      const items: SavedItem[] = [
+        {
+          type: 'message', channel_id: 'C1', channel_name: 'general', todo_state: 'completed',
+          message: { type: 'message', user: 'U1', text: 'saved text', ts },
+        },
+        { type: 'message', channel_id: 'C2', message: { type: 'message', text: 'no user', ts } },
+        { type: 'file', channel_id: 'C1', file: { title: 'Spec' } },
+        { type: 'file', channel_id: 'C1', file: {} },
+        { type: 'channel', channel_id: 'C3' },
+      ];
+
+      expect(formatSavedItems(items, users)).toBe(
+        bold('📌 Saved Items (5)\n\n')
+        + '  ' + dim('1.') + ' ' + bold('@Alice') + ' in ' + cyan('#general') + ' ' + dim('[' + when + ']') + dim(' [completed]') + '\n'
+        + '     saved text\n'
+        + '     ' + dim('channel: C1  ts: ' + ts) + '\n\n'
+        + '  ' + dim('2.') + ' ' + bold('@Unknown') + ' in ' + cyan('#C2') + ' ' + dim('[' + when + ']') + '\n'
+        + '     no user\n'
+        + '     ' + dim('channel: C2  ts: ' + ts) + '\n\n'
+        + '  ' + dim('3.') + ' ' + yellow('File:') + ' ' + bold('Spec') + '\n\n'
+        + '  ' + dim('4.') + ' ' + yellow('File:') + ' ' + bold('Untitled') + '\n\n'
+        + '  ' + dim('5.') + ' ' + dim('[channel]') + '\n\n',
+      );
+    });
+  });
+
+  describe('formatSearchMessages', () => {
+    it('renders matches with and without a permalink', () => {
+      const matches: SearchMatch[] = [
+        {
+          ts, text: 'hit', username: 'bob', channel: { id: 'C1', name: 'eng' },
+          permalink: 'https://x.slack.com/p1',
+        },
+        { ts, text: 'bare', user: 'U9', channel: { id: 'C2', name: '' } },
+        { ts, text: 'nothing' },
+      ];
+
+      expect(formatSearchMessages('q', matches, 7)).toBe(
+        bold('🔍 Search Results for "q" (7 total)\n\n')
+        + '  ' + dim('1.') + ' ' + bold('@bob') + ' in ' + cyan('#eng') + ' ' + dim('[' + when + ']') + '\n'
+        + '     hit\n'
+        + '     ' + dim('https://x.slack.com/p1') + '\n'
+        + '\n'
+        + '  ' + dim('2.') + ' ' + bold('@U9') + ' in ' + cyan('#C2') + ' ' + dim('[' + when + ']') + '\n'
+        + '     bare\n'
+        + '\n'
+        + '  ' + dim('3.') + ' ' + bold('@Unknown') + ' in ' + cyan('#unknown') + ' ' + dim('[' + when + ']') + '\n'
+        + '     nothing\n'
+        + '\n',
+      );
+    });
+  });
+
+  describe('formatChannelSearchResults', () => {
+    it('renders member counts, the joined badge and purpose', () => {
+      const channels: ChannelSearchResult[] = [
+        { id: 'C1', name: 'eng', num_members: 42, is_member: true, purpose: { value: 'Engineering' } },
+        { id: 'C2', name: 'quiet' },
+      ];
+
+      expect(formatChannelSearchResults('e', channels, 2)).toBe(
+        bold('📋 Channels matching "e" (2 total)\n\n')
+        + '  ' + dim('1.') + ' #' + bold('eng') + ' ' + dim('(C1)') + ' ' + dim('42 members') + green(' [joined]') + '\n'
+        + '     ' + dim('Engineering') + '\n'
+        + '\n'
+        + '  ' + dim('2.') + ' #' + bold('quiet') + ' ' + dim('(C2)') + ' \n'
+        + '\n',
+      );
+    });
+  });
 });

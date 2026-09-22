@@ -122,7 +122,8 @@ export function formatChannelList(channels: SlackChannel[], users: Map<string, S
     output += chalk.cyan('\nPublic Channels:\n');
     publicChannels.forEach((ch, idx) => {
       const archived = ch.is_archived ? chalk.gray(' [archived]') : '';
-      output += `  ${idx + 1}. #${ch.name} ${chalk.dim(`(${ch.id})`)}${archived}\n`;
+      const id = chalk.dim(`(${ch.id})`);
+      output += `  ${idx + 1}. #${ch.name} ${id}${archived}\n`;
       if (ch.topic?.value) {
         output += `     ${chalk.dim(ch.topic.value)}\n`;
       }
@@ -133,14 +134,16 @@ export function formatChannelList(channels: SlackChannel[], users: Map<string, S
     output += chalk.yellow('\nPrivate Channels:\n');
     privateChannels.forEach((ch, idx) => {
       const archived = ch.is_archived ? chalk.gray(' [archived]') : '';
-      output += `  ${idx + 1}. 🔒 ${ch.name} ${chalk.dim(`(${ch.id})`)}${archived}\n`;
+      const id = chalk.dim(`(${ch.id})`);
+      output += `  ${idx + 1}. 🔒 ${ch.name} ${id}${archived}\n`;
     });
   }
 
   if (groupMessages.length > 0) {
     output += chalk.magenta('\nGroup Messages:\n');
     groupMessages.forEach((ch, idx) => {
-      output += `  ${idx + 1}. 👥 ${ch.name || 'Group'} ${chalk.dim(`(${ch.id})`)}\n`;
+      const id = chalk.dim(`(${ch.id})`);
+      output += `  ${idx + 1}. 👥 ${ch.name || 'Group'} ${id}\n`;
     });
   }
 
@@ -149,7 +152,8 @@ export function formatChannelList(channels: SlackChannel[], users: Map<string, S
     directMessages.forEach((ch, idx) => {
       const user = ch.user ? users.get(ch.user) : null;
       const userName = user?.real_name || user?.name || 'Unknown User';
-      output += `  ${idx + 1}. 👤 @${userName} ${chalk.dim(`(${ch.id})`)}\n`;
+      const id = chalk.dim(`(${ch.id})`);
+      output += `  ${idx + 1}. 👤 @${userName} ${id}\n`;
     });
   }
 
@@ -169,7 +173,9 @@ export function formatMessage(
   const isThread = msg.thread_ts && msg.thread_ts !== msg.ts;
   const threadIndicator = isThread ? chalk.dim(' (in thread)') : '';
 
-  let output = `${indentStr}${chalk.dim(`[${timestamp}]`)} ${chalk.bold(`@${userName}`)}${threadIndicator}\n`;
+  const when = chalk.dim(`[${timestamp}]`);
+  const author = chalk.bold(`@${userName}`);
+  let output = `${indentStr}${when} ${author}${threadIndicator}\n`;
 
   // Message text
   const textLines = msg.text.split('\n');
@@ -179,7 +185,8 @@ export function formatMessage(
 
   // Show timestamps for threading
   if (msg.ts) {
-    output += `${indentStr}  ${chalk.dim(`ts: ${msg.ts}`)}`;
+    const tsLine = chalk.dim(`ts: ${msg.ts}`);
+    output += `${indentStr}  ${tsLine}`;
     if (msg.thread_ts && msg.thread_ts !== msg.ts) {
       output += chalk.dim(` | thread_ts: ${msg.thread_ts}`);
     }
@@ -198,7 +205,7 @@ export function formatMessage(
       const parts: string[] = [];
       if (file.size !== undefined) parts.push(formatFileSize(file.size));
       if (file.mimetype) parts.push(file.mimetype);
-      const meta = parts.length > 0 ? ` ${chalk.dim(`(${parts.join(', ')})`)}` : '';
+      const meta = parts.length > 0 ? ' ' + chalk.dim(`(${parts.join(', ')})`) : '';
 
       output += `${indentStr}  ${chalk.yellow('📎')} ${chalk.yellow(name)}${meta}\n`;
 
@@ -219,7 +226,8 @@ export function formatMessage(
 
   // Thread indicator
   if (msg.reply_count && !isThread) {
-    output += `${indentStr}  ${chalk.cyan(`💬 ${msg.reply_count} replies`)}\n`;
+    const replies = chalk.cyan(`💬 ${msg.reply_count} replies`);
+    output += `${indentStr}  ${replies}\n`;
   }
 
   return output;
@@ -272,6 +280,7 @@ export function formatSavedItems(items: SavedItem[], users: Map<string, SlackUse
   let output = chalk.bold(`📌 Saved Items (${items.length})\n\n`);
 
   items.forEach((item, idx) => {
+    const position = chalk.dim(`${idx + 1}.`);
     if (item.type === 'message' && item.message) {
       const msg = item.message;
       const user = msg.user ? users.get(msg.user) : null;
@@ -280,14 +289,19 @@ export function formatSavedItems(items: SavedItem[], users: Map<string, SlackUse
       const channel = item.channel_name || item.channel_id;
       const text = truncateText(msg.text, 120);
       const state = item.todo_state ? chalk.dim(` [${item.todo_state}]`) : '';
+      const author = chalk.bold(`@${userName}`);
+      const channelTag = chalk.cyan(`#${channel}`);
+      const when = chalk.dim(`[${timestamp}]`);
+      const location = chalk.dim(`channel: ${item.channel_id}  ts: ${msg.ts}`);
 
-      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${userName}`)} in ${chalk.cyan(`#${channel}`)} ${chalk.dim(`[${timestamp}]`)}${state}\n`;
+      output += `  ${position} ${author} in ${channelTag} ${when}${state}\n`;
       output += `     ${text}\n`;
-      output += `     ${chalk.dim(`channel: ${item.channel_id}  ts: ${msg.ts}`)}\n\n`;
+      output += `     ${location}\n\n`;
     } else if (item.type === 'file' && item.file) {
-      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.yellow('File:')} ${chalk.bold(item.file.name || item.file.title || 'Untitled')}\n\n`;
+      output += `  ${position} ${chalk.yellow('File:')} ${chalk.bold(item.file.name || item.file.title || 'Untitled')}\n\n`;
     } else {
-      output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.dim(`[${item.type}]`)}\n\n`;
+      const itemType = chalk.dim(`[${item.type}]`);
+      output += `  ${position} ${itemType}\n\n`;
     }
   });
 
@@ -308,8 +322,12 @@ export function formatSearchMessages(
     const channelName = match.channel?.name || match.channel?.id || 'unknown';
     const text = truncateText(match.text, 150);
     const permalink = match.permalink || '';
+    const position = chalk.dim(`${idx + 1}.`);
+    const author = chalk.bold(`@${userName}`);
+    const channelTag = chalk.cyan(`#${channelName}`);
+    const when = chalk.dim(`[${timestamp}]`);
 
-    output += `  ${chalk.dim(`${idx + 1}.`)} ${chalk.bold(`@${userName}`)} in ${chalk.cyan(`#${channelName}`)} ${chalk.dim(`[${timestamp}]`)}\n`;
+    output += `  ${position} ${author} in ${channelTag} ${when}\n`;
     output += `     ${text}\n`;
     if (permalink) {
       output += `     ${chalk.dim(permalink)}\n`;
@@ -332,7 +350,9 @@ export function formatChannelSearchResults(
     const memberCount = ch.member_count || ch.num_members;
     const members = memberCount ? chalk.dim(`${memberCount} members`) : '';
     const isMember = ch.is_member ? chalk.green(' [joined]') : '';
-    output += `  ${chalk.dim(`${idx + 1}.`)} #${chalk.bold(ch.name)} ${chalk.dim(`(${ch.id})`)} ${members}${isMember}\n`;
+    const position = chalk.dim(`${idx + 1}.`);
+    const id = chalk.dim(`(${ch.id})`);
+    output += `  ${position} #${chalk.bold(ch.name)} ${id} ${members}${isMember}\n`;
     if (ch.purpose?.value) {
       output += `     ${chalk.dim(ch.purpose.value)}\n`;
     }

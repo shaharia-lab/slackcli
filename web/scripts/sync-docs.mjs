@@ -132,7 +132,7 @@ function summarise(text, max = 165) {
 }
 
 function yaml(value) {
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/\\/g, String.raw`\\`).replace(/"/g, String.raw`\"`)}"`;
 }
 
 /**

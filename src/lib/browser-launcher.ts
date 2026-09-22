@@ -57,17 +57,17 @@ const BROWSER_PATHS: Record<string, string[]> = {
   // often lacks the admin rights to install into Program Files, so
   // %LOCALAPPDATA% is the common layout, not the exotic one.
   win32: [
-    `${process.env.LOCALAPPDATA ?? ''}\\Google\\Chrome\\Application\\chrome.exe`,
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    `${process.env.LOCALAPPDATA ?? ''}\\Microsoft\\Edge\\Application\\msedge.exe`,
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    `${process.env.LOCALAPPDATA ?? ''}\\Chromium\\Application\\chrome.exe`,
-    'C:\\Program Files\\Chromium\\Application\\chrome.exe',
-    `${process.env.LOCALAPPDATA ?? ''}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
-    'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
-    'C:\\Program Files (x86)\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
+    String.raw`${process.env.LOCALAPPDATA ?? ''}\Google\Chrome\Application\chrome.exe`,
+    String.raw`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+    String.raw`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+    String.raw`${process.env.LOCALAPPDATA ?? ''}\Microsoft\Edge\Application\msedge.exe`,
+    String.raw`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+    String.raw`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
+    String.raw`${process.env.LOCALAPPDATA ?? ''}\Chromium\Application\chrome.exe`,
+    String.raw`C:\Program Files\Chromium\Application\chrome.exe`,
+    String.raw`${process.env.LOCALAPPDATA ?? ''}\BraveSoftware\Brave-Browser\Application\brave.exe`,
+    String.raw`C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`,
+    String.raw`C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe`,
   ],
   linux: [
     '/usr/bin/google-chrome',
@@ -177,7 +177,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * containing `.`, `+`, etc. would otherwise widen the match.
  */
 export function escapeEre(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 /**

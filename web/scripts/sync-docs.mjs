@@ -27,8 +27,7 @@
  * The output is generated and gitignored. Never edit it.
  */
 import { mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { posix } from 'node:path';
+import { dirname, join, resolve, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BASE, REPO_BLOB } from '../site.config.mjs';
 import { PAGES } from '../docs.manifest.mjs';

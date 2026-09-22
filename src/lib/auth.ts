@@ -13,8 +13,8 @@ import {
   SLACK_CLIENT_URL,
   isSlackWorkspaceUrl,
   type CaptureFailure,
+  type BrowserSessionFailure,
 } from './browser-auth.ts';
-import type { BrowserSessionFailure } from './browser-auth.ts';
 
 // Result of a successful login: the stored config plus the profile key it was
 // saved under (which may be user-chosen, the team_id, or auto-generated).

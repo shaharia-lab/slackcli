@@ -91,6 +91,16 @@ describe('resolveUsergroup', () => {
     list();
     expect(await resolveUsergroup(client, 'nope')).toBeUndefined();
   });
+  test('skips handle-less groups on handle match and still resolves them by name', async () => {
+    const { client } = fakeClient({
+      'usergroups.list': () => ({
+        ok: true,
+        usergroups: [{ id: 'S0NOHANDLE1', name: 'Oncall', date_delete: 0 }, ...groups],
+      }),
+    });
+    expect((await resolveUsergroup(client, '@platform'))?.id).toBe('S03E2T070G7');
+    expect((await resolveUsergroup(client, 'oncall'))?.id).toBe('S0NOHANDLE1');
+  });
   test('honours a raw S-id even when absent from the list (enterprise grid)', async () => {
     const { client } = fakeClient({ 'usergroups.list': () => ({ ok: true, usergroups: [] }) });
     const g = await resolveUsergroup(client, 'S0BT63G1N2E');

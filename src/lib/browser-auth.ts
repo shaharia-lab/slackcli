@@ -106,7 +106,7 @@ export const SLACK_CLIENT_URL = 'https://app.slack.com/client';
  * calls. Missing one means missing workspaces, so all three are handled here.
  */
 export function extractXoxcFromPostData(postData: string): string | null {
-  if (!postData || !postData.includes('xoxc-')) return null;
+  if (!postData?.includes('xoxc-')) return null;
 
   const patterns = [
     // multipart/form-data — the boundary puts the value on its own line.

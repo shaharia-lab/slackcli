@@ -662,6 +662,23 @@ describe('SlackClient.leaveConversation', () => {
 
     await expect(client.leaveConversation('C123')).rejects.toThrow('cant_leave_general');
   });
+
+  it('re-throws an error that carries no Slack payload (e.g. a network failure)', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('socket hang up');
+    }) as unknown as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+
+    await expect(client.leaveConversation('C123')).rejects.toThrow('socket hang up');
+  });
 });
 
 describe('SlackClient request throttling', () => {

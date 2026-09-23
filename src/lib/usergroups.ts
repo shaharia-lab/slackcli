@@ -78,7 +78,7 @@ export async function resolveUsergroup(
 
   const lower = needle.toLowerCase();
   return groups.find(
-    (g) => (g.handle && g.handle.toLowerCase() === lower) || g.name.toLowerCase() === lower,
+    (g) => g.handle?.toLowerCase() === lower || g.name.toLowerCase() === lower,
   );
 }
 

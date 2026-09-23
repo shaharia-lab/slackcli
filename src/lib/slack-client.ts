@@ -537,7 +537,7 @@ export class SlackClient {
       return await this.request('conversations.leave', { channel });
     } catch (err: any) {
       const data = err?.slackData;
-      if (data && data.not_in_channel === true) {
+      if (data?.not_in_channel === true) {
         return data;
       }
       throw err;

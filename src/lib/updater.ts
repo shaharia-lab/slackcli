@@ -54,7 +54,8 @@ export async function fetchLatestRelease(): Promise<GitHubRelease | null> {
     }
 
     return (await response.json()) as GitHubRelease;
-  } catch (error) {
+  } catch {
+    // Update checks fail soft: callers treat null as "could not check".
     return null;
   }
 }

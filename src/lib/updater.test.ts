@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion, performUpdate, verifyAssetDigest } from './updater.ts';
+import { fetchLatestRelease, isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion, performUpdate, verifyAssetDigest } from './updater.ts';
 import { createHash } from 'crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -205,5 +205,39 @@ describe('performUpdate integrity check', () => {
 
     expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
     expect(after.length).toBe(before.length);
+  });
+});
+
+describe('fetchLatestRelease', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('returns the parsed release on success', async () => {
+    const release = { tag_name: 'v1.2.3', name: 'v1.2.3', body: '', assets: [] };
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(release), { status: 200 })) as unknown as typeof fetch;
+    expect(await fetchLatestRelease()).toEqual(release);
+  });
+
+  it('returns null on a non-OK response', async () => {
+    globalThis.fetch = (async () =>
+      new Response('rate limited', { status: 403 })) as unknown as typeof fetch;
+    expect(await fetchLatestRelease()).toBeNull();
+  });
+
+  it('returns null when the network request fails', async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    expect(await fetchLatestRelease()).toBeNull();
+  });
+
+  it('returns null when the body is not valid JSON', async () => {
+    globalThis.fetch = (async () =>
+      new Response('<html>not json</html>', { status: 200 })) as unknown as typeof fetch;
+    expect(await fetchLatestRelease()).toBeNull();
   });
 });

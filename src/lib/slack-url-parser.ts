@@ -104,7 +104,7 @@ function workspaceOfUrl(url: URL): string | undefined {
 
 /** Classify a bare Slack identifier by its prefix letter. */
 export function identifierKind(id: string): IdentifierKind {
-  const match = id.match(SLACK_ID_PATTERN);
+  const match = SLACK_ID_PATTERN.exec(id);
   if (!match) return 'unknown';
   return KIND_BY_PREFIX[match[1]] ?? 'unknown';
 }
@@ -159,7 +159,7 @@ function identifierFromUrl(url: string): string | null {
 
   // /files-pri/<team>-<file>[/download]/<name> — private file URLs
   if (area === 'files-pri' && first) {
-    const match = first.match(/^[A-Z0-9]+-(F[A-Z0-9]+)$/i);
+    const match = /^[A-Z0-9]+-(F[A-Z0-9]+)$/i.exec(first);
     if (match) return match[1];
   }
 
@@ -215,7 +215,7 @@ export function normalizeTimestamp(input: string, flag: string): string {
   // Already in API form.
   if (/^\d+\.\d+$/.test(value)) return value;
 
-  const permalinkForm = value.match(/^p(\d+)$/);
+  const permalinkForm = /^p(\d+)$/.exec(value);
   if (permalinkForm) {
     const digits = permalinkForm[1];
     if (digits.length !== 16) {

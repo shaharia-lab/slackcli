@@ -35,11 +35,11 @@ export function isAuthPage(html: string): boolean {
 
 /** Extract meaningful content from full HTML document. */
 function extractContent(html: string): string {
-  const mainMatch = html.match(/<main\b[^>]*>([\s\S]*)<\/main>/i);
+  const mainMatch = /<main\b[^>]*>([\s\S]*)<\/main>/i.exec(html);
   if (mainMatch) return mainMatch[1];
-  const articleMatch = html.match(/<article\b[^>]*>([\s\S]*)<\/article>/i);
+  const articleMatch = /<article\b[^>]*>([\s\S]*)<\/article>/i.exec(html);
   if (articleMatch) return articleMatch[1];
-  const bodyMatch = html.match(/<body\b[^>]*>([\s\S]*)<\/body>/i);
+  const bodyMatch = /<body\b[^>]*>([\s\S]*)<\/body>/i.exec(html);
   if (bodyMatch) return bodyMatch[1];
   return html;
 }
@@ -106,21 +106,21 @@ function convertControlElements(html: string): string {
     /<control\b[^>]*>([\s\S]*?)<\/control>/gi,
     (_match, inner: string) => {
       // Emoji: look for :name: text pattern (from <img>:name:</img> or siblings)
-      const emojiMatch = inner.match(/:([a-zA-Z0-9_+-]+):/);
+      const emojiMatch = /:([a-zA-Z0-9_+-]+):/.exec(inner);
       if (emojiMatch && inner.includes('data-is-slack')) {
         return `:${emojiMatch[1]}:`;
       }
 
       // User mention: <a>@U...</a>
-      const userMatch = inner.match(/<a[^>]*>@(U[A-Z0-9]+)<\/a>/i);
+      const userMatch = /<a[^>]*>@(U[A-Z0-9]+)<\/a>/i.exec(inner);
       if (userMatch) return `<@${userMatch[1]}>`;
 
       // Channel mention: <a>#C...</a>
-      const channelMatch = inner.match(/<a[^>]*>#(C[A-Z0-9]+)<\/a>/i);
+      const channelMatch = /<a[^>]*>#(C[A-Z0-9]+)<\/a>/i.exec(inner);
       if (channelMatch) return `<#${channelMatch[1]}>`;
 
       // Link with href: <a href="url">text</a>
-      const linkMatch = inner.match(/<a\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+      const linkMatch = /<a\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i.exec(inner);
       if (linkMatch) return `[${linkMatch[2]}](${linkMatch[1]})`;
 
       // Plain text (dates, etc.)
@@ -157,7 +157,7 @@ function convertEmbeds(html: string): string {
   result = result.replace(
     /<p\s+class="embedded-file"[^>]*>([\s\S]*?)<\/p>/gi,
     (_match, inner: string) => {
-      const urlMatch = inner.match(/File URL:\s*(https?:\/\/\S+)/i);
+      const urlMatch = /File URL:\s*(https?:\/\/\S+)/i.exec(inner);
       if (!urlMatch) return '';
       const url = urlMatch[1];
       // Extract filename from URL path
@@ -171,7 +171,7 @@ function convertEmbeds(html: string): string {
   result = result.replace(
     /<p\s+class="embedded-link"[^>]*>([\s\S]*?)<\/p>/gi,
     (_match, inner: string) => {
-      const urlMatch = inner.match(/Link URL:\s*(https?:\/\/\S+)/i);
+      const urlMatch = /Link URL:\s*(https?:\/\/\S+)/i.exec(inner);
       if (!urlMatch) return '';
       return `[${urlMatch[1]}](${urlMatch[1]})\n\n`;
     },

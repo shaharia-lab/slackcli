@@ -20,7 +20,7 @@ export interface ParseError {
  * Returns 'workspace' if the URL does not match.
  */
 export function extractSlackWorkspaceName(url: string): string {
-  const match = url.match(/https?:\/\/([\w.-]+)\.slack\.com/);
+  const match = /https?:\/\/([\w.-]+)\.slack\.com/.exec(url);
   return match ? match[1].split('.')[0] : 'workspace';
 }
 
@@ -40,8 +40,8 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   // Extract workspace URL — domain can be myorg.slack.com or myorg.enterprise.slack.com
   // The URL is either positional (curl 'https://...') or behind the --url flag
   // (curl --url 'https://...'), which Chrome 151+ DevTools emits for "Copy as cURL".
-  const urlMatch = curlInput.match(
-    /(?:curl\s+|--url(?:\s+|=))['"]?(https?:\/\/([\w.-]+)\.slack\.com[^'"\s]*)/
+  const urlMatch = /(?:curl\s+|--url(?:\s+|=))['"]?(https?:\/\/([\w.-]+)\.slack\.com[^'"\s]*)/.exec(
+    curlInput
   );
   if (!urlMatch) {
     throw new CurlParseError('workspace', 'Could not find Slack workspace URL in cURL command');
@@ -52,14 +52,14 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
 
   // Extract xoxd token from cookie header
   // Supports: -b 'cookies', --cookie 'cookies', -H 'Cookie: cookies'
-  const cookieMatch = curlInput.match(
-    // The value's first character excludes whitespace so `\s*` and the value
-    // never compete for the same characters (quadratic backtracking, #213).
-    /(?:-b|--cookie)\s+'([^']+)'|-H\s+'[Cc]ookie:\s*([^'\s][^']*)'/
+  // The value's first character excludes whitespace so `\s*` and the value
+  // never compete for the same characters (quadratic backtracking, #213).
+  const cookieMatch = /(?:-b|--cookie)\s+'([^']+)'|-H\s+'[Cc]ookie:\s*([^'\s][^']*)'/.exec(
+    curlInput
   );
   const cookieHeader = cookieMatch ? (cookieMatch[1] || cookieMatch[2]) : '';
 
-  const xoxdMatch = cookieHeader.match(/(?:^|;\s*)d=(xoxd-[^;]+)/);
+  const xoxdMatch = /(?:^|;\s*)d=(xoxd-[^;]+)/.exec(cookieHeader);
   if (!xoxdMatch) {
     throw new CurlParseError('xoxd', 'Could not find xoxd token in cookie header (d=xoxd-...)');
   }
@@ -67,12 +67,12 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   const xoxd = decodeURIComponent(xoxdEncoded);
 
   // Extract xoxc token from data
-  const dataMatch = curlInput.match(DATA_BODY_PATTERN);
+  const dataMatch = DATA_BODY_PATTERN.exec(curlInput);
   const dataContent = dataMatch ? (dataMatch[1] ?? dataMatch[2] ?? '') : '';
 
   const xoxcMatch =
-    dataContent.match(/name="token".*?(xoxc-[a-zA-Z0-9-]+)/) ||
-    dataContent.match(/"token"\s*:\s*"(xoxc-[a-zA-Z0-9-]+)"/);
+    /name="token".*?(xoxc-[a-zA-Z0-9-]+)/.exec(dataContent) ||
+    /"token"\s*:\s*"(xoxc-[a-zA-Z0-9-]+)"/.exec(dataContent);
   if (!xoxcMatch) {
     throw new CurlParseError('xoxc', 'Could not find xoxc token in request data');
   }

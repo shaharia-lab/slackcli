@@ -118,7 +118,7 @@ export function extractXoxcFromPostData(postData: string): string | null {
   ];
 
   for (const pattern of patterns) {
-    const match = postData.match(pattern);
+    const match = pattern.exec(postData);
     if (match?.[1]) return match[1];
   }
   return null;
@@ -270,7 +270,7 @@ function safeOrigin(url: string): string | null {
 
 /** Workspace origin for a Slack API URL, or null when it is not one. */
 export function slackOriginFromApiUrl(url: string): string | null {
-  const match = url.match(SLACK_API_URL);
+  const match = SLACK_API_URL.exec(url);
   if (!match) return null;
   const origin = `https://${match[1]}.slack.com`;
   // Rejects the client host, which serves every workspace and belongs to none.

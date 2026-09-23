@@ -229,7 +229,9 @@ export interface AuthLoginBrowserOptions {
 
 // Saved items
 export interface SavedItem {
-  type: 'message' | 'file' | string;
+  // Slack's item_type: usually 'message' or 'file', but kept open because the API
+  // also returns other kinds (e.g. 'channel').
+  type: string;
   channel_id: string;
   channel_name?: string;
   message?: SlackMessage;

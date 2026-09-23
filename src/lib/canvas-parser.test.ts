@@ -324,6 +324,11 @@ describe('canvasHtmlToMarkdown', () => {
       expect(result).toContain('https://team.slack.com/files/');
     });
 
+    it('should fall back to "file" when the embedded-file URL ends in a slash', () => {
+      const html = `<p class='embedded-file'>File ID: F1 File URL: https://team.slack.com/files/U1/F1/</p>`;
+      expect(canvasHtmlToMarkdown(html)).toContain('[file](https://team.slack.com/files/U1/F1/)');
+    });
+
     it('should convert embedded-link to markdown link', () => {
       const result = canvasHtmlToMarkdown(EMBEDDED_LINK);
       expect(result).toContain('[https://github.com/example/repo](https://github.com/example/repo)');

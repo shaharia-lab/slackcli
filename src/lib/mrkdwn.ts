@@ -123,7 +123,7 @@ function tryMatchMarker(text: string, i: number): MarkerMatch | null {
 
 // Plain character: append to last plain element or create new one
 function appendPlainChar(elements: RichTextElement[], char: string): void {
-  const last = elements[elements.length - 1];
+  const last = elements.at(-1);
   if (last && !last.style) {
     last.text += char;
   } else {

@@ -162,7 +162,7 @@ function convertEmbeds(html: string): string {
       const url = urlMatch[1];
       // Extract filename from URL path
       const pathSegments = url.split('/');
-      const filename = pathSegments[pathSegments.length - 1] || 'file';
+      const filename = pathSegments.at(-1) || 'file';
       return `[${decodeURIComponent(filename)}](${url})\n\n`;
     },
   );

@@ -60,7 +60,7 @@ export async function readInteractiveInput(
         if (consecutiveEmptyLines >= emptyLinesToComplete) {
           rl.close();
           // Remove trailing empty lines
-          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+          while (lines.at(-1)?.trim() === '') {
             lines.pop();
           }
           resolve(lines.join('\n'));
@@ -74,7 +74,7 @@ export async function readInteractiveInput(
 
     rl.on('close', () => {
       // Remove trailing empty lines
-      while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      while (lines.at(-1)?.trim() === '') {
         lines.pop();
       }
       resolve(lines.join('\n'));

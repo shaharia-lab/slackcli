@@ -58,7 +58,7 @@ export function formatDraftList(drafts: DraftSummary[], nowMs: number = Date.now
 
 // Format timestamp to human-readable date
 export function formatTimestamp(ts: string): string {
-  const timestamp = parseFloat(ts) * 1000;
+  const timestamp = Number.parseFloat(ts) * 1000;
   const date = new Date(timestamp);
   return date.toLocaleString('en-US', {
     year: 'numeric',

@@ -703,7 +703,7 @@ export class SlackClient {
 
     // Early exit when Content-Length is known and exceeds limit
     const contentLength = response.headers.get('content-length');
-    if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+    if (contentLength && Number.parseInt(contentLength, 10) > maxBytes) {
       await response.body?.cancel();
       throw new Error(`File too large: ${contentLength} bytes (max ${maxBytes})`);
     }

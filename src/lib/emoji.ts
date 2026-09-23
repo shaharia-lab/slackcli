@@ -8,8 +8,8 @@ import type { CustomEmoji } from '../types/index.ts';
 // making a bad flag look like an empty workspace. Returns the parsed limit, or
 // an `error` message when the value is not a positive integer.
 export function parseEmojiLimit(value: string): { limit?: number; error?: string } {
-  const limit = parseInt(value, 10);
-  if (isNaN(limit) || limit < 1) {
+  const limit = Number.parseInt(value, 10);
+  if (Number.isNaN(limit) || limit < 1) {
     return { error: 'Limit must be a positive integer' };
   }
   return { limit };

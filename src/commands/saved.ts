@@ -22,7 +22,7 @@ export function createSavedCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
 
         let { items, users } = await enrichSavedItems(client, {
-          limit: options.limit ? parseInt(options.limit) : undefined,
+          limit: options.limit ? Number.parseInt(options.limit) : undefined,
           onProgress: (msg) => { spinner.text = msg; },
         });
 

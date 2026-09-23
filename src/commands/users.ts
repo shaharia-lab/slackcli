@@ -88,7 +88,7 @@ export function createUsersCommand(): Command {
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
-      const limit = parseInt(options.limit, 10);
+      const limit = Number.parseInt(options.limit, 10);
       const status = String(options.status).toLowerCase() as UserStatusFilter;
 
       if (!Number.isFinite(limit) || limit <= 0) {

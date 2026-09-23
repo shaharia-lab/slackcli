@@ -41,8 +41,8 @@ export function createSearchCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
 
         const response = await client.searchMessages(fullQuery, {
-          count: parseInt(options.limit),
-          page: parseInt(options.page),
+          count: Number.parseInt(options.limit),
+          page: Number.parseInt(options.page),
           sort: options.sort,
           sort_dir: options.sortDir,
         });
@@ -95,7 +95,7 @@ export function createSearchCommand(): Command {
 
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const limit = parseInt(options.limit);
+        const limit = Number.parseInt(options.limit);
 
         const response = await client.searchModules(query, 'channels', { count: limit });
 
@@ -158,7 +158,7 @@ export function createSearchCommand(): Command {
 
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const limit = parseInt(options.limit);
+        const limit = Number.parseInt(options.limit);
 
         const response = await client.searchModules(query, 'people', { count: limit });
 

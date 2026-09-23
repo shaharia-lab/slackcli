@@ -51,8 +51,8 @@ export function createCanvasCommand(): Command {
       const spinner = ora('Fetching canvases...').start();
 
       try {
-        const limit = parseInt(options.limit);
-        if (isNaN(limit) || limit < 1 || limit > 1000) {
+        const limit = Number.parseInt(options.limit);
+        if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
           spinner.fail('Invalid limit');
           error('Limit must be a number between 1 and 1000');
           process.exit(1);

@@ -64,7 +64,7 @@ export function createConversationsCommand(): Command {
 
         const response = await client.listConversations({
           types: options.types,
-          limit: parseInt(options.limit),
+          limit: Number.parseInt(options.limit),
           exclude_archived: options.excludeArchived,
           ...(options.cursor ? { cursor: options.cursor } : {}),
         });
@@ -172,7 +172,7 @@ export function createConversationsCommand(): Command {
           // Fetch thread replies
           spinner.text = 'Fetching thread replies...';
           response = await client.getConversationReplies(channelId, target.threadTs, {
-            limit: parseInt(options.limit),
+            limit: Number.parseInt(options.limit),
             oldest,
             latest,
           });
@@ -181,7 +181,7 @@ export function createConversationsCommand(): Command {
           // Fetch conversation history
           spinner.text = 'Fetching conversation history...';
           response = await client.getConversationHistory(channelId, {
-            limit: parseInt(options.limit),
+            limit: Number.parseInt(options.limit),
             oldest,
             latest,
           });
@@ -416,7 +416,7 @@ export function createConversationsCommand(): Command {
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, options) => {
-      const limit = parseInt(options.limit, 10);
+      const limit = Number.parseInt(options.limit, 10);
       if (!Number.isFinite(limit) || limit <= 0) {
         error('--limit must be a positive integer');
         process.exit(1);

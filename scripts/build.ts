@@ -4,7 +4,7 @@
  * Usage: bun run scripts/build.ts [extra bun build args...]
  * Example: bun run scripts/build.ts --target=bun-linux-x64 --outfile=dist/slackcli-linux
  */
-import { join } from 'path';
+import { join } from 'node:path';
 import { version } from '../package.json';
 
 const outfileArg = process.argv.find((a) => a.startsWith('--outfile='));

@@ -2,7 +2,7 @@
  * Cross-platform clipboard reading utility
  */
 
-import { spawn } from 'child_process';
+import { spawn } from 'node:child_process';
 
 export interface ClipboardResult {
   success: boolean;

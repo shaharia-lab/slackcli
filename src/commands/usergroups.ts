@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import ora from 'ora';
-import * as readline from 'readline';
+import * as readline from 'node:readline';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import {
   error,

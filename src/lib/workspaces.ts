@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile, exists } from 'fs/promises';
-import { join } from 'path';
-import { homedir } from 'os';
+import { mkdir, readFile, writeFile, exists } from 'node:fs/promises';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import type { WorkspacesData, WorkspaceConfig, SecretBackend } from '../types/index.ts';
 import {
   FileSecretStore,

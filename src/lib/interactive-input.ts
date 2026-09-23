@@ -2,7 +2,7 @@
  * Interactive input handling for multi-line input
  */
 
-import * as readline from 'readline';
+import * as readline from 'node:readline';
 import chalk from 'chalk';
 
 export interface InteractiveInputOptions {

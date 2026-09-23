@@ -12,10 +12,10 @@
  * profile persists, so later runs need no interaction.
  */
 
-import { spawn, spawnSync, type ChildProcess } from 'child_process';
-import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises';
-import { join, posix, win32 } from 'path';
-import { homedir } from 'os';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { join, posix, win32 } from 'node:path';
+import { homedir } from 'node:os';
 
 export type BrowserLaunchFailure =
   | 'browser_not_found'

@@ -1,8 +1,8 @@
-import { writeFile, chmod, rename, unlink, mkdtemp, rm } from 'fs/promises';
-import { createHash } from 'crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { tmpdir, homedir } from 'os';
-import { join } from 'path';
+import { writeFile, chmod, rename, unlink, mkdtemp, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { tmpdir, homedir } from 'node:os';
+import { join } from 'node:path';
 import chalk from 'chalk';
 import { info, success, error as logError } from './formatter.ts';
 import { getAppVersion, isRunningUnderBun } from '../version.ts';

@@ -369,11 +369,11 @@ export function createConversationsCommand(): Command {
 
         // Apply type filter if specified
         if (options.types) {
-          const types = options.types.split(',').map((t: string) => t.trim());
+          const types = new Set<string>(options.types.split(',').map((t: string) => t.trim()));
           channels = channels.filter(ch => {
-            if (types.includes('channels') && !ch.is_im && !ch.is_mpim) return true;
-            if (types.includes('dms') && ch.is_im) return true;
-            if (types.includes('groups') && ch.is_mpim) return true;
+            if (types.has('channels') && !ch.is_im && !ch.is_mpim) return true;
+            if (types.has('dms') && ch.is_im) return true;
+            if (types.has('groups') && ch.is_mpim) return true;
             return false;
           });
         }

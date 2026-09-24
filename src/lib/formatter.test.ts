@@ -525,7 +525,7 @@ describe('writeJson', () => {
       2,
     ) + '\n';
     expect(expected.length).toBeGreaterThan(65536); // guards the fixture stays big enough to regress
-    expect(out.length).toBe(expected.length);
+    expect(out).toHaveLength(expected.length);
     expect(out).toBe(expected);
   }, 30000);
 });

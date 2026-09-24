@@ -204,7 +204,7 @@ describe('performUpdate integrity check', () => {
     const after = (await readdir(tmpdir())).filter(n => n.startsWith('slackcli-update-'));
 
     expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
-    expect(after.length).toBe(before.length);
+    expect(after).toHaveLength(before.length);
   });
 });
 

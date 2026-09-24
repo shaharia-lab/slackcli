@@ -118,7 +118,7 @@ export function createCdpSession(
   });
 
   const rejectAll = (reason: string): void => {
-    for (const [id, entry] of [...pending]) {
+    for (const [id, entry] of pending) {
       settle(id);
       entry.reject(new CdpError(entry.method, reason));
     }

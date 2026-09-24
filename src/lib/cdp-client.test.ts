@@ -131,6 +131,23 @@ describe('createCdpSession', () => {
     await expect(pending).rejects.toThrow(/socket closed/);
   });
 
+  it('rejects every in-flight command when the socket closes', async () => {
+    const socket = makeFakeSocket();
+    const session = createCdpSession(socket);
+
+    const methods = ['First.never', 'Second.never', 'Third.never'];
+    const inFlight = methods.map((method) => session.send(method));
+    socket.fireClose();
+
+    const results = await Promise.allSettled(inFlight);
+    const reasons = results.map((r) => (r.status === 'rejected' ? r.reason : undefined));
+    for (const [i, reason] of reasons.entries()) {
+      expect(reason).toBeInstanceOf(CdpError);
+      expect((reason as CdpError).method).toBe(methods[i]);
+      expect((reason as Error).message).toMatch(/socket closed/);
+    }
+  });
+
   it('rejects commands issued after close', async () => {
     const socket = makeFakeSocket();
     const session = createCdpSession(socket);

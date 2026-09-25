@@ -49,6 +49,10 @@ class TestSlackClient extends SlackClient {
       return { ok: true, drafts: [], files: [], has_more: false };
     }
 
+    if (method === 'drafts.delete') {
+      return { ok: true };
+    }
+
     if (method === 'conversations.members') {
       return {
         ok: true,
@@ -500,6 +504,30 @@ describe('SlackClient.listDrafts', () => {
 
     await expect(client.listDrafts({ limit: 100 }))
       .rejects.toThrow('Draft listing requires browser authentication');
+  });
+});
+
+describe('SlackClient.deleteDraft', () => {
+  it('sends the draft id and current timestamp to the browser-only endpoint', async () => {
+    const client = new TestSlackClient();
+    const before = Date.now() / 1000;
+    await client.deleteDraft('Dr123');
+    const after = Date.now() / 1000;
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0]?.method).toBe('drafts.delete');
+    expect(client.calls[0]?.params.draft_id).toBe('Dr123');
+    const timestamp = Number(client.calls[0]?.params.client_last_updated_ts);
+    expect(timestamp).toBeGreaterThanOrEqual(before);
+    expect(timestamp).toBeLessThanOrEqual(after);
+  });
+
+  it('rejects standard authentication before making a request', async () => {
+    const client = new SlackClient({
+      workspace_id: 'T123', workspace_name: 'Test Workspace',
+      auth_type: 'standard', token: 'xoxb-test', token_type: 'bot',
+    });
+    await expect(client.deleteDraft('Dr123'))
+      .rejects.toThrow('Draft deletion requires browser authentication');
   });
 });
 

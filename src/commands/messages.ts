@@ -2,7 +2,7 @@ import { Command, Option } from 'commander';
 import ora from 'ora';
 import { readFile } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { fetchDrafts, parseDraftLimit } from '../lib/drafts.ts';
+import { fetchDrafts, loadActiveDraft, parseDraftLimit, sendDraft, validateSendableDraft } from '../lib/drafts.ts';
 import { error, formatDraftList, success, warning, writeJson } from '../lib/formatter.ts';
 import {
   resolveMessageTarget,
@@ -10,6 +10,7 @@ import {
   workspaceMismatchWarning,
 } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
+import { confirmWrite } from './usergroups.ts';
 
 export async function parseBlocksInput(input: string): Promise<Array<Record<string, unknown>>> {
   let source = input;
@@ -373,6 +374,74 @@ export function createMessagesCommand(): Command {
         spinner.fail('Failed to create draft');
         error(err.message);
         process.exit(1);
+      }
+    });
+
+  messages
+    .command('send-draft')
+    .description('Post an active draft and delete it after delivery. Requires Browser Session Tokens.')
+    .argument('<draft-id>', 'ID returned by messages draft or list-drafts')
+    .option('--yes', 'Confirm sending without a prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output the posted message as JSON', false)
+    .action(async (draftId, options) => {
+      const spinner = ora('Loading draft...').start();
+      try {
+        const client = await getAuthenticatedClient(options.workspace);
+        const draft = await loadActiveDraft(client, draftId);
+        const { channelId } = validateSendableDraft(draft);
+        spinner.stop();
+        if (!(await confirmWrite(`Send draft ${draftId} to ${channelId}?`, options.yes))) {
+          error('Draft was not sent');
+          process.exitCode = 1;
+          return;
+        }
+        spinner.start('Sending draft...');
+        const result = await sendDraft(client, draftId, draft);
+        if (result.cleanup_error) {
+          spinner.fail('Draft posted, but cleanup failed');
+          if (options.json) writeJson(result);
+          error(`Posted message ${result.channel_id}/${result.ts}; draft ${draftId} remains: ${result.cleanup_error}. Do not retry send-draft without checking the posted message.`);
+          process.exitCode = 1;
+          return;
+        }
+        spinner.succeed('Draft sent and deleted');
+        if (options.json) writeJson(result);
+        else success(`Message timestamp: ${result.ts}`);
+      } catch (err: any) {
+        spinner.fail('Failed to send draft');
+        error(err.message);
+        process.exitCode = 1;
+      }
+    });
+
+  messages
+    .command('delete-draft')
+    .description('Delete an existing draft without sending. Requires Browser Session Tokens.')
+    .argument('<draft-id>', 'ID returned by messages draft or list-drafts')
+    .option('--yes', 'Confirm deletion without a prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output the deleted draft ID as JSON', false)
+    .action(async (draftId, options) => {
+      const spinner = ora('Deleting draft...').start();
+      try {
+        if (!draftId.trim()) throw new Error('Draft ID cannot be empty');
+        const client = await getAuthenticatedClient(options.workspace);
+        spinner.stop();
+        if (!(await confirmWrite(`Delete draft ${draftId}?`, options.yes))) {
+          error('Draft was not deleted');
+          process.exitCode = 1;
+          return;
+        }
+        spinner.start('Deleting draft...');
+        await client.deleteDraft(draftId);
+        spinner.succeed('Draft deleted');
+        if (options.json) writeJson({ draft_id: draftId, deleted: true });
+        else success(`Deleted draft ${draftId}`);
+      } catch (err: any) {
+        spinner.fail('Failed to delete draft');
+        error(err.message);
+        process.exitCode = 1;
       }
     });
 

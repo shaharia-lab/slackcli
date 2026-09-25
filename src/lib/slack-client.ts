@@ -353,6 +353,18 @@ export class SlackClient {
     return this.request('drafts.list', params);
   }
 
+  // Slack's internal delete endpoint compares this timestamp to the server's
+  // current time. Reusing the draft's last_updated_ts causes draft_has_conflict.
+  async deleteDraft(draftId: string): Promise<void> {
+    if (this.config.auth_type === 'standard') {
+      throw new Error('Draft deletion requires browser authentication');
+    }
+    await this.request('drafts.delete', {
+      draft_id: draftId,
+      client_last_updated_ts: (Date.now() / 1000).toFixed(7),
+    });
+  }
+
   // Get user info
   async getUserInfo(userId: string): Promise<any> {
     return this.request('users.info', { user: userId });

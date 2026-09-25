@@ -225,7 +225,7 @@ flowchart LR
 | **Parse a DevTools cURL** | `slackcli auth parse-curl --login` | Locked-down browsers, or when you already copied the request. |
 | **Browser tokens by hand** | `slackcli auth login-browser --xoxd=… --xoxc=… --workspace-url=…` | Full control, or scripted provisioning. |
 
-Browser session tokens can create and list **drafts**, which a Slack app simply cannot do, and
+Browser session tokens can create, list, send, and delete **drafts**, which a Slack app simply cannot do, and
 they back `saved list` and `conversations unread` with Slack's own native endpoints
 rather than approximations. Slack app tokens are more stable and survive a browser logout.
 
@@ -299,7 +299,7 @@ slackcli conversations unread
 </details>
 
 <details>
-<summary><code>messages</code> — send, reply, edit, react, create/list drafts</summary>
+<summary><code>messages</code> — send, reply, edit, react, and manage drafts</summary>
 
 <br>
 
@@ -314,10 +314,12 @@ slackcli messages react --permalink="$LINK" --emoji=+1
 slackcli messages edit --channel-id=C123 --timestamp=1234567890.123456 --message="Corrected"
 slackcli messages draft --recipient-id=C123 --message="Draft for later"
 slackcli messages list-drafts --json
+slackcli messages send-draft Dr123 --yes --json               # post, then remove draft
+slackcli messages delete-draft Dr456 --yes                    # discard draft
 ```
 
 > [!NOTE]
-> `messages draft` and `messages list-drafts` require browser session tokens. Slack exposes
+> Draft commands require browser session tokens. Slack exposes
 > no public API for drafts, so these commands use undocumented web-client endpoints that
 > may change without notice.
 

@@ -1,4 +1,4 @@
-import type { DraftSummary, SlackDraft } from '../types/index.ts';
+import type { DraftSummary, SlackDraft, SlackDraftListResponse } from '../types/index.ts';
 import type { SlackClient } from './slack-client.ts';
 
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
@@ -100,4 +100,93 @@ export async function fetchDrafts(
     .filter((draft) => !draft.is_deleted && !draft.is_sent)
     .map(projectDraft)
     .slice(0, options.limit);
+}
+
+export interface SentDraftResult {
+  channel_id: string;
+  ts: string;
+  permalink?: string;
+  cleanup_error?: string;
+}
+
+export function findActiveDraft(response: SlackDraftListResponse, draftId: string): SlackDraft {
+  const draft = response.drafts?.find((item) => item.id === draftId && !item.is_deleted && !item.is_sent);
+  if (!draft) {
+    throw new Error(`Active draft ${draftId} was not found`);
+  }
+  return draft;
+}
+
+export function validateSendableDraft(draft: SlackDraft): {
+  channelId: string;
+  threadTs?: string;
+  text: string;
+  blocks: Array<Record<string, unknown>>;
+} {
+  if (draft.date_scheduled && draft.date_scheduled > 0) {
+    throw new Error('Scheduled drafts cannot be sent with this command');
+  }
+  if (draft.file_ids?.length) {
+    throw new Error('Drafts with file attachments cannot be sent with this command');
+  }
+  if (draft.destinations?.length !== 1) {
+    throw new Error('Draft must have exactly one channel destination');
+  }
+  const destination = draft.destinations[0];
+  const channelId = destination?.channel_id;
+  if (!channelId) throw new Error('Draft must have exactly one channel destination');
+  if (destination.broadcast) {
+    throw new Error('Draft has unsupported destination options');
+  }
+  const blocks = draft.blocks ?? [];
+  if (!blocks.length || blocks.some((block) => block.type !== 'rich_text')) {
+    throw new Error('Draft must contain supported rich-text blocks');
+  }
+  const text = extractDraftText(blocks);
+  if (!text.trim()) {
+    throw new Error('Draft has no text to send');
+  }
+  return { channelId, threadTs: destination.thread_ts, text, blocks };
+}
+
+export async function loadActiveDraft(
+  client: Pick<SlackClient, 'listDrafts'>,
+  draftId: string,
+): Promise<SlackDraft> {
+  if (!draftId.trim()) throw new Error('Draft ID cannot be empty');
+  const response = await client.listDrafts({ limit: 1000 });
+  try {
+    return findActiveDraft(response, draftId);
+  } catch (error) {
+    if (response.has_more) {
+      throw new Error(`Draft ${draftId} was not found in the first 1000 active drafts`);
+    }
+    throw error;
+  }
+}
+
+export async function sendDraft(
+  client: Pick<SlackClient, 'postMessage' | 'deleteDraft' | 'getPermalink'>,
+  draftId: string,
+  draft: SlackDraft,
+): Promise<SentDraftResult> {
+  const { channelId, threadTs, text, blocks } = validateSendableDraft(draft);
+  const posted = await client.postMessage(channelId, text, { thread_ts: threadTs, blocks });
+  if (typeof posted.ts !== 'string' || !posted.ts) {
+    throw new Error('Slack posted the draft but returned no message timestamp; check the channel before retrying');
+  }
+
+  const result: SentDraftResult = { channel_id: channelId, ts: posted.ts };
+  try {
+    await client.deleteDraft(draftId);
+  } catch (error) {
+    result.cleanup_error = error instanceof Error ? error.message : String(error);
+  }
+  try {
+    const link = await client.getPermalink(channelId, posted.ts);
+    if (link?.permalink) result.permalink = link.permalink;
+  } catch {
+    // A failed link lookup cannot undo a delivered message.
+  }
+  return result;
 }

@@ -2,8 +2,12 @@ import { describe, expect, it } from 'bun:test';
 import {
   extractDraftText,
   fetchDrafts,
+  findActiveDraft,
+  loadActiveDraft,
   parseDraftLimit,
   projectDraft,
+  sendDraft,
+  validateSendableDraft,
 } from './drafts.ts';
 import type { SlackDraftListResponse } from '../types/index.ts';
 
@@ -189,5 +193,100 @@ describe('fetchDrafts', () => {
       date_created: 1700000000,
       file_ids: [],
     }]);
+  });
+});
+
+const sendableDraft = {
+  id: 'Dr123',
+  destinations: [{ channel_id: 'C123', thread_ts: '1700000000.000001' }],
+  blocks: [{
+    type: 'rich_text',
+    elements: [{
+      type: 'rich_text_section',
+      elements: [{ type: 'text', text: 'Reviewed *reply*', style: { bold: true } }],
+    }],
+  }],
+};
+
+describe('draft lifecycle', () => {
+  it('finds only a matching active draft', () => {
+    const response: SlackDraftListResponse = {
+      ok: true,
+      drafts: [{ ...sendableDraft, is_deleted: true }, { id: 'DrOther' }],
+    };
+    expect(() => findActiveDraft(response, 'Dr123')).toThrow('was not found');
+    expect(findActiveDraft({ ok: true, drafts: [sendableDraft] }, 'Dr123')).toEqual(sendableDraft);
+  });
+
+  it('loads a requested draft and reports a truncated listing', async () => {
+    const client = { listDrafts: async () => ({ ok: true, drafts: [], has_more: true }) };
+    await expect(loadActiveDraft(client, 'DrMissing')).rejects.toThrow('first 1000 active drafts');
+    await expect(loadActiveDraft(client, ' ')).rejects.toThrow('cannot be empty');
+  });
+
+  it('refuses scheduled, attached, multiple-destination, and empty drafts', () => {
+    expect(() => validateSendableDraft({ ...sendableDraft, date_scheduled: 1700000100 }))
+      .toThrow('Scheduled drafts');
+    expect(() => validateSendableDraft({ ...sendableDraft, file_ids: ['F1'] }))
+      .toThrow('file attachments');
+    expect(() => validateSendableDraft({ ...sendableDraft, destinations: [{ channel_id: 'C1' }, { channel_id: 'C2' }] }))
+      .toThrow('exactly one');
+    expect(() => validateSendableDraft({ ...sendableDraft, blocks: [] }))
+      .toThrow('supported rich-text');
+    expect(() => validateSendableDraft({ ...sendableDraft, blocks: [{ type: 'rich_text', elements: [] }] }))
+      .toThrow('no text');
+  });
+
+  it('accepts a DM destination carrying its recipient user id', () => {
+    expect(validateSendableDraft({
+      ...sendableDraft,
+      destinations: [{ channel_id: 'D123', user_ids: ['U123'] }],
+    }).channelId).toBe('D123');
+  });
+
+  it('posts the original blocks in the saved thread, then deletes and gets a link', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      postMessage: async (channel: string, text: string, options: unknown) => {
+        calls.push(['post', channel, text, options]);
+        return { ts: '1700000001.000002' };
+      },
+      deleteDraft: async (id: string) => { calls.push(['delete', id]); },
+      getPermalink: async (channel: string, ts: string) => {
+        calls.push(['link', channel, ts]);
+        return { permalink: 'https://example.slack.com/archives/C123/p1700000001000002' };
+      },
+    };
+    expect(await sendDraft(client, 'Dr123', sendableDraft)).toEqual({
+      channel_id: 'C123', ts: '1700000001.000002',
+      permalink: 'https://example.slack.com/archives/C123/p1700000001000002',
+    });
+    expect(calls).toEqual([
+      ['post', 'C123', 'Reviewed *reply*', { thread_ts: '1700000000.000001', blocks: sendableDraft.blocks }],
+      ['delete', 'Dr123'],
+      ['link', 'C123', '1700000001.000002'],
+    ]);
+  });
+
+  it('leaves the draft untouched when posting fails', async () => {
+    let deleted = false;
+    const client = {
+      postMessage: async () => { throw new Error('post failed'); },
+      deleteDraft: async () => { deleted = true; },
+      getPermalink: async () => ({}),
+    };
+    await expect(sendDraft(client, 'Dr123', sendableDraft)).rejects.toThrow('post failed');
+    expect(deleted).toBe(false);
+  });
+
+  it('returns the posted identity when cleanup fails, without inviting a duplicate retry', async () => {
+    const client = {
+      postMessage: async () => ({ ts: '1700000001.000002' }),
+      deleteDraft: async () => { throw new Error('draft_has_conflict'); },
+      getPermalink: async () => { throw new Error('link unavailable'); },
+    };
+    expect(await sendDraft(client, 'Dr123', sendableDraft)).toEqual({
+      channel_id: 'C123', ts: '1700000001.000002', cleanup_error: 'draft_has_conflict',
+    });
   });
 });

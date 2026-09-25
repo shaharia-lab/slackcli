@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Draft lifecycle**: `messages send-draft <draft-id>` posts a reviewed text draft to its saved channel/thread and removes it after delivery; `messages delete-draft <draft-id>` discards it without posting. Both require browser auth and accept `--yes` for unattended use (#272)
+  - Sending returns the posted message identity with `--json`; if cleanup fails after posting, it reports that identity with a nonzero exit to prevent a blind duplicate retry
 - **`messages list-drafts`**: lists active drafts for browser-authenticated profiles, with a human-readable preview or a stable `{draft_count, drafts}` JSON projection instead of Slack's raw internal response (#146)
   - Defaults to 100 drafts and accepts a positive-integer `--limit`; Slack apps fail loudly because Slack provides no public drafts API
   - Uses the undocumented web-client `drafts.list` endpoint, which may change without notice

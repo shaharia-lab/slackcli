@@ -132,6 +132,28 @@ describe('messages command', () => {
     const limit = subcommand('list-drafts')?.options.find((option) => option.long === '--limit');
     expect(limit?.defaultValue).toBe('100');
   });
+
+  it('keeps draft creation separate from the send and delete commands', () => {
+    expect(longOptions('draft')).not.toContain('--yes');
+    for (const name of ['send-draft', 'delete-draft']) {
+      const command = subcommand(name);
+      expect(command).toBeDefined();
+      expect(command?.description()).toContain('Browser Session Tokens');
+      expect(command?.registeredArguments[0]?.required).toBe(true);
+      expect(longOptions(name)).toEqual(['--yes', '--workspace', '--json']);
+    }
+  });
+
+  it('requires an ID before entering either draft action', async () => {
+    for (const name of ['send-draft', 'delete-draft']) {
+      const command = createMessagesCommand();
+      command.commands.find((candidate) => candidate.name() === name)!
+        .exitOverride()
+        .configureOutput({ writeErr: () => {} });
+      await expect(command.parseAsync([name, '--yes'], { from: 'user' }))
+        .rejects.toThrow('missing required argument');
+    }
+  });
 });
 
 describe('resolveMessageText', () => {

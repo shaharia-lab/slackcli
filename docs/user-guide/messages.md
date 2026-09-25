@@ -188,7 +188,34 @@ slackcli messages draft --recipient-id=C1234567890 --message="Hello team!"
 Creates an unsent draft in the Slack client — useful when you want a human to
 review and press send.
 
-**Browser auth only.** Slack apps cannot create drafts; there is no public API
+To send a reviewed draft or discard it:
+
+```bash
+slackcli messages list-drafts --json
+slackcli messages send-draft Dr1234567890 --workspace=rafael --yes --json
+slackcli messages delete-draft Dr1234567890 --workspace=rafael --yes --json
+```
+
+`send-draft` reads the active draft, posts its original rich-text blocks to the saved
+channel and `thread_ts` (if present), then deletes the draft. `--json` returns
+`{channel_id, ts, permalink?}` like `messages send`. A failed permalink lookup
+omits that field. Scheduled drafts, drafts with files, empty drafts, and drafts
+with multiple destinations are refused before posting. `delete-draft` removes the
+specified draft without posting; with `--json` it returns
+`{draft_id, deleted: true}`.
+
+Both actions ask for confirmation in a terminal. In a script or other non-TTY
+session, pass `--yes` explicitly. If posting succeeds but draft deletion fails,
+`send-draft --json` emits the posted
+message identity plus `cleanup_error`, exits nonzero, and leaves the draft. Check
+the posted message before retrying; another send could duplicate it.
+
+Sending and deleting require browser auth, just like creation and listing.
+They use Slack's undocumented web-client `drafts.delete` endpoint, which may
+change without notice. The CLI supplies a current `client_last_updated_ts` for
+deletion; the draft's stored update timestamp causes `draft_has_conflict`.
+
+**Browser auth only.** Slack apps cannot manage drafts; there is no public API
 for it. The command uses an undocumented Slack web-client endpoint that may
 change without notice. With a standard token the command fails with
 `Draft creation requires browser authentication`.

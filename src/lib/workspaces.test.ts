@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, spyOn } from 'bun:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { resetSync, type LogRecord } from '@logtape/logtape';
+import { configureLogging } from './logger.ts';
 import {
   resolveWorkspace,
+  describeLoadError,
+  readWorkspacesFile,
   deriveStorageKey,
   AmbiguousWorkspaceError,
   putWorkspace,
@@ -719,5 +726,115 @@ describe('migrateOneWorkspace (save-then-cleanup sequencing)', () => {
     expect(result.pendingCleanup).toBeNull();
     expect(calls).toHaveLength(1); // only the cleanup save; no flip to save
     expect(data.workspaces.T1).not.toHaveProperty('secret_cleanup_pending');
+  });
+});
+
+describe('workspaces logging', () => {
+  afterEach(() => resetSync());
+
+  function captureLogs(): LogRecord[] {
+    const records: LogRecord[] = [];
+    configureLogging({ level: 'trace', verbose: false, sinks: { capture: (r) => records.push(r) } });
+    return records;
+  }
+
+  const serialize = (records: LogRecord[]) =>
+    JSON.stringify(records.map((r) => ({ message: r.message, properties: r.properties })));
+
+  // Assembled at runtime so the literal never trips secret scanning on push.
+  const SECRET = ['xoxb', '7342581920', '8234567890123', 'Zq8rT2vW9xY4bN6mK1pL3sD5'].join('-');
+
+  async function withFile(contents: string, fn: (path: string) => Promise<void>): Promise<void> {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-workspaces-'));
+    try {
+      const path = join(dir, 'workspaces.json');
+      await writeFile(path, contents, { mode: 0o600 });
+      await fn(path);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it.each([
+    ['truncated JSON', `{"workspaces": {"T1": {"token": "${SECRET}"`],
+    ['an unquoted token', `{"workspaces": {"T1": {"token": ${SECRET}}}}`],
+    ['a single-quoted token', `{'${SECRET}': 1}`],
+  ])('reports a corrupt file (%s) at error without its contents, and still loads as empty', async (_label, contents) => {
+    await withFile(contents, async (path) => {
+      const records = captureLogs();
+      const printed: string[] = [];
+      const stderr = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        printed.push(args.map(String).join(' '));
+      });
+      try {
+        expect(await readWorkspacesFile(path)).toEqual({ workspaces: {} });
+      } finally {
+        stderr.mockRestore();
+      }
+
+      const failure = records.find((r) => r.level === 'error');
+      expect(failure?.category).toEqual(['slackcli', 'workspaces']);
+      expect(failure?.properties.error_name).toBe('SyntaxError');
+      expect(String(failure?.properties.error)).toContain('JSON Parse error');
+      expect(serialize(records)).not.toContain(SECRET);
+      expect(serialize(records)).not.toContain('xoxb');
+      // The user still sees why their workspaces vanished, on stderr.
+      expect(printed.join('\n')).toContain('Error loading workspaces: JSON Parse error');
+      expect(printed.join('\n')).not.toContain('xoxb');
+    });
+  });
+
+  it('logs the workspace count of a readable file, never its secrets', async () => {
+    const data = { default_workspace: 'T1', workspaces: { T1: standard({ token: SECRET }) } };
+    await withFile(JSON.stringify(data), async (path) => {
+      const records = captureLogs();
+
+      expect(await readWorkspacesFile(path)).toEqual(data);
+
+      expect(records[0].properties).toMatchObject({ count: 1, default_workspace: 'T1' });
+      expect(serialize(records)).not.toContain(SECRET);
+    });
+  });
+
+  it('logs storing a first workspace and it becoming the default, by ID only', async () => {
+    const records = captureLogs();
+    const data: WorkspacesData = { workspaces: {} };
+
+    await putWorkspace(data, new FileSecretStore(data), standard({ token: SECRET }));
+
+    const messages = records.map((r) => r.message.join(''));
+    expect(messages).toContain('Default workspace set to T1 (first workspace)');
+    expect(messages).toContain('Stored standard workspace T1 as T1');
+    expect(serialize(records)).not.toContain(SECRET);
+  });
+
+  it('logs the default moving when the default workspace is removed', async () => {
+    const records = captureLogs();
+    const data: WorkspacesData = {
+      default_workspace: 'T1',
+      workspaces: { T1: standard(), T2: standard({ workspace_id: 'T2' }) },
+    };
+
+    await dropWorkspace(data, new FileSecretStore(data), 'T1');
+
+    const moved = records.find((r) => r.message.join('').startsWith('Default workspace moved'));
+    expect(moved?.properties.profile_key).toBe('T2');
+  });
+});
+
+describe('describeLoadError', () => {
+  it('drops quoted fragments from a JSON parse error', () => {
+    expect(describeLoadError(new SyntaxError('JSON Parse error: Unexpected identifier "xoxb"')))
+      .toBe('JSON Parse error: Unexpected identifier <redacted>');
+    expect(describeLoadError(new SyntaxError("Unexpected token 'x', \"xoxb-1\" is not valid JSON")))
+      .toBe("Unexpected token 'x', <redacted> is not valid JSON");
+    expect(describeLoadError(new SyntaxError("JSON Parse error: Expected '}'")))
+      .toBe("JSON Parse error: Expected '}'");
+  });
+
+  it('keeps other errors as they are', () => {
+    expect(describeLoadError(new Error('EACCES: permission denied, open "/x"')))
+      .toBe('EACCES: permission denied, open "/x"');
+    expect(describeLoadError('plain')).toBe('plain');
   });
 });

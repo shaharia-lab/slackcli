@@ -1,3 +1,4 @@
+import { getLogger } from '@logtape/logtape';
 import { SlackClient } from './slack-client.ts';
 import { addWorkspace, getWorkspace } from './workspaces.ts';
 import type {
@@ -15,6 +16,23 @@ import {
   type CaptureFailure,
   type BrowserSessionFailure,
 } from './browser-auth.ts';
+
+const logger = getLogger(['slackcli', 'auth']);
+
+function logAuthenticated(authType: WorkspaceConfig['auth_type'], workspaceId: string, profileKey: string): void {
+  logger.info('Authenticated {auth_type} workspace {workspace_id}', {
+    auth_type: authType,
+    workspace_id: workspaceId,
+    profile_key: profileKey,
+  });
+}
+
+function logAuthFailed(authType: WorkspaceConfig['auth_type'], error: unknown): void {
+  logger.warn('{auth_type} authentication failed: {error}', {
+    auth_type: authType,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
 
 // Result of a successful login: the stored config plus the profile key it was
 // saved under (which may be user-chosen, the team_id, or auto-generated).
@@ -54,9 +72,11 @@ export async function authenticateStandard(
 
     // Save the workspace
     const profileKey = await addWorkspace(config, profile, secretBackend);
+    logAuthenticated(config.auth_type, config.workspace_id, profileKey);
 
     return { config, profileKey };
   } catch (error: any) {
+    logAuthFailed(tempConfig.auth_type, error);
     throw new Error(`Authentication failed: ${error.message}`);
   }
 }
@@ -98,9 +118,11 @@ export async function authenticateBrowser(
 
     // Save the workspace
     const profileKey = await addWorkspace(config, profile, secretBackend);
+    logAuthenticated(config.auth_type, config.workspace_id, profileKey);
 
     return { config, profileKey };
   } catch (error: any) {
+    logAuthFailed(tempConfig.auth_type, error);
     throw new Error(`Authentication failed: ${error.message}`);
   }
 }
@@ -148,12 +170,18 @@ export async function authenticateAuto(
 ): Promise<AutoLoginResult> {
   const onProgress = options.onProgress ?? (() => {});
 
+  logger.info('login-auto started', {
+    headless: options.headless ?? false,
+    workspace_url_given: Boolean(options.workspaceUrl),
+    secret_backend: options.secretBackend ?? 'file',
+  });
+
   const opened = await openBrowserSession({
     headless: options.headless ?? false,
     startUrl: options.workspaceUrl ?? SLACK_CLIENT_URL,
   });
   if (!opened.ok) {
-    throw new AutoLoginError(opened.reason, opened.message);
+    throw autoLoginFailed(opened.reason, opened.message);
   }
 
   let capture;
@@ -171,7 +199,7 @@ export async function authenticateAuto(
   }
 
   if (!capture.ok) {
-    throw new AutoLoginError(capture.reason, capture.message);
+    throw autoLoginFailed(capture.reason, capture.message);
   }
 
   const saved: WorkspaceConfig[] = [];
@@ -182,6 +210,7 @@ export async function authenticateAuto(
     // already filter, but this is the line that decides where a live
     // credential travels, so it does not delegate that check.
     if (!isSlackWorkspaceUrl(workspace.workspaceUrl)) {
+      logger.warn('login-auto refused a non-Slack workspace URL', { team_id: workspace.teamId });
       failed.push({
         workspaceUrl: workspace.workspaceUrl,
         error: 'Refused: not an https slack.com workspace URL',
@@ -209,7 +238,18 @@ export async function authenticateAuto(
     }
   }
 
+  logger.info('login-auto finished: {saved} saved, {failed} failed', {
+    saved: saved.length,
+    failed: failed.length,
+    workspace_ids: saved.map((config) => config.workspace_id),
+  });
   return { saved, failed };
+}
+
+/** Log the typed reason before it reaches the command layer. */
+function autoLoginFailed(reason: AutoLoginFailure, message: string): AutoLoginError {
+  logger.error('login-auto failed: {reason}', { reason });
+  return new AutoLoginError(reason, message);
 }
 
 // Get authenticated client for workspace
@@ -217,6 +257,9 @@ export async function getAuthenticatedClient(workspaceIdentifier?: string): Prom
   const workspace = await getWorkspace(workspaceIdentifier);
 
   if (!workspace) {
+    logger.warn('No workspace resolved ({selector})', {
+      selector: workspaceIdentifier ? 'explicit' : 'default',
+    });
     if (workspaceIdentifier) {
       throw new Error(`Workspace not found: ${workspaceIdentifier}`);
     } else {
@@ -224,5 +267,9 @@ export async function getAuthenticatedClient(workspaceIdentifier?: string): Prom
     }
   }
 
+  logger.debug('Using {auth_type} workspace {workspace_id}', {
+    auth_type: workspace.auth_type,
+    workspace_id: workspace.workspace_id,
+  });
   return new SlackClient(workspace);
 }

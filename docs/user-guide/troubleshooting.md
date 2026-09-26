@@ -62,6 +62,12 @@ redirect and 2FA) before the `--timeout` window closes, or raise it with
 `--timeout=600`. Note that `--headless` only works *after* a first interactive
 sign-in has populated the profile.
 
+Every `login-auto` run records in the [log file](#logs) which browser was
+used, whether the slackcli browser profile was created or reused, whether the
+DevTools port came up, and the failure reason (for example `browser_exited`,
+`capture_timeout`, `no_cookie`). Captured tokens and cookies are never logged.
+Include those lines when you report a `login-auto` problem.
+
 ## `auth parse-curl` cannot read the clipboard
 
 Clipboard access uses `pbpaste` (macOS), PowerShell (Windows), and
@@ -136,9 +142,11 @@ If Slack itself rate-limits you anyway, retry after a pause.
 
 Every command writes a diagnostic log. It records what ran (command name and
 option names, never their values), your OS and slackcli version, and each Slack
-API call's method, outcome, Slack error code and duration. Tokens and cookies
-are redacted, and message text, file contents and search queries are never
-logged.
+API call's method, outcome, Slack error code and duration. It also records
+authentication and `login-auto` steps, workspace config load and save (IDs
+only), credential-store failures, update checks, and any unexpected error with
+its stack trace. Tokens and cookies are redacted, and message text, file
+contents and search queries are never logged.
 
 | OS | Log file |
 |---|---|

@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { resetSync, type LogRecord } from '@logtape/logtape';
+import { configureLogging } from './logger';
 import {
   captureSlackTokens,
   extractWorkspacesFromLocalConfig,
@@ -925,5 +927,92 @@ describe('captureSlackTokens', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe('capture_timeout');
+  });
+});
+
+describe('captureSlackTokens logging', () => {
+  afterEach(() => resetSync());
+
+  // Realistic token shapes, assembled at runtime so the literals never trip
+  // secret scanning on push.
+  const token = (prefix: string, ...parts: string[]) => [prefix, ...parts].join('-');
+  const XOXC = token('xoxc', '7342581920', '7342581921', '8234567890123', '3f9c1e5b7a2d4c6e8f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a');
+  const LOCAL_XOXC = token('xoxc', '1111111111', '2222222222', '3333333333333', '9e8d7c6b5a49382716059f8e7d6c5b4a39281706f5e4d3c2b1a0918273645546');
+  const XOXD_BODY = 'Zm9vYmFyL2JhenF1eCtzb21lbG9uZ3ZhbHVl/YmF6cXV4+c29tZWxvbmd2YWx1ZQ==';
+  const XOXD = token('xoxd', XOXD_BODY);
+  const COOKIES = [{ name: 'd', domain: '.slack.com', value: encodeURIComponent(XOXD) }];
+
+  function captureLogs(): LogRecord[] {
+    const records: LogRecord[] = [];
+    configureLogging({ level: 'trace', verbose: false, sinks: { capture: (r) => records.push(r) } });
+    return records;
+  }
+
+  const serialize = (records: LogRecord[]) =>
+    JSON.stringify(records.map((r) => ({ category: r.category, message: r.message, properties: r.properties })));
+
+  function expectNoSecrets(records: LogRecord[]): void {
+    const output = serialize(records);
+    for (const secret of [XOXC, LOCAL_XOXC, XOXD_BODY, encodeURIComponent(XOXD_BODY)]) {
+      expect(output).not.toContain(secret);
+    }
+    expect(output).not.toContain('postData');
+    expect(output).not.toContain('localConfig_v2');
+  }
+
+  it('logs the outcome with team IDs and never a token, cookie or request body', async () => {
+    const records = captureLogs();
+    const session = makeFakeSession({
+      requests: [
+        { url: 'https://alpha.slack.com/api/conversations.view', postData: `token=${XOXC}&channel=C1` },
+      ],
+      cookies: COOKIES,
+      localConfig: JSON.stringify({
+        teams: { T222: { id: 'T222', name: 'Beta', domain: 'beta', token: LOCAL_XOXC } },
+      }),
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    const success = records.find((r) => r.message.join('').startsWith('Token capture succeeded'));
+    expect(success?.level).toBe('info');
+    expect(success?.properties).toMatchObject({ workspaces: 2, team_ids: ['T222'] });
+    const cookie = records.find((r) => r.properties.method === 'Storage.getCookies');
+    expect(cookie?.properties.outcome).toBe('found');
+    expectNoSecrets(records);
+  });
+
+  it.each([
+    ['no_cookie', { requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }], cookies: [] }],
+    ['capture_timeout', { cookies: COOKIES }],
+    ['devtools_unreachable', { throwOn: 'Network.enable' }],
+  ] as const)('logs the typed failure reason %s at warning', async (reason, options) => {
+    const records = captureLogs();
+
+    const result = await captureSlackTokens(makeFakeSession(options as FakeOptions), {
+      ...captureDeps,
+      now: advancingClock(),
+      timeoutMs: 3000,
+    });
+
+    expect(result.ok).toBe(false);
+    const failure = records.find((r) => r.message.join('').startsWith('Token capture failed'));
+    expect(failure?.level).toBe('warning');
+    expect(failure?.properties.reason).toBe(reason);
+    expectNoSecrets(records);
+  });
+
+  it('logs browser_closed when the session dies mid-wait', async () => {
+    const records = captureLogs();
+
+    const result = await captureSlackTokens(makeFakeSession({ dieAfterCalls: 3 }), {
+      ...captureDeps,
+      now: advancingClock(1),
+    });
+
+    expect(result.ok).toBe(false);
+    const failure = records.find((r) => r.message.join('').startsWith('Token capture failed'));
+    expect(failure?.properties.reason).toBe('browser_closed');
   });
 });

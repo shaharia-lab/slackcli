@@ -36,6 +36,7 @@ import {
 import type { LogLevel, LogRecord, Sink } from '@logtape/logtape';
 import { getRotatingFileSink } from '@logtape/file';
 import { redactFormatter } from './log-redaction.ts';
+import { tildify } from './tildify.ts';
 import { warning } from './formatter.ts';
 import { isInstalledViaHomebrew } from './updater.ts';
 import { getAppVersion, isRunningUnderBun } from '../version.ts';
@@ -146,16 +147,6 @@ export function detectInstallMethod(): InstallMethod {
   if (isRunningUnderBun()) return 'source';
   if (isInstalledViaHomebrew()) return 'homebrew';
   return 'binary';
-}
-
-/** Replaces a leading home directory with `~`, so logs do not carry the username. */
-export function tildify(path: string, home: string): string {
-  if (!home) return path;
-  if (path === home) return '~';
-  for (const separator of ['/', '\\']) {
-    if (path.startsWith(home + separator)) return `~${path.slice(home.length)}`;
-  }
-  return path;
 }
 
 export interface Invocation {

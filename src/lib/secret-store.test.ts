@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { resetSync, type LogRecord } from '@logtape/logtape';
+import { configureLogging } from './logger.ts';
 import {
   FileSecretStore,
   MacOSKeychainSecretStore,
@@ -426,5 +428,57 @@ describe('RoutingSecretStore', () => {
     await store.delete('T1:token');
     expect(written).toEqual([['T1:token', 'new-value']]);
     expect(deleted).toEqual(['T1:token']);
+  });
+});
+
+describe('secret-store logging', () => {
+  afterEach(() => resetSync());
+
+  function captureLogs(): LogRecord[] {
+    const records: LogRecord[] = [];
+    configureLogging({ level: 'trace', verbose: false, sinks: { capture: (r) => records.push(r) } });
+    return records;
+  }
+
+  const SECRET = ['xoxc', '7342581920', '7342581921', 'a1b2c3d4e5f6a7b8c9d0'].join('-');
+
+  it('logs an access_denied keychain write by reason and key, never the value', async () => {
+    const records = captureLogs();
+    const store = new MacOSKeychainSecretStore(
+      async () => ({ code: 51, stdout: '', stderr: 'security: write failed' }),
+      'darwin',
+    );
+
+    await expect(store.set('work:xoxc', SECRET)).rejects.toThrow(SecretStoreError);
+
+    const warning = records.find((r) => r.level === 'warning');
+    expect(warning?.category).toEqual(['slackcli', 'secret-store']);
+    expect(warning?.properties).toMatchObject({ action: 'write "work:xoxc"', reason: 'access_denied', exit_code: 51 });
+    expect(JSON.stringify(records.map((r) => [r.message, r.properties]))).not.toContain(SECRET);
+  });
+
+  it('logs the keychain as unavailable off macOS', async () => {
+    const records = captureLogs();
+    const store = new MacOSKeychainSecretStore(async () => ({ code: 0, stdout: '', stderr: '' }), 'linux');
+
+    await expect(store.get('work:xoxc')).rejects.toThrow(SecretStoreError);
+
+    expect(records.find((r) => r.level === 'warning')?.properties).toMatchObject({
+      platform: 'linux',
+      reason: 'unavailable',
+    });
+  });
+
+  it('logs the backend a profile routes to at debug', async () => {
+    const records = captureLogs();
+    const data: WorkspacesData = {
+      workspaces: { work: { ...standard(), secret_backend: 'keychain' } as WorkspaceConfig },
+    };
+    const keychain = new MacOSKeychainSecretStore(async () => ({ code: 0, stdout: 'v', stderr: '' }), 'darwin');
+
+    await new RoutingSecretStore(data, keychain).get('work:token');
+
+    const routed = records.find((r) => r.level === 'debug');
+    expect(routed?.properties).toMatchObject({ profile_key: 'work', backend: 'keychain' });
   });
 });

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile, exists } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { getLogger } from '@logtape/logtape';
 import type { WorkspacesData, WorkspaceConfig, SecretBackend } from '../types/index.ts';
 import {
   FileSecretStore,
@@ -13,6 +14,9 @@ import {
   storeCredentials,
   type SecretStore,
 } from './secret-store.ts';
+import { warning } from './formatter.ts';
+
+const logger = getLogger(['slackcli', 'workspaces']);
 
 const CONFIG_DIR = join(homedir(), '.config', 'slackcli');
 const WORKSPACES_FILE = join(CONFIG_DIR, 'workspaces.json');
@@ -29,22 +33,53 @@ export async function loadWorkspaces(): Promise<WorkspacesData> {
   await ensureConfigDir();
 
   if (!await exists(WORKSPACES_FILE)) {
+    logger.debug('No workspaces file yet');
     return { workspaces: {} };
   }
 
+  return readWorkspacesFile(WORKSPACES_FILE);
+}
+
+// Read and parse a workspaces document. An unreadable or corrupt file is
+// reported and treated as empty, as it always has been. Exported so the
+// corrupt-file path is testable against a temporary file.
+export async function readWorkspacesFile(path: string): Promise<WorkspacesData> {
   try {
-    const data = await readFile(WORKSPACES_FILE, 'utf-8');
-    return JSON.parse(data);
+    const data: WorkspacesData = JSON.parse(await readFile(path, 'utf-8'));
+    logger.debug('Loaded {count} workspaces', {
+      count: Object.keys(data?.workspaces ?? {}).length,
+      default_workspace: data?.default_workspace,
+    });
+    return data;
   } catch (error) {
-    console.error('Error loading workspaces:', error);
+    const message = describeLoadError(error);
+    logger.error('Could not load workspaces: {error}', {
+      error: message,
+      error_name: error instanceof Error ? error.name : typeof error,
+    });
+    warning(`Error loading workspaces: ${message}`);
     return { workspaces: {} };
   }
+}
+
+// A JSON parse error can quote a fragment of the file (`Unexpected identifier
+// "xoxb"`), and the file holds credentials. Quoted fragments are dropped so
+// neither the log nor the terminal ever echoes file contents; a single quoted
+// character (`Expected '}'`) is syntax, not content, and is kept.
+export function describeLoadError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!(error instanceof SyntaxError)) return message;
+  return message.replace(/"[^"]{2,}"|'[^']{2,}'|`[^`]{2,}`/g, '<redacted>');
 }
 
 // Save workspaces data
 export async function saveWorkspaces(data: WorkspacesData): Promise<void> {
   await ensureConfigDir();
   await writeFile(WORKSPACES_FILE, JSON.stringify(data, null, 2), { mode: 0o600 });
+  logger.info('Saved {count} workspaces', {
+    count: Object.keys(data.workspaces).length,
+    default_workspace: data.default_workspace,
+  });
 }
 
 // The credential backend for a loaded document. Secrets are read and written
@@ -248,8 +283,16 @@ export async function putWorkspace(
   // Set as default if it's the first workspace
   if (!data.default_workspace) {
     data.default_workspace = key;
+    logger.info('Default workspace set to {profile_key} (first workspace)', { profile_key: key });
   }
 
+  logger.info('Stored {auth_type} workspace {workspace_id} as {profile_key}', {
+    auth_type: config.auth_type,
+    workspace_id: config.workspace_id,
+    profile_key: key,
+    secret_backend: effectiveBackend,
+    refreshed: Boolean(previous),
+  });
   return key;
 }
 
@@ -285,7 +328,11 @@ export async function dropWorkspace(
   if (data.default_workspace === resolved.key) {
     const remainingIds = Object.keys(data.workspaces);
     data.default_workspace = remainingIds.length > 0 ? remainingIds[0] : undefined;
+    logger.info('Default workspace moved to {profile_key} after removal', {
+      profile_key: data.default_workspace ?? null,
+    });
   }
+  logger.info('Removed workspace {profile_key}', { profile_key: resolved.key });
 }
 
 // Delete every profile's credentials and records.
@@ -296,6 +343,7 @@ export async function dropAllWorkspaces(
   for (const [key, config] of Object.entries(data.workspaces)) {
     await deleteCredentials(store, key, config.auth_type);
   }
+  logger.info('Removed all {count} workspaces', { count: Object.keys(data.workspaces).length });
   data.workspaces = {};
   data.default_workspace = undefined;
 }
@@ -390,6 +438,7 @@ export async function migrateWorkspaceCredentials(
     .secret_cleanup_pending;
 
   if (from === target) {
+    logger.debug('Profile {profile_key} already on {backend}', { profile_key: key, backend: target });
     // Already on the target backend — but if a PRIOR migration's old-copy
     // cleanup never finished, that is still outstanding work, surfaced here
     // so migrateSecrets retries it even when this call itself is a no-op.
@@ -412,6 +461,12 @@ export async function migrateWorkspaceCredentials(
       );
     }
   } catch (err) {
+    logger.warn('Migrating {profile_key} from {from} to {to} failed: {error}', {
+      profile_key: key,
+      from,
+      to: target,
+      error: err instanceof Error ? err.message : String(err),
+    });
     // Covers a failed write AND a failed or mismatched read-back alike: either
     // way the target must not keep a partial or unverified copy.
     await deleteCredentials(toStore, key, authType).catch(() => {});
@@ -430,6 +485,7 @@ export async function migrateWorkspaceCredentials(
     secret_cleanup_pending: from,
   } as WorkspaceConfig;
 
+  logger.info('Migrated {profile_key} from {from} to {to}', { profile_key: key, from, to: target });
   return { key, authType, from, to: target, migrated: true, pendingCleanup: from };
 }
 
@@ -464,7 +520,12 @@ export async function migrateOneWorkspace(
     delete (data.workspaces[result.key] as { secret_cleanup_pending?: SecretBackend }).secret_cleanup_pending;
     await save(data);
     return { ...result, pendingCleanup: null };
-  } catch {
+  } catch (err) {
+    logger.warn('Cleanup of {profile_key} on {backend} still pending: {error}', {
+      profile_key: result.key,
+      backend: pendingBackend,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return result; // still pending; the next call (any target) retries it
   }
 }
@@ -514,6 +575,7 @@ export async function setDefaultWorkspace(identifier: string): Promise<void> {
   }
 
   data.default_workspace = resolved.key;
+  logger.info('Default workspace set to {profile_key}', { profile_key: resolved.key });
   await saveWorkspaces(data);
 }
 

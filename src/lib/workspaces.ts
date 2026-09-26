@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile, exists } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getLogger } from '@logtape/logtape';
+import { tildifyText } from './tildify.ts';
 import type { WorkspacesData, WorkspaceConfig, SecretBackend } from '../types/index.ts';
 import {
   FileSecretStore,
@@ -65,10 +66,11 @@ export async function readWorkspacesFile(path: string): Promise<WorkspacesData> 
 // A JSON parse error can quote a fragment of the file (`Unexpected identifier
 // "xoxb"`), and the file holds credentials. Quoted fragments are dropped so
 // neither the log nor the terminal ever echoes file contents; a single quoted
-// character (`Expected '}'`) is syntax, not content, and is kept.
-export function describeLoadError(error: unknown): string {
+// character (`Expected '}'`) is syntax, not content, and is kept. Any other
+// error keeps its message, with the home directory written as `~`.
+export function describeLoadError(error: unknown, home: string = homedir()): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (!(error instanceof SyntaxError)) return message;
+  if (!(error instanceof SyntaxError)) return tildifyText(message, home);
   return message.replace(/"[^"]{2,}"|'[^']{2,}'|`[^`]{2,}`/g, '<redacted>');
 }
 

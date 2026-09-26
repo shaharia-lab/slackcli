@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import { configureLogging, LOG_FILE_NAME } from './logger';
@@ -35,6 +35,19 @@ describe('handleFatalError', () => {
     expect(String(records[0].properties.stack)).toContain('TypeError: boom');
     expect(printed).toEqual(['boom']);
     expect(exits).toEqual([1]);
+  });
+
+  it('writes the home directory as ~ in the message and stack', () => {
+    const home = homedir();
+    const err = new Error(`open '${home}/.config/slackcli/x' failed`);
+    err.stack = `Error: open failed\n    at run (${home}/slackcli/src/index.ts:1:1)`;
+    const { records, printed } = run(err);
+
+    expect(records[0].properties.error).toBe("open '~/.config/slackcli/x' failed");
+    expect(records[0].properties.stack).toBe('Error: open failed\n    at run (~/slackcli/src/index.ts:1:1)');
+    expect(JSON.stringify(records[0].properties)).not.toContain(`${home}/`);
+    // The terminal still shows the real message.
+    expect(printed).toEqual([err.message]);
   });
 
   it('handles a rejection with a non-Error value', () => {

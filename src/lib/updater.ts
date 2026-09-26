@@ -5,6 +5,7 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import { getLogger } from '@logtape/logtape';
+import { tildifyText } from './tildify.ts';
 import { info, success, error as logError } from './formatter.ts';
 import { getAppVersion, isRunningUnderBun } from '../version.ts';
 
@@ -280,7 +281,9 @@ export async function performUpdate(): Promise<void> {
     info('Please restart slackcli to use the new version');
   } catch (error: any) {
     // Try to restore from backup if it exists
-    logger.error('Self-update install failed: {error}', { error: error?.message ?? String(error) });
+    logger.error('Self-update install failed: {error}', {
+      error: tildifyText(error?.message ?? String(error), homedir()),
+    });
     logError(`Update failed: ${error.message}`);
     throw error;
   } finally {
@@ -308,7 +311,7 @@ function writeUpdateCache(cache: UpdateCache): void {
   } catch (err) {
     // Silently fail — cache is best-effort
     logger.debug('Could not write the update cache: {error}', {
-      error: err instanceof Error ? err.message : String(err),
+      error: tildifyText(err instanceof Error ? err.message : String(err), homedir()),
     });
   }
 }

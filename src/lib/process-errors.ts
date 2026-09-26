@@ -6,7 +6,9 @@
 // The file sink writes each record synchronously, so logging right before
 // `process.exit(1)` is safe.
 
+import { homedir } from 'node:os';
 import { getLogger } from '@logtape/logtape';
+import { tildifyText } from './tildify.ts';
 import { error as printError } from './formatter.ts';
 
 const logger = getLogger(['slackcli', 'process']);
@@ -25,11 +27,13 @@ export function handleFatalError(kind: FatalErrorKind, err: unknown, deps: Fatal
   const isError = err instanceof Error;
   const message = isError ? err.message : String(err);
 
+  // Messages and stack frames carry absolute paths; write the home dir as `~`.
+  const home = homedir();
   logger.error('{kind}: {error}', {
     kind,
-    error: message,
+    error: tildifyText(message, home),
     error_name: isError ? err.name : typeof err,
-    ...(isError && err.stack ? { stack: err.stack } : {}),
+    ...(isError && err.stack ? { stack: tildifyText(err.stack, home) } : {}),
   });
 
   (deps.print ?? printError)(message);

@@ -832,9 +832,11 @@ describe('describeLoadError', () => {
       .toBe("JSON Parse error: Expected '}'");
   });
 
-  it('keeps other errors as they are', () => {
-    expect(describeLoadError(new Error('EACCES: permission denied, open "/x"')))
+  it('keeps other errors, with the home directory written as ~', () => {
+    expect(describeLoadError(new Error("EACCES: permission denied, open '/home/u/.config/slackcli/workspaces.json'"), '/home/u'))
+      .toBe("EACCES: permission denied, open '~/.config/slackcli/workspaces.json'");
+    expect(describeLoadError(new Error('EACCES: permission denied, open "/x"'), '/home/u'))
       .toBe('EACCES: permission denied, open "/x"');
-    expect(describeLoadError('plain')).toBe('plain');
+    expect(describeLoadError('plain', '/home/u')).toBe('plain');
   });
 });

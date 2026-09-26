@@ -10,3 +10,12 @@ export function tildify(path: string, home: string): string {
   }
   return path;
 }
+
+/**
+ * `tildify()` for free text: every home-directory path inside an error message
+ * or stack trace (`EACCES: permission denied, open '/home/u/…'`) becomes `~/…`.
+ */
+export function tildifyText(text: string, home: string): string {
+  if (!home) return text;
+  return text.replaceAll(`${home}/`, '~/').replaceAll(`${home}\\`, '~\\');
+}

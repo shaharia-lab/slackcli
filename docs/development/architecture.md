@@ -279,7 +279,9 @@ pieces:
   `session`, `slack-client`, `slack-web-api` (the SDK's own messages),
   `rate-limiter`, `auth`, `browser-launcher`, `cdp`, `browser-auth`,
   `workspaces`, `secret-store`, `updater`, `process`. Paths go through
-  `tildify()` (`src/lib/tildify.ts`), so the home directory is written as `~`.
+  `tildify()` (`src/lib/tildify.ts`), and error messages or stack traces that
+  can contain paths through `tildifyText()`, so the home directory (and with it
+  the username) is written as `~`.
 - **Sinks.** A rotating file sink (`@logtape/file`, 5 MiB per file, the live
   file plus 5 rotated ones, so about 30 MB at most) with `bufferSize: 0`, so
   every record is on disk before the next line of code runs

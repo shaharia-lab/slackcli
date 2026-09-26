@@ -542,7 +542,8 @@ async function readSessionCookie(session: CdpSession): Promise<string | null> {
         cookies: result?.cookies?.length ?? 0,
       });
       if (found) return found;
-    } catch {
+    } catch (err) {
+      logger.debug('Session cookie via {method} failed: {error}', { method, error: errorMessageForLog(err) });
       // Try the next method; a session that is truly gone fails both and the
       // caller reports no_cookie.
     }

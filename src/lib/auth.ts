@@ -232,6 +232,10 @@ export async function authenticateAuto(
       );
       saved.push(config);
     } catch (err: any) {
+      logger.warn('login-auto could not save a captured workspace: {error}', {
+        team_id: workspace.teamId,
+        error: errorMessageForLog(err),
+      });
       failed.push({
         workspaceUrl: workspace.workspaceUrl,
         error: err?.message ?? 'Unknown error',

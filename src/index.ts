@@ -14,6 +14,7 @@ import { createTeamCommand } from './commands/team.ts';
 import { createUsergroupsCommand } from './commands/usergroups.ts';
 import { createUsersCommand } from './commands/users.ts';
 import { notifyIfUpdateAvailable } from './lib/updater.ts';
+import { startLogging } from './lib/logger.ts';
 import { getAppVersion } from './version.ts';
 
 const program = new Command();
@@ -21,7 +22,15 @@ const program = new Command();
 program
   .name('slackcli')
   .description('A fast, developer-friendly CLI tool for interacting with Slack workspaces')
-  .version(getAppVersion());
+  .version(getAppVersion())
+  // Reserved globally: no subcommand may define its own -v.
+  .option('-v, --verbose', 'Write debug logs to stderr (the log file is written either way)');
+
+// Logging is configured once, right before the chosen command runs, so help and
+// --version stay side-effect free. Libraries log through LogTape categories.
+program.hook('preAction', (_thisCommand, actionCommand) => {
+  startLogging({ verbose: Boolean(program.opts().verbose), actionCommand });
+});
 
 // Add commands
 program.addCommand(createAuthCommand());

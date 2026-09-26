@@ -25,9 +25,12 @@
   "author": "Shaharia Lab",
   "license": "MIT",
   "dependencies": {
+    "@logtape/file": "2.3.6",
+    "@logtape/logtape": "2.3.6",
+    "@logtape/redaction": "2.3.6",
     "@slack/web-api": "^7.15.2",
-    "commander": "^12.1.0",
     "chalk": "^5.3.0",
+    "commander": "^12.1.0",
     "ora": "^8.1.1"
   },
   "devDependencies": {

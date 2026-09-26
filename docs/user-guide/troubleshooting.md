@@ -132,10 +132,40 @@ request (`--types`, `--limit`) to make it finish sooner.
 
 If Slack itself rate-limits you anyway, retry after a pause.
 
+## Logs
+
+Every command writes a diagnostic log. It records what ran (command name and
+option names, never their values), your OS and slackcli version, and each Slack
+API call's method, outcome, Slack error code and duration. Tokens and cookies
+are redacted, and message text, file contents and search queries are never
+logged.
+
+| OS | Log file |
+|---|---|
+| Linux | `~/.local/state/slackcli/logs/slackcli.log` (or `$XDG_STATE_HOME/slackcli/logs/`) |
+| macOS | `~/Library/Logs/slackcli/slackcli.log` |
+| Windows | `%LOCALAPPDATA%\slackcli\logs\slackcli.log` |
+
+The file rotates at 5 MiB and keeps 5 rotated files (`slackcli.log.1` … `.5`)
+next to the current one, so it never uses more than about 30 MB. Each line is one JSON object, and every line
+from one run shares a `run_id`.
+
+- **See it live**: add `-v` / `--verbose` to any command to also print debug
+  logs to stderr: `slackcli conversations list -v`.
+- **Choose the level**: `SLACKCLI_LOG_LEVEL=trace|debug|info|warning|error|off`
+  (default `info`). `-v` takes precedence and means `debug`
+  (or keeps `trace` if `SLACKCLI_LOG_LEVEL=trace`).
+- **Turn it off**: `SLACKCLI_LOG_LEVEL=off`.
+- **Put it elsewhere**: `SLACKCLI_LOG_DIR=/path/to/dir`.
+
+If the log directory is not writable, the command still runs and prints one
+warning.
+
 ## Still stuck?
 
 - [Open an issue](https://github.com/shaharia-lab/slackcli/issues) with the exact
-  command, the error, and `slackcli --version`.
+  command, the error, and `slackcli --version`. The last few lines of the
+  [log file](#logs) help; skim them before pasting.
 - [Discussions](https://github.com/shaharia-lab/slackcli/discussions) for
   questions.
 - Never paste a token, a cURL command, or your `workspaces.json` into a public

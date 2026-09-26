@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
   fetchLatestRelease,
   isNewerVersion,
   isInstalledViaHomebrew,
   isUpdateCommand,
+  checkForUpdates,
   getUpdateCommand,
   getCurrentVersion,
   notifyIfUpdateAvailable,
@@ -126,7 +127,13 @@ describe('performUpdate on a Homebrew install', () => {
     ['Linuxbrew', '/home/linuxbrew/.linuxbrew/bin/slackcli'],
   ])('refuses without any network call for %s (%s)', async (_label, execPath) => {
     Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
-    await expect(performUpdate()).resolves.toBeUndefined();
+    const log = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(performUpdate()).resolves.toBeUndefined();
+      expect(log.mock.calls.flat().join('\n')).toContain('Installed via Homebrew — run: brew upgrade slackcli');
+    } finally {
+      log.mockRestore();
+    }
     expect(fetchCalls).toHaveLength(0);
   });
 
@@ -291,6 +298,35 @@ describe('performUpdate integrity check', () => {
     const cache = JSON.parse(await readFile(join(cacheDir, 'update-check.json'), 'utf-8'));
     expect(cache.latestVersion).toBe('v99.0.0');
     expect(cache.checkedAt).toBeGreaterThanOrEqual(startedAt);
+  });
+});
+
+describe('checkForUpdates', () => {
+  const originalExecPath = process.execPath;
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  });
+
+  it.each([
+    ['a Homebrew install', '/opt/homebrew/bin/slackcli', 'Run "brew upgrade slackcli" to update'],
+    ['a direct install', '/usr/local/bin/slackcli', 'Run "slackcli update" to update'],
+  ])('names the right update command for %s', async (_label, execPath, hint) => {
+    Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ tag_name: 'v99.0.0', name: 'v99.0.0', body: '', assets: [] }), {
+        status: 200,
+      })) as unknown as typeof fetch;
+    const log = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const result = await checkForUpdates(false);
+      expect(result.updateAvailable).toBe(true);
+      expect(log.mock.calls.flat().join('\n')).toContain(hint);
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 

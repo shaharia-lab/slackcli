@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { checkForUpdates, performUpdate } from '../lib/updater.ts';
+import { checkForUpdates, getUpdateCommand, performUpdate } from '../lib/updater.ts';
 import { success, error, info } from '../lib/formatter.ts';
 
 export function createUpdateCommand(): Command {
@@ -26,7 +26,7 @@ export function createUpdateCommand(): Command {
 
         if (result.updateAvailable && result.latestVersion) {
           info(`Latest version: ${result.latestVersion}`);
-          success('Update available! Run "slackcli update" to update.');
+          success(`Update available! Run "${getUpdateCommand()}" to update.`);
         } else {
           success('You are on the latest version!');
         }

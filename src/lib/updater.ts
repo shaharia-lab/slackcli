@@ -146,7 +146,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
-    info('Run "slackcli update" to update');
+    info(`Run "${getUpdateCommand()}" to update`);
   }
 
   return {

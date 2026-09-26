@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **`slackcli update` on Homebrew installs**: no longer replaces the Homebrew-managed binary (which left brew's record out of sync); it prints `Installed via Homebrew — run: brew upgrade slackcli` and exits without downloading. `update` and `update check` no longer end with a stale "Update available" notice, and a successful self-update refreshes the update cache with the installed version (#276)
+- **`slackcli update` on Homebrew installs**: no longer replaces the Homebrew-managed binary (which left brew's record out of sync); it prints `Installed via Homebrew — run: brew upgrade slackcli` and exits without downloading, and `update check` now names `brew upgrade slackcli` there too. `update` and `update check` no longer end with a stale "Update available" notice, and a successful self-update refreshes the update cache with the installed version (#276)
 
 ## [0.13.0] - 2026-09-26
 

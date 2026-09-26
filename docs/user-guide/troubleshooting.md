@@ -169,11 +169,44 @@ from one run shares a `run_id`.
 If the log directory is not writable, the command still runs and prints one
 warning.
 
+### The `logs` command
+
+```bash
+slackcli logs path                 # where the log file is (works even if logging is off)
+slackcli logs show                 # the most recent run, redacted
+slackcli logs show --last 3        # the last 3 runs, oldest first
+slackcli logs show --run <run_id>  # one run
+slackcli logs clear                # delete the log and its rotated copies (asks first)
+```
+
+- `logs show` puts each run back together across rotated files and prints its
+  environment header (version, OS, install method, command) as `key: value`
+  lines, then one line per record. The patterns that redact the file are
+  applied again on output, so a token written by an older build is still
+  hidden. Unreadable lines are skipped and counted on stderr. `--json` prints
+  `{ log_path, runs: [{ run_id, records }], skipped_lines }`. An unknown
+  `--run` exits 1.
+- `logs path --json` prints `{ log_path, log_dir, exists }`.
+- `logs clear` deletes only `slackcli.log` and `slackcli.log.<n>`, never other
+  files in the directory. It prompts on a terminal; in a script or pipe it
+  refuses unless you pass `--yes`.
+- `logs` commands never write to the log themselves, so `logs show` shows the
+  command you ran before it.
+
+### Sharing logs in a bug report
+
+1. Reproduce the problem.
+2. Run `slackcli logs show --last 1` and paste the output into the issue's
+   **Diagnostic log** field.
+3. Read it before you paste. Tokens and cookies are redacted automatically, but
+   the log still contains IDs (workspace, channel, user) and your OS details;
+   remove anything you do not want public.
+
 ## Still stuck?
 
 - [Open an issue](https://github.com/shaharia-lab/slackcli/issues) with the exact
-  command, the error, and `slackcli --version`. The last few lines of the
-  [log file](#logs) help; skim them before pasting.
+  command, the error, and the output of `slackcli logs show --last 1`
+  ([how](#sharing-logs-in-a-bug-report)); skim it before pasting.
 - [Discussions](https://github.com/shaharia-lab/slackcli/discussions) for
   questions.
 - Never paste a token, a cURL command, or your `workspaces.json` into a public

@@ -257,7 +257,7 @@ sync, or share them. `slackcli auth logout` clears both.
 
 ## 📖 Command reference
 
-Seven command groups. `slackcli <group> --help` always prints the authoritative options
+The command groups. `slackcli <group> --help` always prints the authoritative options
 for the version you have installed.
 
 <details>
@@ -343,7 +343,7 @@ slackcli search people "ada@example.com"
 </details>
 
 <details>
-<summary><code>saved</code> · <code>canvas</code> · <code>files</code> · <code>update</code></summary>
+<summary><code>saved</code> · <code>canvas</code> · <code>files</code> · <code>update</code> · <code>logs</code></summary>
 
 <br>
 
@@ -356,9 +356,10 @@ slackcli files read F1234567890              # email plain_text or original text
 slackcli files download F1234567890 --output ./report.pdf
 slackcli update check                        # is there a newer version?
 slackcli update                              # install it
+slackcli logs show --last 1                  # redacted diagnostic log of the last run
 ```
 
-📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md) · [files](docs/user-guide/files.md)
+📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md) · [files](docs/user-guide/files.md) · [logs](docs/user-guide/troubleshooting.md#logs)
 
 </details>
 

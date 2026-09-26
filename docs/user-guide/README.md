@@ -33,6 +33,7 @@ list for the version you have installed.
 | `files` | Inspect, read, and download Slack-hosted files |
 | `emoji` | List a workspace's custom emoji and inspect one |
 | `update` | Check for and install new versions |
+| `logs` | Find, show (redacted) and delete the diagnostic log |
 
 ## Pages
 

@@ -86,7 +86,7 @@ The hooks run the same checks as CI: trailing whitespace, EOF, YAML/JSON, merge-
 
 Detailed, maintained references live in `docs/development/` — [architecture.md](docs/development/architecture.md), [project-structure.md](docs/development/project-structure.md) (per-file responsibilities), [adding-a-command.md](docs/development/adding-a-command.md), [testing.md](docs/development/testing.md), [build-and-release.md](docs/development/build-and-release.md). Read the relevant page before touching an area; do not rely on this summary alone.
 
-- **Entry point**: `src/index.ts` registers the Commander.js groups `auth`, `canvas`, `conversations`, `emoji`, `files`, `messages`, `saved`, `search`, `team`, `usergroups`, and `update`. Each lives in `src/commands/<group>.ts` as a `create<Group>Command()` factory.
+- **Entry point**: `src/index.ts` registers the Commander.js groups `auth`, `canvas`, `conversations`, `emoji`, `files`, `logs`, `messages`, `saved`, `search`, `team`, `usergroups`, `users`, and `update`. Each lives in `src/commands/<group>.ts` as a `create<Group>Command()` factory.
 - **Commands parse and print; `src/lib/` does the work.** Anything worth testing belongs in `src/lib/`, not in a command file.
 - **Dual auth, one seam**: `src/lib/slack-client.ts` dispatches every call to `standardRequest()` (via `@slack/web-api`) or `browserRequest()` (raw `fetch` with browser headers) based on the workspace's stored `auth_type`. Add new Slack API calls there. Every call is paced by the process-wide rate limiter in `src/lib/rate-limiter.ts` — never call Slack around it.
 - **Browser-only capabilities**: `drafts.create` (message drafts) and reading thread replies need browser auth; guard and document such paths.

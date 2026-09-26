@@ -5,7 +5,7 @@ parse and print, libraries do the work, and exactly one class knows how to talk
 to Slack.
 
 ```
-src/index.ts                 Commander program; registers 7 command groups
+src/index.ts                 Commander program; registers the command groups
         │
         ▼
 src/commands/*.ts            Parse flags, call lib, format output, set exit code
@@ -318,6 +318,10 @@ pieces:
   rotation. An existing directory's mode is left alone.
 - **Level**: `-v` (debug) > `SLACKCLI_LOG_LEVEL` > `info`; `-v` never lowers an
   explicit `trace`. `off` configures no sinks and creates no file.
+- **`slackcli logs` does not write the file** (`shouldWriteLogFile()`): `logs
+  show` would otherwise show its own run, and `logs clear` would delete a file
+  the process holds open (which fails on Windows). Reading is in
+  `src/lib/logs.ts`, which re-applies `SLACK_REDACTION_PATTERNS` to every line.
 - **Fail-safe**: an unusable directory, or a write failing mid-run, disables the
   file sink with exactly one stderr warning. Logging never fails a command.
 

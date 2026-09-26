@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rotates at 5 MiB, keeping the current file plus 5 rotated ones (about 30 MB at most); an unwritable log directory produces one warning and never fails the command
 - **Diagnostic logging for auth, `login-auto`, config and updates**: the log now records authentication outcomes, each `login-auto` step (chosen browser, profile created or reused, DevTools port discovery, the typed failure reason), workspace config load/save and default changes (IDs only), credential-store failures, update checks and the self-update digest verification, and any unhandled error with its stack trace before the process exits 1. Captured tokens, cookies and CDP payloads are never logged (#280)
 
+- **`slackcli logs`**: `logs path` prints where the log file is, `logs show [--last N | --run <id>]` prints recent runs (put back together across rotated files, redacted again on output, `--json` supported) for pasting into a bug report, and `logs clear` deletes the log files after confirmation (`--yes` when not on a terminal). The bug report template now asks for `slackcli logs show --last 1` (#281)
+
 ### Changed
 - **Corrupt `workspaces.json`**: the load error is now a one-line warning (`Error loading workspaces: <parse error>`) instead of a raw error dump, and quoted fragments of the file are no longer echoed to the terminal (#280)
 

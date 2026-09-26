@@ -70,8 +70,10 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Relevant output or logs
-      description: Paste any error output. **Redact tokens, cookies, and workspace-identifying data.**
+      label: Diagnostic log
+      description: |
+        Reproduce the problem, then paste the output of `slackcli logs show --last 1` (plus any error output).
+        Tokens and cookies are redacted automatically, but review it before pasting and remove workspace-identifying data you do not want public.
       render: shell
   - type: checkboxes
     id: checks

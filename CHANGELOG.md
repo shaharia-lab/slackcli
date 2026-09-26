@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-26
+
 ### Added
 - **Draft lifecycle**: `messages send-draft <draft-id>` posts a reviewed text draft to its saved channel/thread and removes it after delivery; `messages delete-draft <draft-id>` discards it without posting. Both require browser auth and accept `--yes` for unattended use (#272)
   - Sending returns the posted message identity with `--json`; if cleanup fails after posting, it reports that identity with a nonzero exit to prevent a blind duplicate retry

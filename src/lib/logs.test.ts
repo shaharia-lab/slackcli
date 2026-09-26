@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -82,6 +82,16 @@ describe('listLogFiles', () => {
     ]);
   });
 
+  it.skipIf(process.platform === 'win32')('skips a file that disappears between listing and stat', () => {
+    writeFileSync(join(dir, 'slackcli.log'), '');
+    // A dangling symlink is listed by readdir but fails stat with ENOENT, the
+    // same as a rotation by another process in between.
+    symlinkSync(join(dir, 'gone'), join(dir, 'slackcli.log.4'));
+
+    expect(listLogFiles(dir)).toEqual([join(dir, 'slackcli.log')]);
+    expect(clearLogs(dir)).toEqual({ deleted: 1 });
+  });
+
   it('treats a missing directory as having no logs', () => {
     expect(listLogFiles(join(dir, 'missing'))).toEqual([]);
   });
@@ -156,6 +166,24 @@ describe('readRuns', () => {
       header: 'Cookie: d=[REDACTED]; x=1',
       nested: { t: 'xox?-[REDACTED]' },
     });
+  });
+});
+
+describe('readRuns redaction of escaped input', () => {
+  it('redacts a token and a d cookie written as JSON unicode escapes', async () => {
+    const escaped = String.raw`xox\u0070-1234567890-ABCDEFGHIJ`;
+    const line = String.raw`{"message":"leak ESCAPED","properties":{"run_id":"a","h":"Cookie: \u0064=xyzSECRET"}}`
+      .replace('ESCAPED', escaped);
+    writeFileSync(join(dir, 'slackcli.log'), `${line}\n`);
+
+    const { runs, skipped } = await readRuns(dir);
+    const text = JSON.stringify(runs);
+
+    expect(skipped).toBe(0);
+    expect(text).not.toContain('ABCDEFGHIJ');
+    expect(text).not.toContain('xyzSECRET');
+    expect(runs[0]!.records[0]!.message).toBe('leak xox?-[REDACTED]');
+    expect((runs[0]!.records[0]!.properties as Record<string, unknown>).h).toBe('Cookie: d=[REDACTED]');
   });
 });
 

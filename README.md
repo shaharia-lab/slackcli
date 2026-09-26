@@ -257,7 +257,7 @@ sync, or share them. `slackcli auth logout` clears both.
 
 ## 📖 Command reference
 
-The command groups. `slackcli <group> --help` always prints the authoritative options
+Command groups at a glance. `slackcli <group> --help` always prints the authoritative options
 for the version you have installed.
 
 <details>

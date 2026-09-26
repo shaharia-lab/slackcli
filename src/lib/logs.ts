@@ -67,7 +67,13 @@ export function listLogFiles(dir: string): string[] {
     const match = LOG_FILE_PATTERN.exec(name);
     if (!match) continue;
     const path = join(dir, name);
-    if (!statSync(path).isFile()) continue;
+    try {
+      if (!statSync(path).isFile()) continue;
+    } catch (err) {
+      // Rotated away by another slackcli process since the listing.
+      if (isMissing(err)) continue;
+      throw err;
+    }
     files.push({ path, rotation: match[1] ? Number(match[1]) : 0 });
   }
 
@@ -93,13 +99,16 @@ export function redactText(text: string): string {
 function parseLine(line: string): { runId: string; record: LogRecord } | undefined {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(redactText(line));
+    parsed = JSON.parse(line);
   } catch {
     return undefined;
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
 
-  const record = parsed as LogRecord;
+  // Redact after decoding: a token written as JSON escapes (`xox\u0070-…`) only
+  // matches the patterns once parsed. Re-serialised, it can be redacted, and the
+  // patterns never match `\` or `"`, so the result still parses.
+  const record = JSON.parse(redactText(JSON.stringify(parsed))) as LogRecord;
   const properties = record.properties as Record<string, unknown> | undefined;
   const runId = properties?.run_id;
   if (typeof runId !== 'string' || runId === '') return undefined;
@@ -109,7 +118,7 @@ function parseLine(line: string): { runId: string; record: LogRecord } | undefin
 /**
  * Reads every log file in `dir`, line by line, and groups the records by
  * `run_id`. Runs are ordered by their first record, oldest first, and each
- * run's records keep file order. Every line is redacted before it is parsed.
+ * run's records keep file order. Every record is redacted again.
  */
 export async function readRuns(dir: string): Promise<ReadRunsResult> {
   const runs = new Map<string, LogRecord[]>();

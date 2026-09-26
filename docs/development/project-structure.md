@@ -49,7 +49,7 @@ They hold no Slack API knowledge.
 
 | Module | Responsibility |
 |---|---|
-| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter. |
+| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, and logs each call's method, auth type, duration and outcome. |
 | `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
@@ -63,7 +63,9 @@ They hold no Slack API knowledge.
 | `drafts.ts` | Validates draft-list limits, extracts text from `rich_text`, and projects undocumented responses into the public command contract. |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
 | `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
-| `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. |
+| `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. Logs waits at `debug`. |
+| `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header. Called once from `src/index.ts`; libs log via LogTape's `getLogger` directly. |
+| `log-redaction.ts` | The token/cookie/JWT redaction patterns applied to every log line. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types. |

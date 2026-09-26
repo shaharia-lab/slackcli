@@ -5,6 +5,9 @@
     "": {
       "name": "slackcli",
       "dependencies": {
+        "@logtape/file": "2.3.6",
+        "@logtape/logtape": "2.3.6",
+        "@logtape/redaction": "2.3.6",
         "@slack/web-api": "^7.15.2",
         "chalk": "^5.3.0",
         "commander": "^12.1.0",
@@ -21,6 +24,12 @@
     "form-data": "^4.0.6",
   },
   "packages": {
+    "@logtape/file": ["@logtape/file@2.3.6", "", { "peerDependencies": { "@logtape/logtape": "^2.3.6" } }, "sha512-WpvF+aq0ebbZNp400rNXRiIOVRWQfq4HZ0x9ZnI971vQDkedZ8ZPB07HbGRwd79FWrKhIVkpMMVmYzzeIH8DOw=="],
+
+    "@logtape/logtape": ["@logtape/logtape@2.3.6", "", {}, "sha512-1ajI6YRkq+gIpgYVhOcJ4Mn5QUarSvWnnuj8SNMjwrjIcOy1ANEIcZyaLN+vPtL2MCa845D8ghXR8xDA+c3Khg=="],
+
+    "@logtape/redaction": ["@logtape/redaction@2.3.6", "", { "peerDependencies": { "@logtape/logtape": "^2.3.6" } }, "sha512-e6YnAUMPjpY4GIz/yjOzNXoEbWyfvr83h9w9toF5UG7Q+tLcMYjedTsO4f4/FRpVWR8KX/4e4JH4nFR83uIeOA=="],
+
     "@slack/logger": ["@slack/logger@4.0.1", "", { "dependencies": { "@types/node": ">=18" } }, "sha512-6cmdPrV/RYfd2U0mDGiMK8S7OJqpCTm7enMLRR3edccsPX8j7zXTLnaEF4fhxxJJTAIOil6+qZrnUPTuaLvwrQ=="],
 
     "@slack/types": ["@slack/types@2.21.1", "", {}, "sha512-I8vmSjNYWsaxuWPx6dz4yeh0h7vRBWbgAMK14LEmblbZ404BtrPbXs6jDPx4cYgGf8msDGF4A9opLZBu21FViQ=="],

@@ -1,4 +1,6 @@
-import { WebClient } from '@slack/web-api';
+import { LogLevel as SlackLogLevel, WebClient } from '@slack/web-api';
+import type { Logger as SlackLogger } from '@slack/web-api';
+import { getLogger } from '@logtape/logtape';
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import type {
@@ -24,6 +26,46 @@ export interface SlackClientOptions {
 // relied on, so the shape stays deliberately narrow.
 export interface ExternalUploadCompleteResponse {
   files?: Array<{ id?: string; title?: string }>;
+}
+
+const logger = getLogger(['slackcli', 'slack-client']);
+const sdkLogger = getLogger(['slackcli', 'slack-web-api']);
+
+// Details a transport learns about one call, for the request log line.
+interface CallMeta {
+  httpStatus?: number;
+}
+
+// Routes @slack/web-api's own logging (rate-limit retries, response warnings,
+// transport failures) into LogTape. Its debug output is dropped on purpose: it
+// serialises full request bodies and responses, i.e. message text and user
+// data, which the log must never hold.
+function createSdkLogger(): SlackLogger {
+  let level = SlackLogLevel.INFO;
+  let name = 'web-api';
+  const format = (msgs: unknown[]) => msgs.map((m) => (typeof m === 'string' ? m : String(m))).join(' ');
+  return {
+    debug: () => {},
+    info: (...msgs: unknown[]) => sdkLogger.info('{sdk}: {text}', { sdk: name, text: format(msgs) }),
+    warn: (...msgs: unknown[]) => sdkLogger.warn('{sdk}: {text}', { sdk: name, text: format(msgs) }),
+    error: (...msgs: unknown[]) => sdkLogger.error('{sdk}: {text}', { sdk: name, text: format(msgs) }),
+    setLevel: (next: SlackLogLevel) => { level = next; },
+    getLevel: () => level,
+    setName: (next: string) => { name = next; },
+  };
+}
+
+// Slack's error code for a failed call, from whichever transport produced it.
+function slackErrorCode(error: any): string | undefined {
+  const code = error?.slackData?.error;
+  return typeof code === 'string' && code ? code : undefined;
+}
+
+// A short label for the failure log line: the Slack error code when there is
+// one, else the HTTP status, so a 429 or a network error never reads `undefined`.
+function failureReason(slackError: string | undefined, httpStatus: number | undefined): string {
+  if (slackError) return slackError;
+  return httpStatus === undefined ? 'request error' : `HTTP ${httpStatus}`;
 }
 
 const FILE_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -90,7 +132,7 @@ export class SlackClient {
 
     // Only use WebClient for standard auth
     if (config.auth_type === 'standard') {
-      this.webClient = new WebClient(config.token);
+      this.webClient = new WebClient(config.token, { logger: createSdkLogger() });
     }
   }
 
@@ -102,12 +144,43 @@ export class SlackClient {
   // burst trips Slack's `unexpected_api_call_volume` anomaly detection (#147).
   // The limiter applies to both auth types — the anomaly is about volume, not
   // about which transport produced it.
+  //
+  // Each call is logged with its method, auth type, duration and outcome. The
+  // params are never logged (they hold message text and, on the browser path,
+  // the token) — only their names, at trace.
   async request(method: string, params: Record<string, any> = {}): Promise<any> {
-    return this.rateLimiter.run(() => {
-      if (this.config.auth_type === 'standard') {
-        return this.standardRequest(method, params);
-      } else {
-        return this.browserRequest(method, params);
+    return this.rateLimiter.run(async () => {
+      const authType = this.config.auth_type;
+      const meta: CallMeta = {};
+      logger.debug('Slack API {method} started', { method, auth_type: authType });
+      logger.trace('Slack API {method} params', { method, param_names: Object.keys(params) });
+      const startedAt = performance.now();
+
+      try {
+        const response = authType === 'standard'
+          ? await this.standardRequest(method, params)
+          : await this.browserRequest(method, params, meta);
+        logger.info('Slack API {method} ok in {duration_ms} ms', {
+          method,
+          auth_type: authType,
+          ok: true,
+          http_status: meta.httpStatus,
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
+        return response;
+      } catch (error: any) {
+        const slackError = slackErrorCode(error);
+        logger.warn('Slack API {method} failed: {reason}', {
+          method,
+          auth_type: authType,
+          ok: false,
+          reason: failureReason(slackError, meta.httpStatus),
+          http_status: meta.httpStatus,
+          slack_error: slackError,
+          error_message: error?.message,
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
+        throw error;
       }
     });
   }
@@ -135,7 +208,11 @@ export class SlackClient {
   }
 
   // Browser token request (custom implementation)
-  private async browserRequest(method: string, params: Record<string, any>): Promise<any> {
+  private async browserRequest(
+    method: string,
+    params: Record<string, any>,
+    meta: CallMeta = {},
+  ): Promise<any> {
     if (this.config.auth_type !== 'browser') {
       throw new Error('Invalid auth type');
     }
@@ -163,6 +240,7 @@ export class SlackClient {
         },
         body: formBody,
       });
+      meta.httpStatus = response.status;
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -295,12 +373,18 @@ export class SlackClient {
     }
 
     const fileBytes = await readFile(filePath);
+    const uploadStartedAt = performance.now();
     const uploadResponse = await fetch(uploadUrlResponse.upload_url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
       },
       body: fileBytes,
+    });
+    logger.info('File upload returned HTTP {http_status}', {
+      http_status: uploadResponse.status,
+      bytes: fileStats.size,
+      duration_ms: Math.round(performance.now() - uploadStartedAt),
     });
 
     if (!uploadResponse.ok) {
@@ -691,6 +775,12 @@ export class SlackClient {
       const response = await fetch(currentUrl, {
         headers: isSlackHost(currentUrl) ? authHeaders : {},
         redirect: 'manual',
+      });
+      // Host only: file paths can carry file names.
+      logger.debug('File download from {host} returned HTTP {http_status}', {
+        host: currentUrl.hostname,
+        http_status: response.status,
+        redirects,
       });
 
       const nextUrl = await resolveRedirect(response, currentUrl);

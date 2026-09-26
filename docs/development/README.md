@@ -30,8 +30,10 @@ bun run dev --help
   testing, it does not belong in `src/commands/`.
 - **Two auth types, one seam.** `SlackClient.request()` dispatches to the Slack
   SDK or to raw `fetch` based on `auth_type`. Add API calls there.
-- **Four dependencies** (`@slack/web-api`, `commander`, `chalk`, `ora`) and a
-  150 MB binary budget. New dependencies need a real justification.
+- **Seven dependencies** (`@slack/web-api`, `commander`, `chalk`, `ora`, and
+  the zero-dependency LogTape packages `@logtape/logtape`, `@logtape/file`,
+  `@logtape/redaction`) and a 150 MB binary budget. New dependencies need a real
+  justification.
 
 ## Before opening a pull request
 

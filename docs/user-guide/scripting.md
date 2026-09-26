@@ -157,6 +157,10 @@ done
   users or channels (`conversations unread`, `saved list` on a long list) make
   one API call per entity, so budget wall-clock time for them and set generous
   timeouts in a scheduled job.
+- **Logs.** Every run appends to a log file (see
+  [Troubleshooting](troubleshooting.md#logs)); nothing is written to stdout, and
+  stderr gets log lines only with `-v`. Set `SLACKCLI_LOG_LEVEL=off` to skip the
+  file, or `SLACKCLI_LOG_DIR` to move it, e.g. in a read-only container.
 - **The update notice.** SlackCLI may append a one-line "update available" notice
   after a command. It goes to stderr and never contaminates `--json` on stdout.
 - **`usergroups` writes need `--yes`.** `create`, `update`, `add`, `remove`,

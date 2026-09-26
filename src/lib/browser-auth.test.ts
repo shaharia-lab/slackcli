@@ -1003,6 +1003,24 @@ describe('captureSlackTokens logging', () => {
     expectNoSecrets(records);
   });
 
+  it('logs a failed cookie read and the fallback that found it', async () => {
+    const records = captureLogs();
+    const session = makeFakeSession({
+      requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+      cookies: COOKIES,
+      throwOn: 'Storage.getCookies',
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    const failed = records.find((r) => r.message.join('').startsWith('Session cookie via Storage.getCookies failed'));
+    expect(failed?.level).toBe('debug');
+    const found = records.find((r) => r.properties.method === 'Network.getCookies');
+    expect(found?.properties.outcome).toBe('found');
+    expectNoSecrets(records);
+  });
+
   it('logs browser_closed when the session dies mid-wait', async () => {
     const records = captureLogs();
 

@@ -106,7 +106,7 @@ export function createCdpSession(
       if (!entry) return;
       if (msg.error) {
         const message = msg.error.message ?? 'unknown error';
-        logger.warn('CDP {method} failed: {error}', { method: entry.method, error: message });
+        logger.warn('CDP {method} failed: {error}', { method: entry.method, error: errorMessageForLog(message) });
         entry.reject(new CdpError(entry.method, message));
       } else {
         entry.resolve(msg.result ?? {});

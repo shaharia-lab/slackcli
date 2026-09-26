@@ -96,7 +96,7 @@ Writes refuse without `--yes` when stdin is not a TTY (always, for an agent).
 `add`/`remove` read-modify-write the full member list; a group cannot be emptied,
 disable it instead. Enterprise Grid writes need `--team=T…`.
 
-## saved, canvas, files, emoji, update
+## saved, canvas, files, emoji, update, logs
 
 ```
 saved list [--limit=N] [--state=saved|to_do|completed] [--json]
@@ -107,6 +107,7 @@ files read <F…|url> [--raw] [--json]                    # text only, 10 MB cap
 files download <F…|url> --output PATH                   # refuses to overwrite
 emoji list [--limit=N] [--no-aliases] [--json]   |   emoji get <name> [--json]
 update check   |   update                               # refuses under Homebrew / from source
+logs path [--json]   |   logs show [--last=N | --run=ID] [--json]   |   logs clear [--yes]   # log is redacted
 ```
 
 ## Recipes

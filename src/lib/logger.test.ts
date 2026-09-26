@@ -14,6 +14,7 @@ import {
   detectInstallMethod,
   resolveLogDir,
   resolveLogLevel,
+  shouldWriteLogFile,
 } from './logger.ts';
 import type { InstallMethod } from './logger.ts';
 
@@ -131,6 +132,31 @@ describe('detectInstallMethod', () => {
   ] as const satisfies ReadonlyArray<readonly [string, string, InstallMethod]>)('for %s (%s) returns %p', (_label, execPath, expected) => {
     Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
     expect(detectInstallMethod()).toBe(expected);
+  });
+});
+
+describe('shouldWriteLogFile', () => {
+  function actionFor(argv: string[]): Command {
+    let action: Command | undefined;
+    const program = new Command().name('slackcli').exitOverride();
+    const capture = (cmd: Command) => cmd.action((_opts, c: Command) => { action = c; });
+    const logs = program.command('logs');
+    capture(logs.command('show'));
+    capture(logs.command('clear'));
+    capture(program.command('team').command('info'));
+    capture(program.command('update'));
+    program.parse(argv, { from: 'user' });
+    return action!;
+  }
+
+  it('is false for every logs subcommand, so reading the log never adds to it', () => {
+    expect(shouldWriteLogFile(actionFor(['logs', 'show']))).toBe(false);
+    expect(shouldWriteLogFile(actionFor(['logs', 'clear']))).toBe(false);
+  });
+
+  it('is true for other commands, nested or top-level', () => {
+    expect(shouldWriteLogFile(actionFor(['team', 'info']))).toBe(true);
+    expect(shouldWriteLogFile(actionFor(['update']))).toBe(true);
   });
 });
 

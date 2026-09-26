@@ -40,6 +40,7 @@ They hold no Slack API knowledge.
 | `canvas.ts` | `list`, `read` |
 | `conversations.ts` | `list`, `read`, `get`, `unread` |
 | `files.ts` | `info`, `read`, `download` |
+| `logs.ts` | `path`, `show`, `clear` |
 | `messages.ts` | `send`, `react`, `edit`, `draft`, `list-drafts` |
 | `saved.ts` | `list` |
 | `search.ts` | `messages`, `channels`, `people` |
@@ -66,6 +67,7 @@ They hold no Slack API knowledge.
 | `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. Logs waits at `debug`. |
 | `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header. Called once from `src/index.ts`; libs log via LogTape's `getLogger` directly. |
 | `log-redaction.ts` | The token/cookie/JWT redaction patterns applied to every log line. |
+| `logs.ts` | `logs` command work: lists the log file and its rotations oldest first, reads them line by line, redacts each line again, groups records by `run_id`, selects runs, formats them as text, and deletes only the log files. |
 | `tildify.ts` | Home directory as `~` in log records: `tildify()` for a path, `tildifyText()` for free text, `errorMessageForLog()` for an error's message. Its own module so libs can use it without importing `logger.ts`. |
 | `process-errors.ts` | Last-resort `unhandledRejection` / `uncaughtException` handlers: log the error with its stack, print the message, exit 1. Installed from `src/index.ts`. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |

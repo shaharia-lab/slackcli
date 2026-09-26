@@ -177,6 +177,17 @@ export function describeInvocation(actionCommand: Command): Invocation {
   return { command: names.join(' '), options: options.sort() };
 }
 
+/**
+ * `slackcli logs …` reads and deletes the log file, so it does not write to it:
+ * otherwise `logs show` would show its own run instead of the one the user
+ * wants to share, and `logs clear` would delete a file the process holds open.
+ */
+export function shouldWriteLogFile(actionCommand: Command): boolean {
+  let topLevel: Command = actionCommand;
+  while (topLevel.parent?.parent) topLevel = topLevel.parent;
+  return topLevel.name() !== 'logs';
+}
+
 export interface SessionStartInput extends Invocation {
   execPath?: string;
   home?: string;
@@ -376,7 +387,9 @@ export function startLogging(options: { verbose: boolean; actionCommand: Command
   const setup = configureLogging({
     level: resolved.level,
     verbose: options.verbose,
-    dir: resolveLogDir(process.env, process.platform, homedir()),
+    dir: shouldWriteLogFile(options.actionCommand)
+      ? resolveLogDir(process.env, process.platform, homedir())
+      : undefined,
   });
 
   getLogger(['slackcli', 'session']).info(

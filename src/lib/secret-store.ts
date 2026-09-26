@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { getLogger } from '@logtape/logtape';
 import type {
   AuthType,
   SecretBackend,
@@ -6,6 +7,10 @@ import type {
   WorkspaceMetadata,
   WorkspacesData,
 } from '../types/index.ts';
+
+// Records carry backend names, failure reasons and secret keys (`<profile>:<kind>`
+// identifiers) only — never a secret value.
+const logger = getLogger(['slackcli', 'secret-store']);
 
 // ---------------------------------------------------------------------------
 // Credential storage seam (#219).
@@ -277,6 +282,16 @@ function isCommandMissing(result: SecurityCliResult): boolean {
 }
 
 function keychainError(result: SecurityCliResult, action: string): SecretStoreError {
+  const error = buildKeychainError(result, action);
+  logger.warn('Keychain {action} failed: {reason}', {
+    action,
+    reason: error.reason,
+    exit_code: result.code,
+  });
+  return error;
+}
+
+function buildKeychainError(result: SecurityCliResult, action: string): SecretStoreError {
   if (isCommandMissing(result)) {
     return new SecretStoreError(
       'keychain',
@@ -301,6 +316,10 @@ export class MacOSKeychainSecretStore implements SecretStore {
 
   private assertAvailable(): void {
     if (this.platform !== 'darwin') {
+      logger.warn('Keychain backend requested on {platform}: unavailable', {
+        platform: this.platform,
+        reason: 'unavailable',
+      });
       throw new SecretStoreError(
         'keychain',
         'unavailable',
@@ -355,6 +374,7 @@ export class RoutingSecretStore implements SecretStore {
   private storeFor(ref: string): SecretStore {
     const record = this.data.workspaces[ref] as { secret_backend?: SecretBackend } | undefined;
     const backend: SecretBackend = record?.secret_backend ?? 'file';
+    logger.debug('Secret backend for {profile_key}: {backend}', { profile_key: ref, backend });
     return backend === 'keychain' ? this.keychain : new FileSecretStore(this.data);
   }
 

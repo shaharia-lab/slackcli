@@ -277,7 +277,11 @@ pieces:
   `updater.ts` and would invite an import cycle). A logger is a no-op until
   configured, so lib code and its tests need no setup. Current categories:
   `session`, `slack-client`, `slack-web-api` (the SDK's own messages),
-  `rate-limiter`.
+  `rate-limiter`, `auth`, `browser-launcher`, `cdp`, `browser-auth`,
+  `workspaces`, `secret-store`, `updater`, `process`. Paths go through
+  `tildify()` (`src/lib/tildify.ts`), every logged `error` field through
+  `errorMessageForLog()`, and stack traces through `tildifyText()`, so the home
+  directory (and with it the username) is written as `~`.
 - **Sinks.** A rotating file sink (`@logtape/file`, 5 MiB per file, the live
   file plus 5 rotated ones, so about 30 MB at most) with `bufferSize: 0`, so
   every record is on disk before the next line of code runs
@@ -295,7 +299,17 @@ pieces:
   text, file contents or search queries** — log IDs, method names, counts,
   statuses and durations. `SlackClient.request()` logs only param *names*, at
   `trace`. The SDK adapter drops `@slack/web-api`'s debug output, which
-  serialises full request bodies.
+  serialises full request bodies. The `login-auto` path logs outcomes and typed
+  failure reasons only: `cdp` never logs command `params`/`result` or event
+  payloads, `browser-auth` logs "found / not found" and team IDs, never a
+  token, cookie or `postData`, and the launcher logs the start URL's origin
+  only. A corrupt `workspaces.json` is logged by its parse error, with quoted
+  fragments (which can be file contents) replaced by `<redacted>`.
+- **Unhandled errors**: `src/index.ts` runs `program.parse()`, so a rejection
+  from an async action is not awaited. `installProcessErrorHandlers()`
+  (`src/lib/process-errors.ts`), registered in `preAction` after logging is
+  configured, logs `unhandledRejection` / `uncaughtException` at `error` with
+  the stack, prints the message with `formatter.error`, and exits 1.
 - **Location**: `SLACKCLI_LOG_DIR`, else `$XDG_STATE_HOME/slackcli/logs` (default
   `~/.local/state/slackcli/logs`) on Linux, `~/Library/Logs/slackcli` on macOS,
   `%LOCALAPPDATA%\slackcli\logs` on Windows. The directory is created `0o700`

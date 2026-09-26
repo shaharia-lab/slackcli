@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tokens and cookies are redacted; message text, file contents and search queries are never logged
   - `-v` / `--verbose` also prints debug logs to stderr; `SLACKCLI_LOG_LEVEL` (`trace` … `off`) sets the level and `SLACKCLI_LOG_DIR` moves the file. stdout and `--json` output are unchanged
   - Rotates at 5 MiB, keeping the current file plus 5 rotated ones (about 30 MB at most); an unwritable log directory produces one warning and never fails the command
+- **Diagnostic logging for auth, `login-auto`, config and updates**: the log now records authentication outcomes, each `login-auto` step (chosen browser, profile created or reused, DevTools port discovery, the typed failure reason), workspace config load/save and default changes (IDs only), credential-store failures, update checks and the self-update digest verification, and any unhandled error with its stack trace before the process exits 1. Captured tokens, cookies and CDP payloads are never logged (#280)
+
+### Changed
+- **Corrupt `workspaces.json`**: the load error is now a one-line warning (`Error loading workspaces: <parse error>`) instead of a raw error dump, and quoted fragments of the file are no longer echoed to the terminal (#280)
 
 ### Fixed
 - **`slackcli update` on Homebrew installs**: no longer replaces the Homebrew-managed binary (which left brew's record out of sync); it prints `Installed via Homebrew — run: brew upgrade slackcli` and exits without downloading, and `update check` now names `brew upgrade slackcli` there too. `update` and `update check` no longer end with a stale "Update available" notice, and a successful self-update refreshes the update cache with the installed version (#276)

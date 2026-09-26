@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join, win32 } from 'node:path';
 import { existsSync } from 'node:fs';
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { resetSync, type LogRecord } from '@logtape/logtape';
+import { configureLogging } from './logger';
 import {
   findBrowser,
   defaultProfileDir,
@@ -334,5 +336,93 @@ describe('defaultProfileDir', () => {
   it('honours SLACKCLI_BROWSER_PROFILE', () => {
     process.env.SLACKCLI_BROWSER_PROFILE = '/tmp/custom-profile';
     expect(defaultProfileDir()).toBe('/tmp/custom-profile');
+  });
+});
+
+// A real launch against a stand-in "browser" that exits at once: the path a
+// broken or mismatched install takes. POSIX-only, since it execs a shell script.
+describe.skipIf(process.platform === 'win32')('launchBrowser logging', () => {
+  let dir: string;
+  let records: LogRecord[];
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'slackcli-launch-log-'));
+    const browser = join(dir, 'fake-browser');
+    await writeFile(browser, '#!/bin/sh\nexit 3\n', { mode: 0o755 });
+    process.env.SLACKCLI_BROWSER = browser;
+    records = [];
+    configureLogging({ level: 'trace', verbose: false, sinks: { capture: (r) => records.push(r) } });
+  });
+
+  afterEach(async () => {
+    resetSync();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const find = (text: string) => records.find((r) => r.message.join('').includes(text));
+
+  it('records the browser, the profile, the launch flags and why it failed', async () => {
+    const profileDir = join(dir, 'profile');
+    const result = await launchBrowser({
+      profileDir,
+      startUrl: 'https://acme.slack.com/?redir=secret-value',
+      launchTimeoutMs: 10_000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('browser_exited');
+
+    expect(find('Browser resolved')?.properties).toMatchObject({
+      executable: join(dir, 'fake-browser'),
+      source: 'SLACKCLI_BROWSER',
+    });
+    expect(find('Browser profile')?.properties).toMatchObject({
+      profile_dir: profileDir,
+      profile_state: 'created',
+      source: 'option',
+    });
+    const launch = find('Launching browser');
+    expect(launch?.properties.args).toContain(`--user-data-dir=${profileDir}`);
+    expect(launch?.properties.start_url_origin).toBe('https://acme.slack.com');
+    const exited = find('exited before exposing');
+    expect(exited?.level).toBe('warning');
+    expect(exited?.properties).toMatchObject({ reason: 'browser_exited', exit_code: 3 });
+
+    // The start URL's path and query never reach the log.
+    const output = JSON.stringify(records.map((r) => [r.message, r.properties]));
+    expect(output).not.toContain('secret-value');
+  });
+
+  it('records a reused profile on the second launch', async () => {
+    const profileDir = join(dir, 'profile');
+    await launchBrowser({ profileDir, launchTimeoutMs: 10_000 });
+    records.length = 0;
+
+    await launchBrowser({ profileDir, launchTimeoutMs: 10_000 });
+
+    expect(find('Browser profile')?.properties.profile_state).toBe('reused');
+  });
+
+  it('records browser_not_found with where it looked', async () => {
+    process.env.SLACKCLI_BROWSER = join(dir, 'missing');
+    const result = await launchBrowser({ profileDir: join(dir, 'profile') });
+
+    expect(result.ok).toBe(false);
+    expect(find('No browser found')?.properties).toMatchObject({
+      source: 'SLACKCLI_BROWSER',
+      reason: 'browser_not_found',
+    });
+  });
+
+  it('records a refused profile directory without the directory contents', async () => {
+    const profileDir = join(dir, 'someone-elses-profile');
+    await mkdir(profileDir);
+    await writeFile(join(profileDir, 'Cookies'), 'not ours');
+
+    const result = await launchBrowser({ profileDir });
+
+    expect(result.ok).toBe(false);
+    expect(find('does not own')?.level).toBe('warning');
   });
 });

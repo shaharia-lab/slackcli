@@ -18,6 +18,18 @@ import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import packageJson from '../../package.json';
+import { resetSync, type LogRecord } from '@logtape/logtape';
+import { configureLogging } from './logger.ts';
+
+function captureLogs(): LogRecord[] {
+  const records: LogRecord[] = [];
+  configureLogging({ level: 'trace', verbose: false, sinks: { capture: (r) => records.push(r) } });
+  return records;
+}
+
+function updaterRecords(records: LogRecord[]): LogRecord[] {
+  return records.filter((r) => r.category.join('.') === 'slackcli.updater');
+}
 
 describe('isNewerVersion', () => {
   it('returns true when latest is newer', () => {
@@ -287,6 +299,41 @@ describe('performUpdate integrity check', () => {
     expect(after).toHaveLength(before.length);
   });
 
+  describe('logging', () => {
+    afterEach(() => resetSync());
+
+    it('logs current → target version and a failed digest verification', async () => {
+      await fakeInstall();
+      stubRelease(new TextEncoder().encode('MALICIOUS PAYLOAD'), `sha256:${'0'.repeat(64)}`);
+      const records = captureLogs();
+
+      await expect(performUpdate()).rejects.toThrow(/Checksum mismatch/);
+
+      const logged = updaterRecords(records);
+      const target = logged.find((r) => r.properties.latest_version === 'v99.0.0' && r.properties.asset);
+      expect(target?.level).toBe('info');
+      expect(target?.properties.current_version).toBe(getCurrentVersion());
+      const failure = logged.find((r) => r.message.join('').includes('Digest verification failed'));
+      expect(failure?.level).toBe('error');
+      expect(String(failure?.properties.error)).toContain('Checksum mismatch');
+      expect(logged.some((r) => r.message.join('').includes('Digest verification passed'))).toBe(false);
+    });
+
+    it('logs a passed digest verification and the installed version', async () => {
+      await fakeInstall();
+      const payload = new TextEncoder().encode('THE NEW BINARY');
+      const digest = `sha256:${createHash('sha256').update(payload).digest('hex')}`;
+      stubRelease(payload, digest);
+      const records = captureLogs();
+
+      await performUpdate();
+
+      const messages = updaterRecords(records).map((r) => r.message.join(''));
+      expect(messages).toContain(`Digest verification passed (${digest})`);
+      expect(messages).toContain('Self-update installed v99.0.0');
+    });
+  });
+
   it('records the installed version in the update cache', async () => {
     await fakeInstall();
     const payload = new TextEncoder().encode('THE NEW BINARY');
@@ -430,6 +477,27 @@ describe('fetchLatestRelease', () => {
       throw new TypeError('fetch failed');
     }) as unknown as typeof fetch;
     expect(await fetchLatestRelease()).toBeNull();
+  });
+
+  it('logs fail-soft errors at debug', async () => {
+    const records = captureLogs();
+    try {
+      globalThis.fetch = (async () =>
+        new Response('rate limited', { status: 403 })) as unknown as typeof fetch;
+      await fetchLatestRelease();
+      globalThis.fetch = (async () => {
+        throw new TypeError('fetch failed');
+      }) as unknown as typeof fetch;
+      await fetchLatestRelease();
+    } finally {
+      resetSync();
+    }
+
+    const logged = updaterRecords(records);
+    expect(logged).toHaveLength(2);
+    expect(logged.every((r) => r.level === 'debug')).toBe(true);
+    expect(logged[0].properties.http_status).toBe(403);
+    expect(logged[1].properties.error).toBe('fetch failed');
   });
 
   it('returns null when the body is not valid JSON', async () => {

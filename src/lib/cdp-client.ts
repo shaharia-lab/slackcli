@@ -13,7 +13,16 @@
  * event. `createCdpSession` holds that logic and is driven through the
  * `CdpSocket` seam so it unit-tests without a browser; `connectCdpSocket` is
  * the untestable transport edge and is deliberately kept to a few lines.
+ *
+ * Logging records method names, error messages and timings only. Command
+ * `params` and `result`, and event payloads, are never logged: `Network.*`
+ * traffic and cookie reads carry the session tokens this client exists to find.
  */
+
+import { getLogger } from '@logtape/logtape';
+import { errorMessageForLog } from './tildify.ts';
+
+const logger = getLogger(['slackcli', 'cdp']);
 
 /** Transport seam. Mirrors the slice of WebSocket this client actually uses. */
 export interface CdpSocket {
@@ -96,7 +105,9 @@ export function createCdpSession(
       const entry = settle(msg.id);
       if (!entry) return;
       if (msg.error) {
-        entry.reject(new CdpError(entry.method, msg.error.message ?? 'unknown error'));
+        const message = msg.error.message ?? 'unknown error';
+        logger.warn('CDP {method} failed: {error}', { method: entry.method, error: errorMessageForLog(message) });
+        entry.reject(new CdpError(entry.method, message));
       } else {
         entry.resolve(msg.result ?? {});
       }
@@ -118,6 +129,13 @@ export function createCdpSession(
   });
 
   const rejectAll = (reason: string): void => {
+    if (pending.size > 0) {
+      logger.warn('CDP {reason} with {pending} commands in flight', {
+        reason,
+        pending: pending.size,
+        methods: [...pending.values()].map((entry) => entry.method),
+      });
+    }
     for (const [id, entry] of pending) {
       settle(id);
       entry.reject(new CdpError(entry.method, reason));
@@ -125,6 +143,7 @@ export function createCdpSession(
   };
 
   socket.onClose(() => {
+    logger.debug('CDP socket closed by the browser');
     closed = true;
     rejectAll('socket closed');
   });
@@ -138,6 +157,10 @@ export function createCdpSession(
         const id = nextId++;
         const timer = setTimeout(() => {
           settle(id);
+          logger.warn('CDP {method} timed out after {timeout_ms} ms', {
+            method,
+            timeout_ms: commandTimeoutMs,
+          });
           reject(new CdpError(method, `timed out after ${commandTimeoutMs}ms`));
         }, commandTimeoutMs);
         pending.set(id, { resolve, reject, timer, method });
@@ -145,6 +168,10 @@ export function createCdpSession(
           socket.send(JSON.stringify({ id, method, params }));
         } catch (err: any) {
           settle(id);
+          logger.warn('CDP {method} could not be sent: {error}', {
+            method,
+            error: errorMessageForLog(err, 'send failed'),
+          });
           reject(new CdpError(method, err?.message ?? 'send failed'));
         }
       });
@@ -179,6 +206,11 @@ export function createCdpSession(
  * stays thin and every decision above it lives in `createCdpSession`.
  */
 export function connectCdpSocket(url: string, timeoutMs = 10_000): Promise<CdpSocket> {
+  const startedAt = Date.now();
+  // Host and port only: the path carries the target's id, which is noise.
+  const endpoint = describeEndpoint(url);
+  logger.debug('Connecting to CDP endpoint {endpoint}', { endpoint });
+
   return new Promise((resolve, reject) => {
     let settled = false;
     const ws = new WebSocket(url);
@@ -186,6 +218,10 @@ export function connectCdpSocket(url: string, timeoutMs = 10_000): Promise<CdpSo
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      logger.warn('CDP connect to {endpoint} timed out after {timeout_ms} ms', {
+        endpoint,
+        timeout_ms: timeoutMs,
+      });
       try {
         ws.close();
       } catch {
@@ -198,6 +234,10 @@ export function connectCdpSocket(url: string, timeoutMs = 10_000): Promise<CdpSo
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      logger.debug('Connected to CDP endpoint {endpoint} in {duration_ms} ms', {
+        endpoint,
+        duration_ms: Date.now() - startedAt,
+      });
       resolve({
         send: (data) => ws.send(data),
         close: () => ws.close(),
@@ -214,7 +254,20 @@ export function connectCdpSocket(url: string, timeoutMs = 10_000): Promise<CdpSo
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      logger.warn('CDP connect to {endpoint} failed after {duration_ms} ms', {
+        endpoint,
+        duration_ms: Date.now() - startedAt,
+      });
       reject(new Error('Could not connect to the browser DevTools endpoint'));
     };
   });
+}
+
+/** `host:port` of a DevTools WebSocket URL, or a placeholder if it does not parse. */
+export function describeEndpoint(url: string): string {
+  try {
+    return new URL(url).host || 'unknown';
+  } catch {
+    return 'unparseable';
+  }
 }

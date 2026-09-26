@@ -4,8 +4,12 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import chalk from 'chalk';
+import { getLogger } from '@logtape/logtape';
+import { errorMessageForLog } from './tildify.ts';
 import { info, success, error as logError } from './formatter.ts';
 import { getAppVersion, isRunningUnderBun } from '../version.ts';
+
+const logger = getLogger(['slackcli', 'updater']);
 
 const DEFAULT_CONFIG_DIR = join(homedir(), '.config', 'slackcli');
 let configDir = DEFAULT_CONFIG_DIR;
@@ -59,12 +63,18 @@ export async function fetchLatestRelease(): Promise<GitHubRelease | null> {
     );
 
     if (!response.ok) {
+      logger.debug('Latest-release lookup returned HTTP {http_status}', { http_status: response.status });
       return null;
     }
 
-    return (await response.json()) as GitHubRelease;
-  } catch {
+    const release = (await response.json()) as GitHubRelease;
+    logger.debug('Latest release is {latest_version}', { latest_version: release?.tag_name });
+    return release;
+  } catch (err) {
     // Update checks fail soft: callers treat null as "could not check".
+    logger.debug('Latest-release lookup failed: {error}', {
+      error: errorMessageForLog(err),
+    });
     return null;
   }
 }
@@ -143,6 +153,11 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   const latestVersion = release.tag_name;
   const updateAvailable = isNewerVersion(latestVersion, CURRENT_VERSION);
+  logger.info('Update check: current {current_version}, latest {latest_version}, update available {update_available}', {
+    current_version: CURRENT_VERSION,
+    latest_version: latestVersion,
+    update_available: updateAvailable,
+  });
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
@@ -159,6 +174,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 // Download and install update
 export async function performUpdate(): Promise<void> {
   if (isRunningUnderBun()) {
+    logger.info('Self-update skipped: running from source');
     info('Running from source (bun) — update with `git pull`, not `slackcli update`.');
     return;
   }
@@ -166,6 +182,7 @@ export async function performUpdate(): Promise<void> {
   // Replacing a binary inside a Homebrew Cellar leaves brew's record out of
   // sync with what is actually installed (#276), so defer to brew instead.
   if (isInstalledViaHomebrew()) {
+    logger.info('Self-update skipped: installed via Homebrew');
     info('Installed via Homebrew — run: brew upgrade slackcli');
     return;
   }
@@ -175,12 +192,17 @@ export async function performUpdate(): Promise<void> {
   const release = await fetchLatestRelease();
 
   if (!release) {
+    logger.error('Self-update failed: could not fetch the latest release');
     throw new Error('Unable to fetch latest release');
   }
 
   const latestVersion = release.tag_name;
 
   if (!isNewerVersion(latestVersion, CURRENT_VERSION)) {
+    logger.info('Self-update: already on {current_version} (latest {latest_version})', {
+      current_version: CURRENT_VERSION,
+      latest_version: latestVersion,
+    });
     success(`Already on latest version (v${CURRENT_VERSION})`);
     return;
   }
@@ -190,7 +212,14 @@ export async function performUpdate(): Promise<void> {
   const binaryName = getBinaryName();
   const asset = release.assets.find(a => a.name === binaryName);
 
+  logger.info('Self-update: {current_version} → {latest_version} ({asset})', {
+    current_version: CURRENT_VERSION,
+    latest_version: latestVersion,
+    asset: binaryName,
+  });
+
   if (!asset) {
+    logger.error('Self-update failed: no release asset named {asset}', { asset: binaryName });
     throw new Error(`Binary not found for ${binaryName}`);
   }
 
@@ -198,14 +227,24 @@ export async function performUpdate(): Promise<void> {
   const response = await fetch(asset.browser_download_url);
 
   if (!response.ok) {
+    logger.error('Self-update download returned HTTP {http_status}', { http_status: response.status });
     throw new Error(`Failed to download: ${response.statusText}`);
   }
 
   const buffer = await response.arrayBuffer();
   const bytes = new Uint8Array(buffer);
+  logger.info('Downloaded {bytes} bytes', { bytes: bytes.length });
 
   // Before anything touches the disk: these bytes become the running binary.
-  verifyAssetDigest(binaryName, bytes, asset.digest);
+  try {
+    verifyAssetDigest(binaryName, bytes, asset.digest);
+  } catch (err) {
+    logger.error('Digest verification failed: {error}', {
+      error: errorMessageForLog(err),
+    });
+    throw err;
+  }
+  logger.info('Digest verification passed ({digest})', { digest: asset.digest });
 
   // mkdtemp creates a fresh 0700 directory and fails rather than reusing an
   // existing path, so a same-host user cannot pre-create the file we are about
@@ -237,10 +276,14 @@ export async function performUpdate(): Promise<void> {
     // next run does not announce an update from a stale cached check.
     writeUpdateCache({ checkedAt: Date.now(), latestVersion });
 
+    logger.info('Self-update installed {latest_version}', { latest_version: latestVersion });
     success(`Updated to version ${latestVersion}`);
     info('Please restart slackcli to use the new version');
   } catch (error: any) {
     // Try to restore from backup if it exists
+    logger.error('Self-update install failed: {error}', {
+      error: errorMessageForLog(error),
+    });
     logError(`Update failed: ${error.message}`);
     throw error;
   } finally {
@@ -265,8 +308,11 @@ function writeUpdateCache(cache: UpdateCache): void {
       mkdirSync(configDir, { recursive: true, mode: 0o700 });
     }
     writeFileSync(updateCacheFile(), JSON.stringify(cache, null, 2));
-  } catch {
+  } catch (err) {
     // Silently fail — cache is best-effort
+    logger.debug('Could not write the update cache: {error}', {
+      error: errorMessageForLog(err),
+    });
   }
 }
 

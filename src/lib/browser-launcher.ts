@@ -16,6 +16,10 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, posix, win32 } from 'node:path';
 import { homedir } from 'node:os';
+import { getLogger } from '@logtape/logtape';
+import { errorMessageForLog, tildify } from './tildify.ts';
+
+const logger = getLogger(['slackcli', 'browser-launcher']);
 
 export type BrowserLaunchFailure =
   | 'browser_not_found'
@@ -258,9 +262,16 @@ export async function launchBrowser(
   const fileExists = options.fileExists ?? defaultFileExists;
   const profileDir = options.profileDir ?? defaultProfileDir();
   const launchTimeoutMs = options.launchTimeoutMs ?? 30_000;
+  const home = homedir();
+  const browserSource = process.env.SLACKCLI_BROWSER ? 'SLACKCLI_BROWSER' : 'auto-detect';
 
   const executable = await findBrowser(fileExists);
   if (!executable) {
+    logger.warn('No browser found ({source})', {
+      source: browserSource,
+      platform: process.platform,
+      reason: 'browser_not_found',
+    });
     return {
       ok: false,
       reason: 'browser_not_found',
@@ -270,7 +281,16 @@ export async function launchBrowser(
     };
   }
 
-  await resetProfileIfStale(profileDir);
+  logger.info('Browser resolved: {executable} ({source})', {
+    executable: tildify(executable, home),
+    source: browserSource,
+  });
+
+  if (await resetProfileIfStale(profileDir)) {
+    logger.info('Discarded a browser profile in an outdated format', {
+      profile_dir: tildify(profileDir, home),
+    });
+  }
 
   // Claim the directory before using it. The sentinel is what later authorises
   // `auth logout` to delete this tree, so it may only ever be written to a
@@ -281,8 +301,17 @@ export async function launchBrowser(
   // and reports success.
   const claim = await claimProfileDir(profileDir);
   if (!claim.ok) {
+    logger.warn('Refusing a browser profile slackcli does not own: {profile_dir}', {
+      profile_dir: tildify(profileDir, home),
+      reason: 'browser_not_found',
+    });
     return { ok: false, reason: 'browser_not_found', message: claim.message };
   }
+  logger.info('Browser profile {profile_state}: {profile_dir}', {
+    profile_dir: tildify(profileDir, home),
+    profile_state: claim.created ? 'created' : 'reused',
+    source: profileSource(options.profileDir),
+  });
 
   // A port file left by a previous run would otherwise be read as this run's
   // port, pointing the session at a browser that is already gone.
@@ -304,6 +333,7 @@ export async function launchBrowser(
   // last gate before exec, so it must not trust them.
   if (options.startUrl) {
     if (!isSafeStartUrl(options.startUrl)) {
+      logger.warn('Refusing an unsupported start URL', { reason: 'invalid_start_url' });
       return {
         ok: false,
         reason: 'invalid_start_url',
@@ -312,6 +342,16 @@ export async function launchBrowser(
     }
     args.push(options.startUrl);
   }
+
+  // Flags only, with the profile path tildified: the positional start URL is
+  // reduced to its origin, since a caller-supplied URL could carry a query.
+  logger.info('Launching browser', {
+    args: args
+      .filter((arg) => arg !== options.startUrl)
+      .map((arg) => (arg.startsWith('--user-data-dir=') ? `--user-data-dir=${tildify(profileDir, home)}` : arg)),
+    headless: Boolean(options.headless),
+    ...(options.startUrl ? { start_url_origin: new URL(options.startUrl).origin } : {}),
+  });
 
   let child: ChildProcess;
   try {
@@ -327,6 +367,10 @@ export async function launchBrowser(
     // `killProfileProcesses`.
     child = spawn(executable, args, { stdio: 'ignore', detached: false });
   } catch (err: any) {
+    logger.warn('Browser failed to start: {error}', {
+      error: errorMessageForLog(err),
+      reason: 'browser_not_found',
+    });
     return {
       ok: false,
       reason: 'browser_not_found',
@@ -432,13 +476,24 @@ export async function launchBrowser(
     sweepProfileHelpers(profileDir);
   };
 
-  const deadline = Date.now() + launchTimeoutMs;
+  const launchedAt = Date.now();
+  const deadline = launchedAt + launchTimeoutMs;
   while (Date.now() < deadline) {
     const port = await readDevToolsPort(profileDir);
     if (port !== null) {
+      logger.info('DevTools port {port} discovered in {duration_ms} ms', {
+        port,
+        duration_ms: Date.now() - launchedAt,
+      });
       return { ok: true, port, executable, stop };
     }
     if (exitedEarly) {
+      logger.warn('Browser exited before exposing a DevTools port', {
+        exit_code: child.exitCode,
+        signal: child.signalCode,
+        duration_ms: Date.now() - launchedAt,
+        reason: 'browser_exited',
+      });
       return {
         ok: false,
         reason: 'browser_exited',
@@ -451,6 +506,10 @@ export async function launchBrowser(
     await sleep(100);
   }
 
+  logger.warn('No DevTools port after {timeout_ms} ms', {
+    timeout_ms: launchTimeoutMs,
+    reason: 'launch_timeout',
+  });
   await stop();
   return {
     ok: false,
@@ -531,14 +590,14 @@ export async function clearBrowserProfile(
  */
 async function claimProfileDir(
   profileDir: string
-): Promise<{ ok: true } | { ok: false; message: string }> {
+): Promise<{ ok: true; created: boolean } | { ok: false; message: string }> {
   if (await isOwnedProfile(profileDir)) {
     // mkdir's mode only applies on creation, so an existing profile (restored
     // from backup, or made by an older build) could hold a live cookie store
     // with looser bits.
     await chmod(profileDir, 0o700).catch(() => {});
     await stampSentinel(profileDir);
-    return { ok: true };
+    return { ok: true, created: false };
   }
 
   let existing: string[] | null = null;
@@ -561,7 +620,13 @@ async function claimProfileDir(
   await mkdir(profileDir, { recursive: true, mode: 0o700 });
   await chmod(profileDir, 0o700).catch(() => {});
   await stampSentinel(profileDir);
-  return { ok: true };
+  return { ok: true, created: true };
+}
+
+/** Where the profile path came from, for the log. */
+function profileSource(explicit: string | undefined): string {
+  if (explicit) return 'option';
+  return process.env.SLACKCLI_BROWSER_PROFILE ? 'SLACKCLI_BROWSER_PROFILE' : 'default';
 }
 
 /** Record ownership and the profile format this build writes. */
@@ -603,14 +668,23 @@ async function isOwnedProfile(target: string): Promise<boolean> {
 export async function findPageTarget(port: number): Promise<string | null> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/list`);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      logger.warn('DevTools /json/list returned HTTP {http_status}', { port, http_status: response.status });
+      return null;
+    }
     const targets = (await response.json()) as Array<{
       type?: string;
       webSocketDebuggerUrl?: string;
     }>;
     const page = targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
+    logger.debug('DevTools /json/list: {targets} targets, page {page}', {
+      port,
+      targets: targets.length,
+      page: page ? 'found' : 'missing',
+    });
     return page?.webSocketDebuggerUrl ?? null;
-  } catch {
+  } catch (err: any) {
+    logger.warn('DevTools /json/list failed: {error}', { port, error: errorMessageForLog(err) });
     return null;
   }
 }

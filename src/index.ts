@@ -15,6 +15,7 @@ import { createUsergroupsCommand } from './commands/usergroups.ts';
 import { createUsersCommand } from './commands/users.ts';
 import { notifyIfUpdateAvailable } from './lib/updater.ts';
 import { startLogging } from './lib/logger.ts';
+import { installProcessErrorHandlers } from './lib/process-errors.ts';
 import { getAppVersion } from './version.ts';
 
 const program = new Command();
@@ -30,6 +31,8 @@ program
 // --version stay side-effect free. Libraries log through LogTape categories.
 program.hook('preAction', (_thisCommand, actionCommand) => {
   startLogging({ verbose: Boolean(program.opts().verbose), actionCommand });
+  // After logging is configured, so an unhandled error lands in the log file.
+  installProcessErrorHandlers();
 });
 
 // Add commands

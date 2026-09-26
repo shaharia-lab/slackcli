@@ -17,8 +17,13 @@
  *
  * The pure extractors below carry the parsing rules and are exported so the
  * tests can pin every request encoding Slack is known to use.
+ *
+ * Logging names outcomes, counts and team IDs only — never a token, a cookie,
+ * a request body or a `localConfig_v2` payload.
  */
 
+import { getLogger } from '@logtape/logtape';
+import { errorMessageForLog } from './tildify.ts';
 import { connectCdpSocket, createCdpSession, type CdpSession } from './cdp-client.ts';
 import {
   findPageTarget,
@@ -26,6 +31,8 @@ import {
   type BrowserLaunchFailure,
   type LaunchOptions,
 } from './browser-launcher.ts';
+
+const logger = getLogger(['slackcli', 'browser-auth']);
 
 export type CaptureFailure =
   | 'devtools_unreachable'
@@ -43,6 +50,8 @@ export interface CapturedWorkspace {
 export type CaptureResult =
   | { ok: true; xoxd: string; workspaces: CapturedWorkspace[] }
   | { ok: false; reason: CaptureFailure; message: string };
+
+type CaptureFailureResult = Extract<CaptureResult, { ok: false }>;
 
 /** Slack API endpoints carrying the token we want. */
 const SLACK_API_URL = /^https:\/\/([\w-]+(?:\.enterprise)?)\.slack\.com\/api\//i;
@@ -314,11 +323,16 @@ export async function captureSlackTokens(
   const now = options.now ?? (() => Date.now());
   const onProgress = options.onProgress ?? (() => {});
 
+  logger.info('Token capture started (timeout {timeout_ms} ms)', {
+    timeout_ms: timeoutMs,
+    headless: Boolean(options.headless),
+  });
+
   const intercepted = new Map<string, CapturedWorkspace>();
   registerInterceptors(session, intercepted);
 
   const setupFailure = await startCapture(session, options.startUrl ?? SLACK_CLIENT_URL);
-  if (setupFailure) return setupFailure;
+  if (setupFailure) return logFailure(setupFailure);
 
   onProgress('Waiting for Slack sign-in in the browser window…');
 
@@ -336,19 +350,19 @@ export async function captureSlackTokens(
   }
 
   if (outcome === 'session_lost') {
-    return {
+    return logFailure({
       ok: false,
       reason: 'browser_closed',
       message:
         'The browser was closed before sign-in completed.\n' +
         '   Run the command again and leave the window open until it finishes.',
-    };
+    });
   }
 
   // Checked against the sources rather than `outcome`: a token intercepted
   // during the final sleep still counts.
   if (poll.fromLocalConfig.length === 0 && intercepted.size === 0) {
-    return captureTimeout(options.headless);
+    return logFailure(captureTimeout(options.headless));
   }
 
   const fromLocalConfig = await settleWorkspaces(session, poll.fromLocalConfig, {
@@ -357,24 +371,35 @@ export async function captureSlackTokens(
     now,
   });
 
+  logger.info('Slack session detected: {intercepted} intercepted, {local_config} from localStorage', {
+    intercepted: intercepted.size,
+    local_config: fromLocalConfig.length,
+  });
   onProgress('Session detected — reading tokens…');
 
   const xoxd = await readSessionCookie(session);
   if (!xoxd) {
-    return {
+    return logFailure({
       ok: false,
       reason: 'no_cookie',
       message:
         'Signed-in session found, but the `d` session cookie was not readable.\n' +
         '   Try again, or fall back to: slackcli auth parse-curl --login',
-    };
+    });
   }
 
-  return {
-    ok: true,
-    xoxd,
-    workspaces: mergeWorkspaces([...intercepted.values()], fromLocalConfig),
-  };
+  const workspaces = mergeWorkspaces([...intercepted.values()], fromLocalConfig);
+  logger.info('Token capture succeeded: {workspaces} workspaces', {
+    workspaces: workspaces.length,
+    team_ids: workspaces.flatMap((w) => (w.teamId ? [w.teamId] : [])),
+  });
+  return { ok: true, xoxd, workspaces };
+}
+
+/** Record a capture failure's typed reason; the message is guidance, not data. */
+function logFailure(result: CaptureFailureResult): CaptureResult {
+  logger.warn('Token capture failed: {reason}', { reason: result.reason });
+  return result;
 }
 
 /**
@@ -398,6 +423,9 @@ function registerInterceptors(
     const xoxc = extractXoxcFromPostData(postData);
     if (xoxc) {
       intercepted.set(origin, { workspaceUrl: origin, xoxc });
+      logger.debug('xoxc token found on an intercepted API request ({count} workspaces so far)', {
+        count: intercepted.size,
+      });
     }
   });
 }
@@ -406,13 +434,14 @@ function registerInterceptors(
 async function startCapture(
   session: CdpSession,
   startUrl: string
-): Promise<CaptureResult | null> {
+): Promise<CaptureFailureResult | null> {
   try {
     await session.send('Network.enable');
     await session.send('Runtime.enable');
     await session.send('Page.navigate', { url: startUrl });
     return null;
   } catch (err: any) {
+    logger.warn('Capture setup failed: {error}', { error: errorMessageForLog(err) });
     return {
       ok: false,
       reason: 'devtools_unreachable',
@@ -449,7 +478,7 @@ async function pollOnce(
   return 'waiting';
 }
 
-function captureTimeout(headless: boolean | undefined): CaptureResult {
+function captureTimeout(headless: boolean | undefined): CaptureFailureResult {
   return {
     ok: false,
     reason: 'capture_timeout',
@@ -507,8 +536,14 @@ async function readSessionCookie(session: CdpSession): Promise<string | null> {
     try {
       const result = await session.send<{ cookies?: any[] }>(method);
       const found = extractXoxdFromCookies(result?.cookies ?? []);
+      logger.debug('Session cookie via {method}: {outcome} ({cookies} cookies)', {
+        method,
+        outcome: found ? 'found' : 'not found',
+        cookies: result?.cookies?.length ?? 0,
+      });
       if (found) return found;
-    } catch {
+    } catch (err) {
+      logger.debug('Session cookie via {method} failed: {error}', { method, error: errorMessageForLog(err) });
       // Try the next method; a session that is truly gone fails both and the
       // caller reports no_cookie.
     }
@@ -581,6 +616,10 @@ export async function openBrowserSession(
 
   const wsUrl = await findPageTarget(launched.port);
   if (!wsUrl) {
+    logger.warn('No page target on DevTools port {port}', {
+      port: launched.port,
+      reason: 'devtools_unreachable',
+    });
     await launched.stop();
     return {
       ok: false,
@@ -625,6 +664,10 @@ export async function openBrowserSession(
 
     return { ok: true, session, stop };
   } catch (err: any) {
+    logger.warn('Could not attach to the browser: {error}', {
+      error: errorMessageForLog(err),
+      reason: 'devtools_unreachable',
+    });
     await launched.stop();
     return {
       ok: false,

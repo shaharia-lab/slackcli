@@ -1,7 +1,20 @@
-import { afterEach, describe, expect, it } from 'bun:test';
-import { fetchLatestRelease, isNewerVersion, isInstalledViaHomebrew, getUpdateCommand, getCurrentVersion, performUpdate, verifyAssetDigest } from './updater.ts';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import {
+  fetchLatestRelease,
+  isNewerVersion,
+  isInstalledViaHomebrew,
+  isUpdateCommand,
+  checkForUpdates,
+  getUpdateCommand,
+  getCurrentVersion,
+  notifyIfUpdateAvailable,
+  performUpdate,
+  setUpdateCacheDirForTesting,
+  verifyAssetDigest,
+} from './updater.ts';
 import { createHash } from 'crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import packageJson from '../../package.json';
@@ -85,6 +98,62 @@ describe('performUpdate', () => {
   });
 });
 
+describe('performUpdate on a Homebrew install', () => {
+  const originalExecPath = process.execPath;
+  const originalFetch = globalThis.fetch;
+  const dirs: string[] = [];
+  let fetchCalls: string[];
+
+  beforeEach(() => {
+    fetchCalls = [];
+    globalThis.fetch = (async (input: any) => {
+      fetchCalls.push(String(input));
+      return new Response('{}', { status: 500 });
+    }) as typeof fetch;
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    setUpdateCacheDirForTesting(null);
+    for (const dir of dirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['macOS Cellar', '/usr/local/Cellar/slackcli/0.4.0/bin/slackcli'],
+    ['Apple Silicon Homebrew', '/opt/homebrew/bin/slackcli'],
+    ['Linuxbrew', '/home/linuxbrew/.linuxbrew/bin/slackcli'],
+  ])('refuses without any network call for %s (%s)', async (_label, execPath) => {
+    Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
+    const log = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(performUpdate()).resolves.toBeUndefined();
+      expect(log.mock.calls.flat().join('\n')).toContain('Installed via Homebrew — run: brew upgrade slackcli');
+    } finally {
+      log.mockRestore();
+    }
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  it('leaves the installed binary, its directory and the update cache untouched', async () => {
+    const cellar = await mkdtemp(join(tmpdir(), 'Cellar-'));
+    const cacheDir = await mkdtemp(join(tmpdir(), 'slackcli-cache-'));
+    dirs.push(cellar, cacheDir);
+    const installed = join(cellar, 'slackcli');
+    await writeFile(installed, 'THE BREW-MANAGED BINARY');
+    Object.defineProperty(process, 'execPath', { value: installed, configurable: true });
+    setUpdateCacheDirForTesting(cacheDir);
+
+    await performUpdate();
+
+    expect(await readFile(installed, 'utf-8')).toBe('THE BREW-MANAGED BINARY');
+    expect(await readdir(cellar)).toEqual(['slackcli']);
+    expect(await readdir(cacheDir)).toEqual([]);
+  });
+});
+
 describe('verifyAssetDigest', () => {
   const bytes = new Uint8Array([1, 2, 3, 4]);
   const sha256 = createHash('sha256').update(bytes).digest('hex');
@@ -157,6 +226,14 @@ describe('performUpdate integrity check', () => {
   }
 
   const installDirs: string[] = [];
+  let cacheDir: string;
+
+  beforeEach(async () => {
+    // A successful install refreshes the update cache; keep it off the real ~/.config.
+    cacheDir = await mkdtemp(join(tmpdir(), 'slackcli-cache-'));
+    installDirs.push(cacheDir);
+    setUpdateCacheDirForTesting(cacheDir);
+  });
 
   // Stands in for the installed CLI: performUpdate renames over process.execPath,
   // so the test points that at a throwaway file instead of the real binary.
@@ -172,6 +249,7 @@ describe('performUpdate integrity check', () => {
   afterEach(async () => {
     globalThis.fetch = originalFetch;
     Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    setUpdateCacheDirForTesting(null);
     for (const dir of installDirs.splice(0)) {
       await rm(dir, { recursive: true, force: true });
     }
@@ -184,6 +262,8 @@ describe('performUpdate integrity check', () => {
     await expect(performUpdate()).rejects.toThrow(/Checksum mismatch/);
     // The binary that was already there is untouched.
     expect(await readFile(installed, 'utf-8')).toBe('THE BINARY THAT IS ALREADY INSTALLED');
+    // A failed install must not claim the new version is installed.
+    expect(existsSync(join(cacheDir, 'update-check.json'))).toBe(false);
   });
 
   it('refuses to install an asset that publishes no digest', async () => {
@@ -205,6 +285,123 @@ describe('performUpdate integrity check', () => {
 
     expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
     expect(after).toHaveLength(before.length);
+  });
+
+  it('records the installed version in the update cache', async () => {
+    await fakeInstall();
+    const payload = new TextEncoder().encode('THE NEW BINARY');
+    stubRelease(payload, `sha256:${createHash('sha256').update(payload).digest('hex')}`);
+
+    const startedAt = Date.now();
+    await performUpdate();
+
+    const cache = JSON.parse(await readFile(join(cacheDir, 'update-check.json'), 'utf-8'));
+    expect(cache.latestVersion).toBe('v99.0.0');
+    expect(cache.checkedAt).toBeGreaterThanOrEqual(startedAt);
+  });
+});
+
+describe('checkForUpdates', () => {
+  const originalExecPath = process.execPath;
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+  });
+
+  it.each([
+    ['a Homebrew install', '/opt/homebrew/bin/slackcli', 'Run "brew upgrade slackcli" to update'],
+    ['a direct install', '/usr/local/bin/slackcli', 'Run "slackcli update" to update'],
+  ])('names the right update command for %s', async (_label, execPath, hint) => {
+    Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ tag_name: 'v99.0.0', name: 'v99.0.0', body: '', assets: [] }), {
+        status: 200,
+      })) as unknown as typeof fetch;
+    const log = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const result = await checkForUpdates(false);
+      expect(result.updateAvailable).toBe(true);
+      expect(log.mock.calls.flat().join('\n')).toContain(hint);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+describe('isUpdateCommand', () => {
+  it.each([
+    [['bun', 'slackcli', 'update'], true],
+    [['bun', 'slackcli', 'update', 'check'], true],
+    [['bun', 'slackcli', '--no-color', 'update'], true],
+    [['bun', 'slackcli', 'auth', 'list'], false],
+    [['bun', 'slackcli', 'messages', 'send', '--message', 'update'], false],
+    [['bun', 'slackcli'], false],
+    [['bun', 'slackcli', '--version'], false],
+  ])('%p → %p', (argv, expected) => {
+    expect(isUpdateCommand(argv)).toBe(expected);
+  });
+});
+
+describe('notifyIfUpdateAvailable', () => {
+  const originalExecPath = process.execPath;
+  const originalFetch = globalThis.fetch;
+  let cacheDir: string;
+  let fetchCalls: number;
+  let listenersBefore: Function[];
+
+  beforeEach(async () => {
+    // A release binary (not bun), with a cache announcing a newer version.
+    Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/slackcli', configurable: true });
+    cacheDir = await mkdtemp(join(tmpdir(), 'slackcli-cache-'));
+    setUpdateCacheDirForTesting(cacheDir);
+    fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 500 });
+    }) as unknown as typeof fetch;
+    listenersBefore = process.listeners('beforeExit');
+  });
+
+  afterEach(async () => {
+    for (const listener of process.listeners('beforeExit')) {
+      if (!listenersBefore.includes(listener)) {
+        process.removeListener('beforeExit', listener as (...args: any[]) => void);
+      }
+    }
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    setUpdateCacheDirForTesting(null);
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
+  async function writeCache(checkedAt: number) {
+    await writeFile(
+      join(cacheDir, 'update-check.json'),
+      JSON.stringify({ checkedAt, latestVersion: 'v99.0.0' })
+    );
+  }
+
+  it.each([
+    ['update', ['bun', 'slackcli', 'update']],
+    ['update check', ['bun', 'slackcli', 'update', 'check']],
+  ])('prints no banner during `%s`', async (_label, argv) => {
+    await writeCache(Date.now());
+    notifyIfUpdateAvailable(argv);
+    expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length);
+  });
+
+  it('does not refresh a stale cache during `update`', async () => {
+    await writeCache(0);
+    notifyIfUpdateAvailable(['bun', 'slackcli', 'update']);
+    expect(fetchCalls).toBe(0);
+  });
+
+  it('still schedules the banner for other commands', async () => {
+    await writeCache(Date.now());
+    notifyIfUpdateAvailable(['bun', 'slackcli', 'auth', 'list']);
+    expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length + 1);
   });
 });
 

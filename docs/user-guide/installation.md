@@ -77,14 +77,17 @@ than installing an unverified file.
 Two cases where `slackcli update` deliberately does nothing:
 
 - **Installed via Homebrew.** Use `brew upgrade slackcli`; the self-updater
-  detects a Homebrew path and points you there so it does not fight the package
-  manager.
+  detects a Homebrew path, prints that hint and exits without downloading or
+  touching the binary, so it does not fight the package manager.
 - **Running from source** (`bun run dev`). There is no binary to replace — use
   `git pull`.
 
 SlackCLI also checks for new releases in the background at most once every 24
 hours and prints a one-line notice after your command's output when a newer
 version exists. The result is cached in `~/.config/slackcli/update-check.json`.
+The notice is never shown during `slackcli update` or `slackcli update check`,
+and a successful `slackcli update` refreshes the cache with the version it just
+installed.
 
 ## Uninstalling
 

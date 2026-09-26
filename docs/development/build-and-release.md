@@ -166,4 +166,9 @@ before you change it:
   containing `homebrew`, `Cellar`, or `linuxbrew`) or when running under Bun.
 - The background check runs at most every 24 hours, caches to
   `~/.config/slackcli/update-check.json`, and prints its notice to **stderr** on
-  `beforeExit` — so it never contaminates `--json` on stdout.
+  `beforeExit` — so it never contaminates `--json` on stdout. It is skipped
+  entirely for `update` and `update check`, which report versions themselves,
+  and a successful self-update rewrites the cache with the installed version so
+  the next run does not show a stale notice. Tests point the cache at a temp
+  directory with `setUpdateCacheDirForTesting()`, never at the real
+  `~/.config/slackcli`.

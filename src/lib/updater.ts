@@ -7,8 +7,8 @@ import chalk from 'chalk';
 import { info, success, error as logError } from './formatter.ts';
 import { getAppVersion, isRunningUnderBun } from '../version.ts';
 
-const CONFIG_DIR = join(homedir(), '.config', 'slackcli');
-const UPDATE_CACHE_FILE = join(CONFIG_DIR, 'update-check.json');
+const DEFAULT_CONFIG_DIR = join(homedir(), '.config', 'slackcli');
+let configDir = DEFAULT_CONFIG_DIR;
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 interface UpdateCache {
@@ -29,6 +29,15 @@ interface GitHubRelease {
     // "sha256:<hex>", published by GitHub for every release asset.
     digest?: string;
   }>;
+}
+
+// Test seam: point the update cache at a throwaway directory; null restores the default.
+export function setUpdateCacheDirForTesting(dir: string | null): void {
+  configDir = dir ?? DEFAULT_CONFIG_DIR;
+}
+
+function updateCacheFile(): string {
+  return join(configDir, 'update-check.json');
 }
 
 // Get current version
@@ -137,7 +146,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
-    info('Run "slackcli update" to update');
+    info(`Run "${getUpdateCommand()}" to update`);
   }
 
   return {
@@ -151,6 +160,13 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 export async function performUpdate(): Promise<void> {
   if (isRunningUnderBun()) {
     info('Running from source (bun) — update with `git pull`, not `slackcli update`.');
+    return;
+  }
+
+  // Replacing a binary inside a Homebrew Cellar leaves brew's record out of
+  // sync with what is actually installed (#276), so defer to brew instead.
+  if (isInstalledViaHomebrew()) {
+    info('Installed via Homebrew — run: brew upgrade slackcli');
     return;
   }
 
@@ -217,6 +233,10 @@ export async function performUpdate(): Promise<void> {
     // Remove backup
     await unlink(backupPath);
 
+    // Keep the notifier's cache in step with what is now installed, so the
+    // next run does not announce an update from a stale cached check.
+    writeUpdateCache({ checkedAt: Date.now(), latestVersion });
+
     success(`Updated to version ${latestVersion}`);
     info('Please restart slackcli to use the new version');
   } catch (error: any) {
@@ -231,7 +251,7 @@ export async function performUpdate(): Promise<void> {
 // Read cached update check result synchronously
 function readUpdateCache(): UpdateCache | null {
   try {
-    const data = readFileSync(UPDATE_CACHE_FILE, 'utf-8');
+    const data = readFileSync(updateCacheFile(), 'utf-8');
     return JSON.parse(data) as UpdateCache;
   } catch {
     return null;
@@ -241,10 +261,10 @@ function readUpdateCache(): UpdateCache | null {
 // Write update check result to cache
 function writeUpdateCache(cache: UpdateCache): void {
   try {
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true, mode: 0o700 });
     }
-    writeFileSync(UPDATE_CACHE_FILE, JSON.stringify(cache, null, 2));
+    writeFileSync(updateCacheFile(), JSON.stringify(cache, null, 2));
   } catch {
     // Silently fail — cache is best-effort
   }
@@ -261,9 +281,22 @@ export function getUpdateCommand(): string {
   return isInstalledViaHomebrew() ? 'brew upgrade slackcli' : 'slackcli update';
 }
 
+// True when the invoked command is `update` (or one of its subcommands).
+// argv is process.argv-shaped: runtime, script, then the user's arguments.
+export function isUpdateCommand(argv: string[]): boolean {
+  const command = argv.slice(2).find(arg => !arg.startsWith('-'));
+  return command === 'update';
+}
+
 // Show a one-line update notification after the command finishes (via beforeExit),
 // and refresh the cache in the background if it is stale.
-export function notifyIfUpdateAvailable(): void {
+export function notifyIfUpdateAvailable(argv: string[] = process.argv): void {
+  // `update` and `update check` report versions themselves; a banner read from
+  // the pre-update version and cache would contradict them (#276).
+  if (isUpdateCommand(argv)) {
+    return;
+  }
+
   // Local `bun run` / source checkout — not a release binary; skip self-update nags.
   if (isRunningUnderBun()) {
     return;

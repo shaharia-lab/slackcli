@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`auth login-auto` no longer fails with "The browser started but exposed no page to attach to" while the browser window flashes open and shut**: the page-target lookup now polls for up to 5s instead of probing once, covering the gap between Chrome writing `DevToolsActivePort` and registering its initial tab in `/json/list` (measured ~200–300 ms; previously the one-shot probe missed 5/5 launches on a fast machine) (#274)
+
 ### Added
 - **Draft lifecycle**: `messages send-draft <draft-id>` posts a reviewed text draft to its saved channel/thread and removes it after delivery; `messages delete-draft <draft-id>` discards it without posting. Both require browser auth and accept `--yes` for unattended use (#272)
   - Sending returns the posted message identity with `--json`; if cleanup fails after posting, it reports that identity with a nonzero exit to prevent a blind duplicate retry

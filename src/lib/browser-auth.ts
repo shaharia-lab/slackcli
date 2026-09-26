@@ -21,8 +21,8 @@
 
 import { connectCdpSocket, createCdpSession, type CdpSession } from './cdp-client.ts';
 import {
-  findPageTarget,
   launchBrowser,
+  waitForPageTarget,
   type BrowserLaunchFailure,
   type LaunchOptions,
 } from './browser-launcher.ts';
@@ -579,7 +579,7 @@ export async function openBrowserSession(
   const launched = await launchBrowser(options);
   if (!launched.ok) return launched;
 
-  const wsUrl = await findPageTarget(launched.port);
+  const wsUrl = await waitForPageTarget(launched.port);
   if (!wsUrl) {
     await launched.stop();
     return {

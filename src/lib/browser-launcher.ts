@@ -614,3 +614,47 @@ export async function findPageTarget(port: number): Promise<string | null> {
     return null;
   }
 }
+
+/** Budget for the initial tab to register after the DevTools port is up. */
+const PAGE_TARGET_BUDGET_MS = 5_000;
+const PAGE_TARGET_POLL_MS = 100;
+
+export interface WaitForPageTargetOptions {
+  /** Overrides the default 5s budget. */
+  timeoutMs?: number;
+  /** Seams for tests. */
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+  /** Probe seam; defaults to a real /json/list lookup. */
+  probe?: (port: number) => Promise<string | null>;
+}
+
+/**
+ * Poll until a page target is attachable, or the budget runs out.
+ *
+ * The one-shot lookup above is not sufficient at launch time: Chrome writes
+ * DevToolsActivePort the moment the DevTools HTTP server answers, but the
+ * initial tab only registers in /json/list a few hundred milliseconds later
+ * (measured 2026-09-26: +200–300 ms on a fast Mac, 5/5 launches). A single
+ * immediate probe therefore finds nothing and the caller tears down a
+ * browser that was about to become attachable — login-auto failing with
+ * "exposed no page" while the window flashes open and shut.
+ */
+export async function waitForPageTarget(
+  port: number,
+  options: WaitForPageTargetOptions = {}
+): Promise<string | null> {
+  const sleepFn = options.sleep ?? sleep;
+  const now = options.now ?? (() => Date.now());
+  const probe = options.probe ?? findPageTarget;
+  const deadline = now() + (options.timeoutMs ?? PAGE_TARGET_BUDGET_MS);
+
+  // Probe before checking the deadline: even a zero budget gets one attempt,
+  // and an immediate hit returns without sleeping at all.
+  while (true) {
+    const wsUrl = await probe(port);
+    if (wsUrl) return wsUrl;
+    if (now() >= deadline) return null;
+    await sleepFn(PAGE_TARGET_POLL_MS);
+  }
+}

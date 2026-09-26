@@ -9,6 +9,7 @@ import {
   escapeEre,
   isSafeStartUrl,
   launchBrowser,
+  waitForPageTarget,
   clearBrowserProfile,
   resetProfileIfStale,
   PROFILE_FORMAT,
@@ -197,6 +198,95 @@ describe('launchBrowser', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe('browser_not_found');
+  });
+});
+
+describe('waitForPageTarget', () => {
+  const PAGE = 'ws://127.0.0.1:1234/devtools/page/ABC';
+
+  /** Fake clock where sleeping advances time. */
+  const fakeTiming = () => {
+    let now = 0;
+    const sleeps: number[] = [];
+    return {
+      now: () => now,
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+        now += ms;
+      },
+      sleeps,
+    };
+  };
+
+  it('returns an immediately-available page target without polling', async () => {
+    const timing = fakeTiming();
+    let probes = 0;
+    const wsUrl = await waitForPageTarget(1234, {
+      ...timing,
+      probe: async () => {
+        probes++;
+        return PAGE;
+      },
+    });
+
+    expect(wsUrl).toBe(PAGE);
+    expect(probes).toBe(1);
+    expect(timing.sleeps).toHaveLength(0);
+  });
+
+  it('keeps polling when the page target registers late', async () => {
+    // The launch race this exists for: Chrome answers on the DevTools port a
+    // few hundred ms before the initial tab appears in /json/list, so the
+    // first probes come back empty.
+    const timing = fakeTiming();
+    let probes = 0;
+    const wsUrl = await waitForPageTarget(1234, {
+      ...timing,
+      probe: async () => {
+        probes++;
+        return probes >= 3 ? PAGE : null;
+      },
+    });
+
+    expect(wsUrl).toBe(PAGE);
+    expect(probes).toBe(3);
+    expect(timing.sleeps).toEqual([100, 100]);
+  });
+
+  it('gives up with null once the budget expires', async () => {
+    const timing = fakeTiming();
+    let probes = 0;
+    const wsUrl = await waitForPageTarget(1234, {
+      ...timing,
+      timeoutMs: 200,
+      probe: async () => {
+        probes++;
+        return null;
+      },
+    });
+
+    expect(wsUrl).toBeNull();
+    // Probes at t=0, 100, 200: the attempt at the deadline still runs, then
+    // the loop exits without another sleep.
+    expect(probes).toBe(3);
+    expect(timing.sleeps).toEqual([100, 100]);
+  });
+
+  it('always probes at least once, even with a zero budget', async () => {
+    const timing = fakeTiming();
+    let probes = 0;
+    const wsUrl = await waitForPageTarget(1234, {
+      ...timing,
+      timeoutMs: 0,
+      probe: async () => {
+        probes++;
+        return null;
+      },
+    });
+
+    expect(wsUrl).toBeNull();
+    expect(probes).toBe(1);
+    expect(timing.sleeps).toHaveLength(0);
   });
 });
 

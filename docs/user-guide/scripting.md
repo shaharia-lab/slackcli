@@ -157,7 +157,7 @@ done
   users or channels (`conversations unread`, `saved list` on a long list) make
   one API call per entity, so budget wall-clock time for them and set generous
   timeouts in a scheduled job.
-- **Logs.** Every run appends to a log file (see
+- **Logs.** Every command except `slackcli logs …` appends to a log file (see
   [Troubleshooting](troubleshooting.md#logs)); nothing is written to stdout, and
   stderr gets log lines only with `-v`. Set `SLACKCLI_LOG_LEVEL=off` to skip the
   file, or `SLACKCLI_LOG_DIR` to move it, e.g. in a read-only container.
@@ -176,6 +176,9 @@ done
 - **`auth migrate-secrets` needs `--yes`.** Same rule: refuses to run with a
   non-zero exit when stdin is not a terminal and `--yes` is absent. See
   [Authentication](authentication.md#where-credentials-are-stored).
+- **`logs clear` needs `--yes`.** Same rule: refuses to delete the log files
+  with a non-zero exit when stdin is not a terminal and `--yes` is absent. See
+  [Troubleshooting](troubleshooting.md#the-logs-command).
 - **Credentials.** `~/.config/slackcli/workspaces.json` holds live tokens at mode
   `0600`, unless a profile was moved to the macOS Keychain backend — give a CI
   job its own bot-token profile rather than copying a personal browser session

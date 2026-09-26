@@ -8,7 +8,7 @@
 
 import { homedir } from 'node:os';
 import { getLogger } from '@logtape/logtape';
-import { tildifyText } from './tildify.ts';
+import { errorMessageForLog, tildifyText } from './tildify.ts';
 import { error as printError } from './formatter.ts';
 
 const logger = getLogger(['slackcli', 'process']);
@@ -31,7 +31,7 @@ export function handleFatalError(kind: FatalErrorKind, err: unknown, deps: Fatal
   const home = homedir();
   logger.error('{kind}: {error}', {
     kind,
-    error: tildifyText(message, home),
+    error: errorMessageForLog(err, message, home),
     error_name: isError ? err.name : typeof err,
     ...(isError && err.stack ? { stack: tildifyText(err.stack, home) } : {}),
   });

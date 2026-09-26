@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { tildify, tildifyText } from './tildify.ts';
+import { errorMessageForLog, tildify, tildifyText } from './tildify.ts';
 
 describe('tildify', () => {
   it('replaces a leading home directory only', () => {
@@ -24,5 +24,23 @@ describe('tildifyText', () => {
   it('leaves a sibling home and empty home alone', () => {
     expect(tildifyText('/home/user2/x', '/home/u')).toBe('/home/user2/x');
     expect(tildifyText('/home/u/x', '')).toBe('/home/u/x');
+  });
+});
+
+describe('errorMessageForLog', () => {
+  it('uses the message of an Error, with the home directory as ~', () => {
+    expect(errorMessageForLog(new Error("ENOENT: open '/home/u/x'"), 'unknown error', '/home/u'))
+      .toBe("ENOENT: open '~/x'");
+  });
+
+  it('stringifies a non-Error value', () => {
+    expect(errorMessageForLog('plain /home/u/x', 'unknown error', '/home/u')).toBe('plain ~/x');
+    expect(errorMessageForLog(42, 'unknown error', '/home/u')).toBe('42');
+  });
+
+  it('falls back for a missing value or an empty message', () => {
+    expect(errorMessageForLog(undefined, 'send failed', '/home/u')).toBe('send failed');
+    expect(errorMessageForLog(null, 'unknown error', '/home/u')).toBe('unknown error');
+    expect(errorMessageForLog(new Error(''), 'unknown error', '/home/u')).toBe('unknown error');
   });
 });

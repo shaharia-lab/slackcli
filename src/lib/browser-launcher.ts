@@ -17,7 +17,7 @@ import { chmod, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'nod
 import { join, posix, win32 } from 'node:path';
 import { homedir } from 'node:os';
 import { getLogger } from '@logtape/logtape';
-import { tildify, tildifyText } from './tildify.ts';
+import { errorMessageForLog, tildify } from './tildify.ts';
 
 const logger = getLogger(['slackcli', 'browser-launcher']);
 
@@ -368,7 +368,7 @@ export async function launchBrowser(
     child = spawn(executable, args, { stdio: 'ignore', detached: false });
   } catch (err: any) {
     logger.warn('Browser failed to start: {error}', {
-      error: tildifyText(err?.message ?? 'unknown error', home),
+      error: errorMessageForLog(err),
       reason: 'browser_not_found',
     });
     return {
@@ -684,7 +684,7 @@ export async function findPageTarget(port: number): Promise<string | null> {
     });
     return page?.webSocketDebuggerUrl ?? null;
   } catch (err: any) {
-    logger.warn('DevTools /json/list failed: {error}', { port, error: err?.message ?? 'unknown error' });
+    logger.warn('DevTools /json/list failed: {error}', { port, error: errorMessageForLog(err) });
     return null;
   }
 }

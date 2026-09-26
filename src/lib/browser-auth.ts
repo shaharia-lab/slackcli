@@ -23,6 +23,7 @@
  */
 
 import { getLogger } from '@logtape/logtape';
+import { errorMessageForLog } from './tildify.ts';
 import { connectCdpSocket, createCdpSession, type CdpSession } from './cdp-client.ts';
 import {
   findPageTarget,
@@ -440,7 +441,7 @@ async function startCapture(
     await session.send('Page.navigate', { url: startUrl });
     return null;
   } catch (err: any) {
-    logger.warn('Capture setup failed: {error}', { error: err?.message ?? 'unknown error' });
+    logger.warn('Capture setup failed: {error}', { error: errorMessageForLog(err) });
     return {
       ok: false,
       reason: 'devtools_unreachable',
@@ -663,7 +664,7 @@ export async function openBrowserSession(
     return { ok: true, session, stop };
   } catch (err: any) {
     logger.warn('Could not attach to the browser: {error}', {
-      error: err?.message ?? 'unknown error',
+      error: errorMessageForLog(err),
       reason: 'devtools_unreachable',
     });
     await launched.stop();

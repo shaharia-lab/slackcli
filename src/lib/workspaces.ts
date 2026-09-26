@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, exists } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getLogger } from '@logtape/logtape';
-import { tildifyText } from './tildify.ts';
+import { errorMessageForLog, tildifyText } from './tildify.ts';
 import type { WorkspacesData, WorkspaceConfig, SecretBackend } from '../types/index.ts';
 import {
   FileSecretStore,
@@ -467,7 +467,7 @@ export async function migrateWorkspaceCredentials(
       profile_key: key,
       from,
       to: target,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessageForLog(err),
     });
     // Covers a failed write AND a failed or mismatched read-back alike: either
     // way the target must not keep a partial or unverified copy.
@@ -526,7 +526,7 @@ export async function migrateOneWorkspace(
     logger.warn('Cleanup of {profile_key} on {backend} still pending: {error}', {
       profile_key: result.key,
       backend: pendingBackend,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessageForLog(err),
     });
     return result; // still pending; the next call (any target) retries it
   }

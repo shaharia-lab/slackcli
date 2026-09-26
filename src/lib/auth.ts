@@ -1,5 +1,6 @@
 import { getLogger } from '@logtape/logtape';
 import { SlackClient } from './slack-client.ts';
+import { errorMessageForLog } from './tildify.ts';
 import { addWorkspace, getWorkspace } from './workspaces.ts';
 import type {
   StandardAuthConfig,
@@ -30,7 +31,7 @@ function logAuthenticated(authType: WorkspaceConfig['auth_type'], workspaceId: s
 function logAuthFailed(authType: WorkspaceConfig['auth_type'], error: unknown): void {
   logger.warn('{auth_type} authentication failed: {error}', {
     auth_type: authType,
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessageForLog(error),
   });
 }
 

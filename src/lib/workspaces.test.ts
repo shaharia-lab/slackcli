@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import { configureLogging } from './logger.ts';
@@ -806,6 +806,25 @@ describe('workspaces logging', () => {
     expect(messages).toContain('Default workspace set to T1 (first workspace)');
     expect(messages).toContain('Stored standard workspace T1 as T1');
     expect(serialize(records)).not.toContain(SECRET);
+  });
+
+  it('logs a failed cleanup save with the home directory written as ~', async () => {
+    const records = captureLogs();
+    const data: WorkspacesData = { workspaces: { T1: standard() } };
+    const path = `${homedir()}/.config/slackcli/workspaces.json`;
+    let saves = 0;
+    const save = async () => {
+      saves += 1;
+      if (saves === 2) throw new Error(`EACCES: permission denied, open '${path}'`);
+    };
+
+    const result = await migrateOneWorkspace(data, backendsWith(data, new FakeKeychainStore()), 'T1', 'keychain', save);
+
+    expect(result.pendingCleanup).toBe('file');
+    const pending = records.find((r) => r.message.join('').startsWith('Cleanup of T1'));
+    expect(pending?.level).toBe('warning');
+    expect(pending?.properties.error).toBe("EACCES: permission denied, open '~/.config/slackcli/workspaces.json'");
+    expect(serialize(records)).not.toContain(`${homedir()}/`);
   });
 
   it('logs the default moving when the default workspace is removed', async () => {

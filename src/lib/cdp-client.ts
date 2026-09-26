@@ -20,6 +20,7 @@
  */
 
 import { getLogger } from '@logtape/logtape';
+import { errorMessageForLog } from './tildify.ts';
 
 const logger = getLogger(['slackcli', 'cdp']);
 
@@ -169,7 +170,7 @@ export function createCdpSession(
           settle(id);
           logger.warn('CDP {method} could not be sent: {error}', {
             method,
-            error: err?.message ?? 'send failed',
+            error: errorMessageForLog(err, 'send failed'),
           });
           reject(new CdpError(method, err?.message ?? 'send failed'));
         }

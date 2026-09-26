@@ -5,7 +5,7 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import { getLogger } from '@logtape/logtape';
-import { tildifyText } from './tildify.ts';
+import { errorMessageForLog } from './tildify.ts';
 import { info, success, error as logError } from './formatter.ts';
 import { getAppVersion, isRunningUnderBun } from '../version.ts';
 
@@ -73,7 +73,7 @@ export async function fetchLatestRelease(): Promise<GitHubRelease | null> {
   } catch (err) {
     // Update checks fail soft: callers treat null as "could not check".
     logger.debug('Latest-release lookup failed: {error}', {
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessageForLog(err),
     });
     return null;
   }
@@ -240,7 +240,7 @@ export async function performUpdate(): Promise<void> {
     verifyAssetDigest(binaryName, bytes, asset.digest);
   } catch (err) {
     logger.error('Digest verification failed: {error}', {
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessageForLog(err),
     });
     throw err;
   }
@@ -282,7 +282,7 @@ export async function performUpdate(): Promise<void> {
   } catch (error: any) {
     // Try to restore from backup if it exists
     logger.error('Self-update install failed: {error}', {
-      error: tildifyText(error?.message ?? String(error), homedir()),
+      error: errorMessageForLog(error),
     });
     logError(`Update failed: ${error.message}`);
     throw error;
@@ -311,7 +311,7 @@ function writeUpdateCache(cache: UpdateCache): void {
   } catch (err) {
     // Silently fail — cache is best-effort
     logger.debug('Could not write the update cache: {error}', {
-      error: tildifyText(err instanceof Error ? err.message : String(err), homedir()),
+      error: errorMessageForLog(err),
     });
   }
 }

@@ -1,6 +1,16 @@
 import { writeFile, chmod, rename, unlink, mkdtemp, rm } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, accessSync, constants } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  accessSync,
+  constants,
+  openSync,
+  closeSync,
+  unlinkSync,
+} from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import chalk from 'chalk';
@@ -358,8 +368,18 @@ export function isInstalledViaHomebrew(): boolean {
 // holds the binary, which is what replacing it needs (not write access to the
 // file itself). Takes the path so tests can point it at a folder they control.
 export function isInstallDirWritable(execPath: string = process.execPath): boolean {
+  const dir = dirname(execPath);
   try {
-    accessSync(dirname(execPath), constants.W_OK);
+    if (process.platform === 'win32') {
+      // access(W_OK) on Windows only reads the read-only attribute, which
+      // folders never carry, and ignores the ACLs that protect folders such as
+      // C:\Program Files. Creating (then removing) a file is the real test.
+      const probe = join(dir, `.slackcli-write-test-${randomUUID()}`);
+      closeSync(openSync(probe, 'wx'));
+      unlinkSync(probe);
+    } else {
+      accessSync(dir, constants.W_OK);
+    }
     return true;
   } catch {
     return false;

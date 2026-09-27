@@ -156,6 +156,33 @@ describe('isInstallDirWritable', () => {
     expect(isInstallDirWritable(join(tmpdir(), 'slackcli-no-such-dir-284', 'slackcli'))).toBe(false);
   });
 
+  // Windows cannot rely on access(W_OK) for folders, so there the check writes
+  // and removes a probe file. That path runs on any OS with the platform stubbed.
+  describe('on win32', () => {
+    afterEach(() => restorePlatform());
+
+    it('is true for a writable folder and leaves no probe file behind', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'slackcli-writable-'));
+      dirs.push(dir);
+      setPlatform('win32');
+      expect(isInstallDirWritable(join(dir, 'slackcli.exe'))).toBe(true);
+      expect(await readdir(dir)).toEqual([]);
+    });
+
+    it.skipIf(!canLockDirs)('is false when a file cannot be created in the folder', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'slackcli-locked-'));
+      dirs.push(dir);
+      await chmod(dir, 0o555);
+      setPlatform('win32');
+      expect(isInstallDirWritable(join(dir, 'slackcli.exe'))).toBe(false);
+    });
+
+    it('is false when the folder does not exist', () => {
+      setPlatform('win32');
+      expect(isInstallDirWritable(join(tmpdir(), 'slackcli-no-such-dir-284', 'slackcli.exe'))).toBe(false);
+    });
+  });
+
   it.skipIf(!canLockDirs)('defaults to the folder of the running binary', async () => {
     await fakeBinary(dirs, { locked: true });
     expect(isInstallDirWritable()).toBe(false);

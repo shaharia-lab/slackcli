@@ -155,7 +155,7 @@ same.
 
 ## The self-updater
 
-`src/lib/updater.ts` backs `slackcli update`. Three behaviours worth knowing
+`src/lib/updater.ts` backs `slackcli update`. Four behaviours worth knowing
 before you change it:
 
 - It **fails closed** on verification: the release asset's digest must be a
@@ -164,6 +164,13 @@ before you change it:
   unverified binary.
 - It **refuses to act** when installed via Homebrew (detected from the exec path
   containing `homebrew`, `Cellar`, or `linuxbrew`) or when running under Bun.
+- It **refuses before downloading** when `isInstallDirWritable()` finds the
+  binary's folder unwritable (replacing the binary renames inside that folder),
+  and `getUpdateCommand()` then suggests `sudo slackcli update` — on Windows the
+  command is unchanged and `updateCommandSuffix()` adds "from an Administrator
+  terminal". The Homebrew check comes first. slackcli never elevates itself.
+  Tests make a folder unwritable with `chmod 0o555` and skip those cases as root
+  or on Windows, where mode bits do not apply.
 - The background check runs at most every 24 hours, caches to
   `~/.config/slackcli/update-check.json`, and prints its notice to **stderr** on
   `beforeExit` — so it never contaminates `--json` on stdout. Its GitHub lookup

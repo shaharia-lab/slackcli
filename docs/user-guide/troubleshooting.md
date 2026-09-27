@@ -118,8 +118,11 @@ with what you ran.
 - **Installed via Homebrew**: use `brew upgrade slackcli`. The self-updater
   detects this and refuses so it does not fight the package manager.
 - **Running from source**: there is no binary to replace — `git pull`.
-- **Permission denied**: you lack write access to the binary's location. Install
-  to `~/.local/bin` instead of a system directory.
+- **`No write permission for <folder> — run: sudo slackcli update`**: the binary
+  lives in a folder you cannot write to (for example `/usr/local/bin`), so the
+  update stops before downloading anything. Run `sudo slackcli update`, or on
+  Windows run `slackcli update` from an Administrator terminal. To update
+  without elevated rights, install to `~/.local/bin` instead.
 - **Checksum mismatch**: the update is aborted deliberately. Do not work around
   it — download the binary manually and check it against `checksums.txt` from
   the release.

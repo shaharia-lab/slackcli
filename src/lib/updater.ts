@@ -1,8 +1,8 @@
 import { writeFile, chmod, rename, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, accessSync, constants } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import chalk from 'chalk';
 import { getLogger } from '@logtape/logtape';
 import { errorMessageForLog } from './tildify.ts';
@@ -174,7 +174,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
-    info(`Run "${getUpdateCommand()}" to update`);
+    info(`Run "${getUpdateCommand()}"${updateCommandSuffix()} to update`);
   }
 
   return {
@@ -218,6 +218,13 @@ export async function performUpdate(): Promise<void> {
     });
     success(`Already on latest version (v${CURRENT_VERSION})`);
     return;
+  }
+
+  // Replacing the binary renames files inside its folder. Refuse before the
+  // download rather than fail at rename() with a raw EACCES afterwards (#284).
+  if (!isInstallDirWritable()) {
+    logger.error('Self-update refused: the install folder is not writable');
+    throw new Error(installDirNotWritableMessage(dirname(process.execPath)));
   }
 
   info(`Downloading version ${latestVersion}...`);
@@ -347,9 +354,46 @@ export function isInstalledViaHomebrew(): boolean {
   return execPath.includes('homebrew') || execPath.includes('Cellar') || execPath.includes('linuxbrew');
 }
 
+// True when the current user may create and rename files in the folder that
+// holds the binary, which is what replacing it needs (not write access to the
+// file itself). Takes the path so tests can point it at a folder they control.
+export function isInstallDirWritable(execPath: string = process.execPath): boolean {
+  try {
+    accessSync(dirname(execPath), constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// A non-Homebrew install in a folder this user cannot write, such as
+// /usr/local/bin. slackcli never elevates itself; it only says how to.
+function needsElevation(): boolean {
+  return !isInstalledViaHomebrew() && !isInstallDirWritable();
+}
+
 // Return the appropriate update command for this installation
 export function getUpdateCommand(): string {
-  return isInstalledViaHomebrew() ? 'brew upgrade slackcli' : 'slackcli update';
+  if (isInstalledViaHomebrew()) return 'brew upgrade slackcli';
+  // Windows has no sudo: the command stays the same and updateCommandSuffix()
+  // asks for an Administrator terminal instead.
+  if (process.platform !== 'win32' && !isInstallDirWritable()) return 'sudo slackcli update';
+  return 'slackcli update';
+}
+
+// Text to append after the quoted update command: on Windows, where the
+// command is unchanged, this is how an unwritable install folder is surfaced.
+export function updateCommandSuffix(): string {
+  return process.platform === 'win32' && needsElevation() ? ' from an Administrator terminal' : '';
+}
+
+// Why `slackcli update` refuses to start, and what to run instead.
+function installDirNotWritableMessage(installDir: string): string {
+  const remedy =
+    process.platform === 'win32'
+      ? 'run slackcli update from an Administrator terminal'
+      : 'run: sudo slackcli update';
+  return `No write permission for ${installDir} — ${remedy}`;
 }
 
 // True when the invoked command is `update` (or one of its subcommands).
@@ -428,7 +472,7 @@ export function notifyIfUpdateAvailable(
     return refresh;
   }
 
-  const updateCmd = getUpdateCommand();
+  const updateCmd = getUpdateCommand() + updateCommandSuffix();
   let printed = false;
 
   process.on('beforeExit', () => {

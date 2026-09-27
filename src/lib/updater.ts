@@ -184,7 +184,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
-    info(`Run "${getUpdateCommand()}"${updateCommandSuffix()} to update`);
+    info(`Run ${getUpdateHint(command => `"${command}"`)} to update`);
   }
 
   return {
@@ -386,25 +386,25 @@ export function isInstallDirWritable(execPath: string = process.execPath): boole
   }
 }
 
-// A non-Homebrew install in a folder this user cannot write, such as
-// /usr/local/bin. slackcli never elevates itself; it only says how to.
-function needsElevation(): boolean {
-  return !isInstalledViaHomebrew() && !isInstallDirWritable();
-}
-
-// Return the appropriate update command for this installation
+// Return the appropriate update command for this installation. A direct
+// install in a folder this user cannot write, such as /usr/local/bin, needs
+// elevated rights; slackcli never elevates itself, it only says how to.
 export function getUpdateCommand(): string {
   if (isInstalledViaHomebrew()) return 'brew upgrade slackcli';
-  // Windows has no sudo: the command stays the same and updateCommandSuffix()
+  // Windows has no sudo: there the command stays the same and getUpdateHint()
   // asks for an Administrator terminal instead.
   if (process.platform !== 'win32' && !isInstallDirWritable()) return 'sudo slackcli update';
   return 'slackcli update';
 }
 
-// Text to append after the quoted update command: on Windows, where the
-// command is unchanged, this is how an unwritable install folder is surfaced.
-export function updateCommandSuffix(): string {
-  return process.platform === 'win32' && needsElevation() ? ' from an Administrator terminal' : '';
+// The update advice to show a user: the command (passed through `format`, e.g.
+// to quote it), plus "from an Administrator terminal" for an unwritable
+// Windows install. Every message that suggests an update command uses this.
+export function getUpdateHint(format: (command: string) => string = command => command): string {
+  const command = getUpdateCommand();
+  const needsAdministrator =
+    process.platform === 'win32' && command === 'slackcli update' && !isInstallDirWritable();
+  return format(command) + (needsAdministrator ? ' from an Administrator terminal' : '');
 }
 
 // Why `slackcli update` refuses to start, and what to run instead.
@@ -492,7 +492,6 @@ export function notifyIfUpdateAvailable(
     return refresh;
   }
 
-  const updateCmd = getUpdateCommand() + updateCommandSuffix();
   let printed = false;
 
   process.on('beforeExit', () => {
@@ -500,9 +499,10 @@ export function notifyIfUpdateAvailable(
     const latest = freshLatest ?? cachedLatest;
     if (latest === undefined || !isNewerVersion(latest, CURRENT_VERSION)) return;
     printed = true;
+    // Only now, when the notice prints: on Windows the hint writes a probe file.
     process.stderr.write(
       chalk.yellow(`\n  Update available: v${CURRENT_VERSION} → ${latest}\n`) +
-      chalk.dim(`  Run: ${updateCmd}\n`),
+      chalk.dim(`  Run: ${getUpdateHint()}\n`),
     );
   });
 

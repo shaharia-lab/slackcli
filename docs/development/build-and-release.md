@@ -167,8 +167,10 @@ before you change it:
 - It **refuses before downloading** when `isInstallDirWritable()` finds the
   binary's folder unwritable (replacing the binary renames inside that folder),
   and `getUpdateCommand()` then suggests `sudo slackcli update` — on Windows the
-  command is unchanged and `updateCommandSuffix()` adds "from an Administrator
-  terminal". The Homebrew check comes first. slackcli never elevates itself.
+  command is unchanged and `getUpdateHint()` adds "from an Administrator
+  terminal". Every message that suggests an update command goes through
+  `getUpdateHint()`; the notice builds it only when it prints. The Homebrew
+  check comes first. slackcli never elevates itself.
   On Windows the check creates and removes a probe file, because `access(W_OK)`
   there ignores folder ACLs and always reports a folder writable. Tests make a
   folder unwritable with `chmod 0o555` and skip those cases as root or on

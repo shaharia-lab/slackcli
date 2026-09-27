@@ -8,11 +8,11 @@ import {
   isUpdateNotifierDisabled,
   checkForUpdates,
   getUpdateCommand,
+  getUpdateHint,
   getCurrentVersion,
   notifyIfUpdateAvailable,
   performUpdate,
   setUpdateCacheDirForTesting,
-  updateCommandSuffix,
   BACKGROUND_CHECK_TIMEOUT_MS,
   RETRY_AFTER_FAILURE_MS,
   verifyAssetDigest,
@@ -202,13 +202,13 @@ describe('getUpdateCommand', () => {
   it('returns brew command for Homebrew installs', () => {
     Object.defineProperty(process, 'execPath', { value: '/opt/homebrew/bin/slackcli', configurable: true });
     expect(getUpdateCommand()).toBe('brew upgrade slackcli');
-    expect(updateCommandSuffix()).toBe('');
+    expect(getUpdateHint()).toBe(getUpdateCommand());
   });
 
   it('returns slackcli update for a writable direct install', async () => {
     await fakeBinary(dirs);
     expect(getUpdateCommand()).toBe('slackcli update');
-    expect(updateCommandSuffix()).toBe('');
+    expect(getUpdateHint()).toBe(getUpdateCommand());
   });
 
   it.skipIf(!canLockDirs).each(['linux', 'darwin'] as const)(
@@ -217,7 +217,7 @@ describe('getUpdateCommand', () => {
       await fakeBinary(dirs, { locked: true });
       setPlatform(platform);
       expect(getUpdateCommand()).toBe('sudo slackcli update');
-      expect(updateCommandSuffix()).toBe('');
+      expect(getUpdateHint()).toBe(getUpdateCommand());
     },
   );
 
@@ -225,7 +225,8 @@ describe('getUpdateCommand', () => {
     await fakeBinary(dirs, { locked: true });
     setPlatform('win32');
     expect(getUpdateCommand()).toBe('slackcli update');
-    expect(updateCommandSuffix()).toBe(' from an Administrator terminal');
+    expect(getUpdateHint()).toBe('slackcli update from an Administrator terminal');
+    expect(getUpdateHint(command => `"${command}"`)).toBe('"slackcli update" from an Administrator terminal');
   });
 
   it.skipIf(!canLockDirs).each(['linux', 'win32'] as const)(
@@ -234,7 +235,7 @@ describe('getUpdateCommand', () => {
       await fakeBinary(dirs, { locked: true, name: 'Cellar-' });
       setPlatform(platform);
       expect(getUpdateCommand()).toBe('brew upgrade slackcli');
-      expect(updateCommandSuffix()).toBe('');
+      expect(getUpdateHint()).toBe(getUpdateCommand());
     },
   );
 });
@@ -625,24 +626,17 @@ describe('checkForUpdates', () => {
   });
 
   type Install = 'homebrew' | 'writable' | 'locked';
-  const cases: Array<[string, Install, NodeJS.Platform, string]> = [
-    ['a Homebrew install', 'homebrew', 'darwin', 'Run "brew upgrade slackcli" to update'],
-    ['a writable direct install', 'writable', 'linux', 'Run "slackcli update" to update'],
-  ];
-  if (canLockDirs) {
-    cases.push(
-      ['an unwritable folder on linux', 'locked', 'linux', 'Run "sudo slackcli update" to update'],
-      ['an unwritable folder on win32', 'locked', 'win32', 'Run "slackcli update" from an Administrator terminal to update'],
-    );
-  }
 
-  it.each(cases)('names the right update command for %s', async (_label, install, platform, hint) => {
-    if (install === 'homebrew') {
+  async function install(kind: Install, platform: NodeJS.Platform) {
+    if (kind === 'homebrew') {
       Object.defineProperty(process, 'execPath', { value: '/opt/homebrew/bin/slackcli', configurable: true });
     } else {
-      await fakeBinary(dirs, { locked: install === 'locked' });
+      await fakeBinary(dirs, { locked: kind === 'locked' });
     }
     setPlatform(platform);
+  }
+
+  async function printedHint(): Promise<string> {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ tag_name: 'v99.0.0', name: 'v99.0.0', body: '', assets: [] }), {
         status: 200,
@@ -651,11 +645,33 @@ describe('checkForUpdates', () => {
     try {
       const result = await checkForUpdates(false);
       expect(result.updateAvailable).toBe(true);
-      expect(log.mock.calls.flat().join('\n')).toContain(hint);
+      return log.mock.calls.flat().join('\n');
     } finally {
       log.mockRestore();
     }
-  });
+  }
+
+  it.each([
+    ['a Homebrew install', 'homebrew', 'darwin', 'Run "brew upgrade slackcli" to update'],
+    ['a writable direct install', 'writable', 'linux', 'Run "slackcli update" to update'],
+  ] as Array<[string, Install, NodeJS.Platform, string]>)(
+    'names the right update command for %s',
+    async (_label, kind, platform, hint) => {
+      await install(kind, platform);
+      expect(await printedHint()).toContain(hint);
+    },
+  );
+
+  it.skipIf(!canLockDirs).each([
+    ['linux', 'Run "sudo slackcli update" to update'],
+    ['win32', 'Run "slackcli update" from an Administrator terminal to update'],
+  ] as Array<[NodeJS.Platform, string]>)(
+    'names the right update command for an unwritable folder on %s',
+    async (platform, hint) => {
+      await install('locked', platform);
+      expect(await printedHint()).toContain(hint);
+    },
+  );
 });
 
 describe('isUpdateCommand', () => {

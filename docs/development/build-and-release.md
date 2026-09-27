@@ -174,6 +174,11 @@ before you change it:
   otherwise. It is skipped
   entirely for `update` and `update check`, which report versions themselves,
   and a successful self-update rewrites the cache with the installed version so
-  the next run does not show a stale notice. Tests point the cache at a temp
-  directory with `setUpdateCacheDirForTesting()`, never at the real
-  `~/.config/slackcli`.
+  the next run does not show a stale notice. It is also skipped entirely (no
+  cache read, no request, no notice) when `isUpdateNotifierDisabled()` finds
+  `SLACKCLI_NO_UPDATE_NOTIFIER` or `CI` set to anything but empty, `0` or
+  `false`. Tests point the cache at a temp directory with
+  `setUpdateCacheDirForTesting()`, never at the real `~/.config/slackcli`, and
+  pass an explicit `env` (e.g. `{}`) to `notifyIfUpdateAvailable()`: CI runners
+  set `CI`, so a test that relies on `process.env` would silently skip its
+  assertions there.

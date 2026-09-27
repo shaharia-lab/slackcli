@@ -99,6 +99,8 @@ and put it somewhere on your `PATH`.
 <details>
 <summary>From source (Bun)</summary>
 
+Requires Bun 1.4.1+.
+
 ```bash
 git clone https://github.com/shaharia-lab/slackcli.git
 cd slackcli

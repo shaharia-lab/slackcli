@@ -11,8 +11,9 @@ bun run build:all        # all three
 ```
 
 All of them go through `scripts/build.ts`, a thin wrapper around
-`bun build --compile --minify --bytecode --splitting --format=esm` whose one
-real job is injecting the version:
+`bun build --compile --minify --bytecode --splitting --format=esm` whose real
+jobs are refusing a Bun older than 1.4.1 (see [Why Bun is pinned](#why-bun-is-pinned))
+and injecting the version:
 
 ```
 --define __APP_VERSION__=<version from package.json>
@@ -101,8 +102,13 @@ CI (`ci.yml`, `test.yml`) and the release workflow all pin **Bun 1.4.1**. Bun
 1.3.12 produced corrupt macOS code signatures
 ([oven-sh/bun#29120](https://github.com/oven-sh/bun/issues/29120)), and 1.4.1 is
 the first release where `--bytecode` works for every target we ship (see
-[Why bytecode](#why-bytecode)). Bump the pin deliberately, in all three files at
-once, after reading Bun's release notes.
+[Why bytecode](#why-bytecode)), so it is also the minimum for building from
+source: `scripts/build.ts` exits with `slackcli builds need Bun >= 1.4.1` on an
+older Bun instead of Bun's own `format must be 'cjs' when bytecode is true`
+error. Bump the pin deliberately, in all three workflow files at once, after
+reading Bun's release notes; if the new pin is the new minimum, raise
+`MIN_BUN_VERSION` in `scripts/build.ts` and `engines.bun` in `package.json` with
+it.
 
 ### Why the 150 MB budget matters
 

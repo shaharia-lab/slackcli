@@ -39,7 +39,7 @@
     "bun-types": "^1.1.38"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.4.1"
   },
   "overrides": {
     "form-data": "^4.0.6"

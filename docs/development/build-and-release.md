@@ -168,8 +168,8 @@ before you change it:
   binary's folder unwritable (replacing the binary renames inside that folder),
   and `getUpdateCommand()` then suggests `sudo slackcli update` — on Windows the
   command is unchanged and `getUpdateHint()` adds "from an Administrator
-  terminal". Every message that suggests an update command goes through
-  `getUpdateHint()`; the notice builds it only when it prints. The Homebrew
+  terminal". The notice, `update check` and the refusal message all build their
+  advice with `getUpdateHint()`; the notice builds it only when it prints. The Homebrew
   check comes first. slackcli never elevates itself.
   On Windows the check creates and removes a probe file, because `access(W_OK)`
   there ignores folder ACLs and always reports a folder writable. Tests make a

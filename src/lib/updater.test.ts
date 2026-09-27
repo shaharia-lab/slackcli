@@ -391,7 +391,7 @@ describe('performUpdate on an unwritable install folder', () => {
       () => undefined,
       (err: Error) => err.message,
     );
-    expect(failure).toBe(`No write permission for ${dir} — run slackcli update from an Administrator terminal`);
+    expect(failure).toBe(`No write permission for ${dir} — run: slackcli update from an Administrator terminal`);
     expect(failure).not.toContain('sudo');
     expect(fetchCalls).toHaveLength(1);
   });

@@ -399,7 +399,8 @@ export function getUpdateCommand(): string {
 
 // The update advice to show a user: the command (passed through `format`, e.g.
 // to quote it), plus "from an Administrator terminal" for an unwritable
-// Windows install. Every message that suggests an update command uses this.
+// Windows install. Messages that suggest an update command use this rather
+// than repeating the platform logic.
 export function getUpdateHint(format: (command: string) => string = command => command): string {
   const command = getUpdateCommand();
   const needsAdministrator =
@@ -409,11 +410,7 @@ export function getUpdateHint(format: (command: string) => string = command => c
 
 // Why `slackcli update` refuses to start, and what to run instead.
 function installDirNotWritableMessage(installDir: string): string {
-  const remedy =
-    process.platform === 'win32'
-      ? 'run slackcli update from an Administrator terminal'
-      : 'run: sudo slackcli update';
-  return `No write permission for ${installDir} — ${remedy}`;
+  return `No write permission for ${installDir} — run: ${getUpdateHint()}`;
 }
 
 // True when the invoked command is `update` (or one of its subcommands).

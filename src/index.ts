@@ -15,7 +15,7 @@ import { createTeamCommand } from './commands/team.ts';
 import { createUsergroupsCommand } from './commands/usergroups.ts';
 import { createUsersCommand } from './commands/users.ts';
 import { notifyIfUpdateAvailable } from './lib/updater.ts';
-import { startLogging } from './lib/logger.ts';
+import { installUsageErrorLogging, startLogging } from './lib/logger.ts';
 import { installProcessErrorHandlers } from './lib/process-errors.ts';
 import { getAppVersion } from './version.ts';
 
@@ -30,7 +30,9 @@ program
 
 // Logging is configured once, right before the chosen command runs, so help and
 // --version stay side-effect free. Libraries log through LogTape categories.
+let loggingStarted = false;
 program.hook('preAction', (_thisCommand, actionCommand) => {
+  loggingStarted = true;
   startLogging({ verbose: Boolean(program.opts().verbose), actionCommand });
   // After logging is configured, so an unhandled error lands in the log file.
   installProcessErrorHandlers();
@@ -50,6 +52,13 @@ program.addCommand(createTeamCommand());
 program.addCommand(createUsergroupsCommand());
 program.addCommand(createUsersCommand());
 program.addCommand(createUpdateCommand());
+
+// After every addCommand(): a usage error is rejected before preAction runs, so
+// it is logged from the failing command's exit override instead.
+installUsageErrorLogging(program, {
+  verbose: () => Boolean(program.opts().verbose),
+  loggingStarted: () => loggingStarted,
+});
 
 // Show update notification after command output if a newer version is cached
 notifyIfUpdateAvailable();

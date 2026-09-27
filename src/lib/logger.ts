@@ -26,7 +26,7 @@ import {
 import { homedir, platform as osPlatform, release } from 'node:os';
 import { join, posix, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Command } from 'commander';
+import type { Command, CommanderError } from 'commander';
 import {
   configureSync,
   getJsonLinesFormatter,
@@ -398,4 +398,81 @@ export function startLogging(options: { verbose: boolean; actionCommand: Command
   );
 
   return setup;
+}
+
+/**
+ * Commander exit codes that are not usage errors: help and version output, and
+ * the internal signal for an asynchronous executable subcommand.
+ */
+const NON_USAGE_EXIT_CODES: ReadonlySet<string> = new Set([
+  'commander.helpDisplayed',
+  'commander.help',
+  'commander.version',
+  'commander.executeSubCommandAsync',
+]);
+
+/**
+ * True for a Commander error that rejected the command line (unknown option,
+ * missing argument, invalid value, …), false for help and version exits.
+ */
+export function isUsageError(code: string): boolean {
+  return code.startsWith('commander.') && !NON_USAGE_EXIT_CODES.has(code);
+}
+
+/**
+ * Records a rejected command line: a `session_start` header for the failing
+ * command (unless logging is already running) and a `usage_error` record with
+ * the Commander code. Commander's message is not logged, because some messages
+ * (e.g. `invalidArgument`) echo the value the user typed. Never throws.
+ */
+export function logUsageError(
+  command: Command,
+  err: CommanderError,
+  options: { verbose: boolean; loggingStarted: boolean },
+): void {
+  try {
+    if (!options.loggingStarted) startLogging({ verbose: options.verbose, actionCommand: command });
+    getLogger(['slackcli', 'cli']).warn('usage_error {code}', {
+      event: 'usage_error',
+      code: err.code,
+      exit_code: err.exitCode,
+      command: describeInvocation(command).command,
+    });
+  } catch {
+    // Logging must never change how a usage error exits.
+  }
+}
+
+export interface UsageErrorLoggingOptions {
+  /** Whether `-v/--verbose` was given; read when the error happens. */
+  verbose: () => boolean;
+  /** Whether `startLogging()` already ran for this process. */
+  loggingStarted: () => boolean;
+  /** Test seam: how the process exits. Defaults to `process.exit`. */
+  exit?: (code: number) => void;
+}
+
+/**
+ * Installs an exit override on `root` and every command below it, so a usage
+ * error is logged before the process exits with Commander's own exit code.
+ * Commander has already printed the error by then, so terminal output is
+ * unchanged. Must run after every `addCommand()`: `addCommand()` does not copy
+ * the parent's exit override, and Commander only calls the failing command's
+ * own override.
+ */
+export function installUsageErrorLogging(root: Command, options: UsageErrorLoggingOptions): void {
+  const exit = options.exit ?? ((code: number) => process.exit(code));
+  const install = (cmd: Command) => {
+    cmd.exitOverride((err) => {
+      try {
+        if (isUsageError(err.code)) {
+          logUsageError(cmd, err, { verbose: options.verbose(), loggingStarted: options.loggingStarted() });
+        }
+      } finally {
+        exit(err.exitCode);
+      }
+    });
+    cmd.commands.forEach(install);
+  };
+  install(root);
 }

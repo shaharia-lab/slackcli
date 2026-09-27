@@ -65,7 +65,7 @@ They hold no Slack API knowledge.
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
 | `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
 | `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. Logs waits at `debug`. |
-| `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header. Called once from `src/index.ts`; libs log via LogTape's `getLogger` directly. |
+| `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header, and the exit override that logs Commander usage errors. Called once from `src/index.ts`; libs log via LogTape's `getLogger` directly. |
 | `log-redaction.ts` | The token/cookie/JWT redaction patterns applied to every log line. |
 | `logs.ts` | `logs` command work: lists the log file and its rotations oldest first, reads them line by line, redacts each line again, groups records by `run_id`, selects runs, formats them as text, and deletes only the log files. |
 | `tildify.ts` | Home directory as `~` in log records: `tildify()` for a path, `tildifyText()` for free text, `errorMessageForLog()` for an error's message. Its own module so libs can use it without importing `logger.ts`. |

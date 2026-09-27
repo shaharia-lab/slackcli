@@ -151,8 +151,12 @@ option names, never their values), your OS and slackcli version, and each Slack
 API call's method, outcome, Slack error code and duration. It also records
 authentication and `login-auto` steps, workspace config load and save (IDs
 only), credential-store failures, update checks, and any unexpected error with
-its stack trace. Tokens and cookies are redacted, and message text, file
-contents and search queries are never logged.
+its stack trace. A command line that slackcli rejects (an unknown option or
+subcommand, a missing argument, an invalid value) is recorded too, as a
+`usage_error` with the error code, so `logs show --last 1` shows that run and
+not the one before it; `--help` and `--version` write nothing. Tokens and
+cookies are redacted, and message text, file contents and search queries are
+never logged.
 
 | OS | Log file |
 |---|---|

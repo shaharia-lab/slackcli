@@ -631,6 +631,38 @@ describe('process integration', () => {
     expect(run(['-v'])).toContain('Using debug.');
   });
 
+  it('logs usage errors from every command group in the real tree', () => {
+    const indexSource = readFileSync(join(root, 'src/index.ts'), 'utf-8');
+    const groups = [...indexSource.matchAll(/program\.addCommand\(create(\w+)Command\(\)\)/g)]
+      .map((match) => match[1]!.toLowerCase());
+    expect(groups.length).toBeGreaterThanOrEqual(13);
+    // The walk only reaches commands registered before it runs.
+    expect(indexSource.lastIndexOf('program.addCommand(')).toBeLessThan(indexSource.indexOf('installUsageErrorLogging(program'));
+
+    const run = (args: string[], dir: string) => Bun.spawnSync(
+      [process.execPath, 'run', join(root, 'src/index.ts'), ...args],
+      { cwd: root, env: { ...process.env, HOME: tmp, SLACKCLI_LOG_DIR: dir, SLACKCLI_LOG_LEVEL: '' } },
+    );
+
+    for (const group of groups) {
+      const dir = join(tmp, `logs-${group}`);
+      expect(run([group, '--no-such-flag'], dir).exitCode).toBe(1);
+      if (group === 'logs') {
+        expect(existsSync(dir)).toBe(false);
+        continue;
+      }
+      const records = readLines(join(dir, LOG_FILE_NAME));
+      expect(records.at(-1)!.properties).toMatchObject({ event: 'usage_error', code: 'commander.unknownOption', command: group });
+    }
+
+    const dir = join(tmp, 'logs-mandatory');
+    expect(run(['files', 'download', 'F1'], dir).exitCode).toBe(1);
+    expect(readLines(join(dir, LOG_FILE_NAME)).at(-1)!.properties).toMatchObject({
+      code: 'commander.missingMandatoryOptionValue',
+      command: 'files download',
+    });
+  }, 30_000);
+
   it('logs a usage error with unchanged stderr and exit code, and help/version write nothing', () => {
     const dir = join(tmp, 'logs');
     const run = (args: string[]) => Bun.spawnSync(
@@ -651,5 +683,5 @@ describe('process integration', () => {
     expect(records.map((r) => r.properties.event)).toEqual(['session_start', 'usage_error']);
     expect(records[0]!.properties).toMatchObject({ command: 'messages send' });
     expect(records[1]!.properties).toMatchObject({ code: 'commander.unknownOption', exit_code: 1 });
-  });
+  }, 15_000);
 });

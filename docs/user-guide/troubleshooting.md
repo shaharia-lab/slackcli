@@ -123,6 +123,9 @@ with what you ran.
 - **Checksum mismatch**: the update is aborted deliberately. Do not work around
   it — download the binary manually and check it against `checksums.txt` from
   the release.
+- **`Unable to check for updates`**: GitHub did not answer within 10 seconds or
+  returned an error. The background update notice is separate and bounded to
+  1.5 seconds, so a slow network never delays the end of a normal command.
 
 ## Rate limits and slow commands
 

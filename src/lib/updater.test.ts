@@ -10,6 +10,8 @@ import {
   notifyIfUpdateAvailable,
   performUpdate,
   setUpdateCacheDirForTesting,
+  BACKGROUND_CHECK_TIMEOUT_MS,
+  RETRY_AFTER_FAILURE_MS,
   verifyAssetDigest,
 } from './updater.ts';
 import { createHash } from 'crypto';
@@ -29,6 +31,20 @@ function captureLogs(): LogRecord[] {
 
 function updaterRecords(records: LogRecord[]): LogRecord[] {
   return records.filter((r) => r.category.join('.') === 'slackcli.updater');
+}
+
+// A fetch that never answers on its own and rejects only when its signal aborts.
+function hangingFetch(onCall?: () => void): typeof fetch {
+  return ((_input: unknown, init?: RequestInit) => {
+    onCall?.();
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+    });
+  }) as unknown as typeof fetch;
+}
+
+function releaseResponse(tag: string): Response {
+  return new Response(JSON.stringify({ tag_name: tag, name: tag, body: '', assets: [] }), { status: 200 });
 }
 
 describe('isNewerVersion', () => {
@@ -450,6 +466,224 @@ describe('notifyIfUpdateAvailable', () => {
     notifyIfUpdateAvailable(['bun', 'slackcli', 'auth', 'list']);
     expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length + 1);
   });
+
+  describe('refresh, back-off and banner', () => {
+    const argv = ['bun', 'slackcli', 'auth', 'list'];
+    const cacheFile = () => join(cacheDir, 'update-check.json');
+    let stderr: ReturnType<typeof spyOn>;
+
+    beforeEach(() => {
+      stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+      stderr.mockRestore();
+    });
+
+    async function writeRawCache(cache: unknown) {
+      await writeFile(cacheFile(), JSON.stringify(cache));
+    }
+
+    async function readCache() {
+      return JSON.parse(await readFile(cacheFile(), 'utf-8'));
+    }
+
+    function stubRelease(tag: string) {
+      globalThis.fetch = (async () => {
+        fetchCalls++;
+        return releaseResponse(tag);
+      }) as unknown as typeof fetch;
+    }
+
+    // Fires the listeners this test registered, as the runtime does at exit.
+    function fireBeforeExit(): string {
+      for (const listener of process.listeners('beforeExit')) {
+        if (!listenersBefore.includes(listener)) (listener as (code: number) => void)(0);
+      }
+      return stderr.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    }
+
+    it('bounds a hanging background check by its timeout and records the failure', async () => {
+      globalThis.fetch = hangingFetch(() => fetchCalls++);
+      const started = Date.now();
+
+      await notifyIfUpdateAvailable(argv);
+
+      const elapsed = Date.now() - started;
+      expect(fetchCalls).toBe(1);
+      expect(elapsed).toBeGreaterThanOrEqual(BACKGROUND_CHECK_TIMEOUT_MS - 100);
+      expect(elapsed).toBeLessThan(BACKGROUND_CHECK_TIMEOUT_MS + 1500);
+      const cache = await readCache();
+      expect(cache.failedAt).toBeGreaterThanOrEqual(started);
+      expect(fireBeforeExit()).toBe('');
+    });
+
+    it('keeps the known latest version and checkedAt when a check fails', async () => {
+      await writeRawCache({ checkedAt: 1000, latestVersion: 'v99.0.0' });
+      const started = Date.now();
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fetchCalls).toBe(1);
+      const cache = await readCache();
+      expect(cache).toMatchObject({ checkedAt: 1000, latestVersion: 'v99.0.0' });
+      expect(cache.failedAt).toBeGreaterThanOrEqual(started);
+    });
+
+    it('records a failure even when there was no cache yet', async () => {
+      await notifyIfUpdateAvailable(argv);
+
+      const cache = await readCache();
+      expect(cache.checkedAt).toBe(0);
+      expect(cache.latestVersion).toBeUndefined();
+      expect(typeof cache.failedAt).toBe('number');
+    });
+
+    it('makes no request within the back-off window after a failure', async () => {
+      await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0', failedAt: Date.now() - 1000 });
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fetchCalls).toBe(0);
+      // The known newer version is still announced while backing off.
+      expect(fireBeforeExit()).toContain('v99.0.0');
+    });
+
+    it('retries once the back-off window has passed', async () => {
+      await writeRawCache({ checkedAt: 0, failedAt: Date.now() - RETRY_AFTER_FAILURE_MS - 1 });
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fetchCalls).toBe(1);
+    });
+
+    it('does not let a failure timestamp in the future suppress checks', async () => {
+      await writeRawCache({ checkedAt: 0, failedAt: Date.now() + 24 * 60 * 60 * 1000 });
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fetchCalls).toBe(1);
+    });
+
+    it('does not refresh a successful check younger than 24h, even after a failure', async () => {
+      await writeRawCache({ checkedAt: Date.now() - 60_000, latestVersion: 'v99.0.0' });
+      await notifyIfUpdateAvailable(argv);
+      await writeRawCache({
+        checkedAt: Date.now() - 60_000,
+        latestVersion: 'v99.0.0',
+        failedAt: Date.now() - RETRY_AFTER_FAILURE_MS - 1,
+      });
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fetchCalls).toBe(0);
+    });
+
+    it('clears the failure marker on a successful check', async () => {
+      await writeRawCache({ checkedAt: 0, latestVersion: 'v1.0.0', failedAt: 1 });
+      stubRelease('v99.0.0');
+      const started = Date.now();
+
+      await notifyIfUpdateAvailable(argv);
+
+      const cache = await readCache();
+      expect(cache.latestVersion).toBe('v99.0.0');
+      expect(cache.checkedAt).toBeGreaterThanOrEqual(started);
+      expect(cache.failedAt).toBeUndefined();
+    });
+
+    it('announces the freshly fetched version, not the stale cached one', async () => {
+      await writeRawCache({ checkedAt: 0, latestVersion: 'v1.0.0' });
+      stubRelease('v99.0.0');
+
+      await notifyIfUpdateAvailable(argv);
+
+      const banner = fireBeforeExit();
+      expect(banner).toContain('→ v99.0.0');
+      expect(banner).not.toContain('v1.0.0');
+    });
+
+    it('announces a release found by the first ever check in the same run', async () => {
+      stubRelease('v99.0.0');
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fireBeforeExit()).toContain('→ v99.0.0');
+    });
+
+    it('falls back to the cached version when the background check fails', async () => {
+      await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0' });
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fireBeforeExit()).toContain('→ v99.0.0');
+    });
+
+    it('falls back to the cached version when the background check times out', async () => {
+      await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0' });
+      globalThis.fetch = hangingFetch();
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fireBeforeExit()).toContain('→ v99.0.0');
+    });
+
+    it('prints nothing when the fresh result is not newer, even if the cache was', async () => {
+      await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0' });
+      stubRelease('v0.0.1');
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fireBeforeExit()).toBe('');
+    });
+
+    it('prints nothing when neither the fetched nor the cached version is newer', async () => {
+      await writeRawCache({ checkedAt: 0, latestVersion: 'v0.0.1' });
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fireBeforeExit()).toBe('');
+    });
+
+    it('registers no listener when nothing is pending and nothing is newer', async () => {
+      await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v0.0.1' });
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length);
+    });
+
+    it('prints the banner only once when beforeExit fires repeatedly', async () => {
+      await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
+
+      await notifyIfUpdateAvailable(argv);
+      fireBeforeExit();
+      fireBeforeExit();
+
+      expect(stderr).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads an old cache file without the failure field', async () => {
+      await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fetchCalls).toBe(0);
+      expect(fireBeforeExit()).toContain('→ v99.0.0');
+    });
+
+    it.each([
+      ['fields of the wrong type', { checkedAt: 'yesterday', latestVersion: 5, failedAt: 'now' }],
+      ['a JSON array', []],
+      ['JSON null', null],
+    ])('treats a cache with %s as stale without crashing', async (_label, cache) => {
+      await writeRawCache(cache);
+
+      await notifyIfUpdateAvailable(argv);
+
+      expect(fetchCalls).toBe(1);
+      expect(fireBeforeExit()).toBe('');
+    });
+  });
 });
 
 describe('fetchLatestRelease', () => {
@@ -498,6 +732,24 @@ describe('fetchLatestRelease', () => {
     expect(logged.every((r) => r.level === 'debug')).toBe(true);
     expect(logged[0].properties.http_status).toBe(403);
     expect(logged[1].properties.error).toBe('fetch failed');
+  });
+
+  it('aborts a request that does not answer within the timeout', async () => {
+    globalThis.fetch = hangingFetch();
+    const started = Date.now();
+    expect(await fetchLatestRelease(50)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('bounds every lookup with an abort signal by default', async () => {
+    let signal: AbortSignal | null | undefined;
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      signal = init?.signal;
+      return releaseResponse('v1.2.3');
+    }) as unknown as typeof fetch;
+    await fetchLatestRelease();
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
   });
 
   it('returns null when the body is not valid JSON', async () => {

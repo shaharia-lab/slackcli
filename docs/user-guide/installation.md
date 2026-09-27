@@ -82,6 +82,13 @@ Two cases where `slackcli update` deliberately does nothing:
 - **Running from source** (`bun run dev`). There is no binary to replace — use
   `git pull`.
 
+If the binary sits in a folder you cannot write to, such as `/usr/local/bin`,
+`slackcli update` stops before downloading anything and tells you to run
+`sudo slackcli update` instead (on Windows: run `slackcli update` from an
+Administrator terminal). The update notice and `update check` suggest the same
+command. slackcli never elevates itself. Installing to `~/.local/bin` avoids the
+need for `sudo` altogether.
+
 SlackCLI also checks for new releases in the background at most once every 24
 hours and prints a one-line notice after your command's output when a newer
 version exists. The result is cached in `~/.config/slackcli/update-check.json`.

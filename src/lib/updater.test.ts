@@ -3,10 +3,12 @@ import {
   fetchLatestRelease,
   isNewerVersion,
   isInstalledViaHomebrew,
+  isInstallDirWritable,
   isUpdateCommand,
   isUpdateNotifierDisabled,
   checkForUpdates,
   getUpdateCommand,
+  getUpdateHint,
   getCurrentVersion,
   notifyIfUpdateAvailable,
   performUpdate,
@@ -16,7 +18,7 @@ import {
   verifyAssetDigest,
 } from './updater.ts';
 import { createHash } from 'crypto';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -42,6 +44,42 @@ function hangingFetch(onCall?: () => void): typeof fetch {
       init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
     });
   }) as unknown as typeof fetch;
+}
+
+// Mode bits cannot make a folder unwritable for root, and Windows ignores them,
+// so the "not writable" cases only run as a regular POSIX user.
+const canLockDirs = process.platform !== 'win32' && process.getuid?.() !== 0;
+const originalPlatform = process.platform;
+
+function setPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+}
+
+function restorePlatform(): void {
+  Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+}
+
+// A fake installed binary. `locked` makes its folder read-only (0o555), like
+// /usr/local/bin for a regular user. `name` lets a test shape the path.
+async function fakeBinary(
+  dirs: string[],
+  { locked = false, name = 'slackcli-installed-' }: { locked?: boolean; name?: string } = {},
+): Promise<{ dir: string; installed: string }> {
+  const dir = await mkdtemp(join(tmpdir(), name));
+  dirs.push(dir);
+  const installed = join(dir, 'slackcli');
+  await writeFile(installed, 'THE BINARY THAT IS ALREADY INSTALLED');
+  if (locked) await chmod(dir, 0o555);
+  Object.defineProperty(process, 'execPath', { value: installed, configurable: true });
+  return { dir, installed };
+}
+
+// Unlocks before removing, so a read-only fake install can be cleaned up.
+async function removeDirs(dirs: string[]): Promise<void> {
+  for (const dir of dirs.splice(0)) {
+    await chmod(dir, 0o755).catch(() => {});
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 function releaseResponse(tag: string): Response {
@@ -90,22 +128,116 @@ describe('isInstalledViaHomebrew', () => {
   });
 });
 
+describe('isInstallDirWritable', () => {
+  const originalExecPath = process.execPath;
+  const dirs: string[] = [];
+
+  afterEach(async () => {
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    await removeDirs(dirs);
+  });
+
+  it('is true for a folder the user can write', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-writable-'));
+    dirs.push(dir);
+    expect(isInstallDirWritable(join(dir, 'slackcli'))).toBe(true);
+  });
+
+  it.skipIf(!canLockDirs)('is false for a read-only folder, even when the file itself is writable', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-locked-'));
+    dirs.push(dir);
+    const binary = join(dir, 'slackcli');
+    await writeFile(binary, 'x');
+    await chmod(dir, 0o555);
+    expect(isInstallDirWritable(binary)).toBe(false);
+  });
+
+  it('is false when the folder does not exist', () => {
+    expect(isInstallDirWritable(join(tmpdir(), 'slackcli-no-such-dir-284', 'slackcli'))).toBe(false);
+  });
+
+  // Windows cannot rely on access(W_OK) for folders, so there the check writes
+  // and removes a probe file. That path runs on any OS with the platform stubbed.
+  describe('on win32', () => {
+    afterEach(() => restorePlatform());
+
+    it('is true for a writable folder and leaves no probe file behind', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'slackcli-writable-'));
+      dirs.push(dir);
+      setPlatform('win32');
+      expect(isInstallDirWritable(join(dir, 'slackcli.exe'))).toBe(true);
+      expect(await readdir(dir)).toEqual([]);
+    });
+
+    it.skipIf(!canLockDirs)('is false when a file cannot be created in the folder', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'slackcli-locked-'));
+      dirs.push(dir);
+      await chmod(dir, 0o555);
+      setPlatform('win32');
+      expect(isInstallDirWritable(join(dir, 'slackcli.exe'))).toBe(false);
+    });
+
+    it('is false when the folder does not exist', () => {
+      setPlatform('win32');
+      expect(isInstallDirWritable(join(tmpdir(), 'slackcli-no-such-dir-284', 'slackcli.exe'))).toBe(false);
+    });
+  });
+
+  it.skipIf(!canLockDirs)('defaults to the folder of the running binary', async () => {
+    await fakeBinary(dirs, { locked: true });
+    expect(isInstallDirWritable()).toBe(false);
+  });
+});
+
 describe('getUpdateCommand', () => {
   const originalExecPath = process.execPath;
+  const dirs: string[] = [];
 
-  afterEach(() => {
+  afterEach(async () => {
     Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    restorePlatform();
+    await removeDirs(dirs);
   });
 
   it('returns brew command for Homebrew installs', () => {
     Object.defineProperty(process, 'execPath', { value: '/opt/homebrew/bin/slackcli', configurable: true });
     expect(getUpdateCommand()).toBe('brew upgrade slackcli');
+    expect(getUpdateHint()).toBe(getUpdateCommand());
   });
 
-  it('returns slackcli update for direct installs', () => {
-    Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/slackcli', configurable: true });
+  it('returns slackcli update for a writable direct install', async () => {
+    await fakeBinary(dirs);
     expect(getUpdateCommand()).toBe('slackcli update');
+    expect(getUpdateHint()).toBe(getUpdateCommand());
   });
+
+  it.skipIf(!canLockDirs).each(['linux', 'darwin'] as const)(
+    'suggests sudo for an unwritable install folder on %s',
+    async (platform) => {
+      await fakeBinary(dirs, { locked: true });
+      setPlatform(platform);
+      expect(getUpdateCommand()).toBe('sudo slackcli update');
+      expect(getUpdateHint()).toBe(getUpdateCommand());
+    },
+  );
+
+  it.skipIf(!canLockDirs)('asks for an Administrator terminal, not sudo, on win32', async () => {
+    await fakeBinary(dirs, { locked: true });
+    setPlatform('win32');
+    expect(getUpdateCommand()).toBe('slackcli update');
+    expect(getUpdateHint()).toBe('slackcli update from an Administrator terminal');
+    expect(getUpdateHint(command => `"${command}"`)).toBe('"slackcli update" from an Administrator terminal');
+  });
+
+  it.skipIf(!canLockDirs).each(['linux', 'win32'] as const)(
+    'still gives brew upgrade for an unwritable Cellar on %s',
+    async (platform) => {
+      await fakeBinary(dirs, { locked: true, name: 'Cellar-' });
+      setPlatform(platform);
+      expect(getUpdateCommand()).toBe('brew upgrade slackcli');
+      expect(getUpdateHint()).toBe(getUpdateCommand());
+    },
+  );
 });
 
 describe('getCurrentVersion', () => {
@@ -180,6 +312,122 @@ describe('performUpdate on a Homebrew install', () => {
     expect(await readFile(installed, 'utf-8')).toBe('THE BREW-MANAGED BINARY');
     expect(await readdir(cellar)).toEqual(['slackcli']);
     expect(await readdir(cacheDir)).toEqual([]);
+  });
+});
+
+describe('performUpdate on an unwritable install folder', () => {
+  const originalExecPath = process.execPath;
+  const originalFetch = globalThis.fetch;
+  const dirs: string[] = [];
+  let fetchCalls: string[];
+  let log: ReturnType<typeof spyOn>;
+
+  // A release at `tag` whose assets are named for every platform, so a
+  // download would be attempted if the permission check did not stop it.
+  function stubRelease(tag: string) {
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url.includes('/releases/latest')) {
+        const names = ['slackcli-linux', 'slackcli-linux-arm64', 'slackcli-macos', 'slackcli-macos-arm64', 'slackcli-windows.exe'];
+        return new Response(
+          JSON.stringify({
+            tag_name: tag,
+            name: tag,
+            body: '',
+            assets: names.map(name => ({
+              name,
+              browser_download_url: `https://example.invalid/${name}`,
+              digest: `sha256:${'0'.repeat(64)}`,
+            })),
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('NEW BINARY', { status: 200 });
+    }) as typeof fetch;
+  }
+
+  beforeEach(async () => {
+    fetchCalls = [];
+    const cacheDir = await mkdtemp(join(tmpdir(), 'slackcli-cache-'));
+    dirs.push(cacheDir);
+    setUpdateCacheDirForTesting(cacheDir);
+    log = spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    log.mockRestore();
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    restorePlatform();
+    setUpdateCacheDirForTesting(null);
+    await removeDirs(dirs);
+  });
+
+  it.skipIf(!canLockDirs).each(['linux', 'darwin'] as const)(
+    'refuses before downloading and names the folder and sudo on %s',
+    async (platform) => {
+      const { dir, installed } = await fakeBinary(dirs, { locked: true });
+      setPlatform(platform);
+      stubRelease('v99.0.0');
+
+      await expect(performUpdate()).rejects.toThrow(
+        `No write permission for ${dir} — run: sudo slackcli update`,
+      );
+      // Only the release lookup went out: no asset was fetched.
+      expect(fetchCalls).toHaveLength(1);
+      expect(fetchCalls[0]).toContain('/releases/latest');
+      expect(await readFile(installed, 'utf-8')).toBe('THE BINARY THAT IS ALREADY INSTALLED');
+    },
+  );
+
+  it.skipIf(!canLockDirs)('asks for an Administrator terminal, not sudo, on win32', async () => {
+    const { dir } = await fakeBinary(dirs, { locked: true });
+    setPlatform('win32');
+    stubRelease('v99.0.0');
+
+    const failure = await performUpdate().then(
+      () => undefined,
+      (err: Error) => err.message,
+    );
+    expect(failure).toBe(`No write permission for ${dir} — run: slackcli update from an Administrator terminal`);
+    expect(failure).not.toContain('sudo');
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  it.skipIf(!canLockDirs)('logs the refusal without the folder path', async () => {
+    const { dir } = await fakeBinary(dirs, { locked: true });
+    stubRelease('v99.0.0');
+    const records = captureLogs();
+    try {
+      await expect(performUpdate()).rejects.toThrow(/No write permission/);
+    } finally {
+      resetSync();
+    }
+
+    const refusal = updaterRecords(records).find(r => r.message.join('').includes('Self-update refused'));
+    expect(refusal?.level).toBe('error');
+    expect(JSON.stringify(updaterRecords(records))).not.toContain(dir);
+  });
+
+  it.skipIf(!canLockDirs)('still reports "Already on latest version" with no permission error', async () => {
+    await fakeBinary(dirs, { locked: true });
+    stubRelease('v0.0.1');
+
+    await expect(performUpdate()).resolves.toBeUndefined();
+    expect(log.mock.calls.flat().join('\n')).toContain('Already on latest version');
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  it('downloads as before when the folder is writable', async () => {
+    await fakeBinary(dirs);
+    stubRelease('v99.0.0');
+
+    // The stub's all-zero digest makes the install fail after the download,
+    // which is enough to show the download was not blocked.
+    await expect(performUpdate()).rejects.toThrow(/Checksum mismatch/);
+    expect(fetchCalls).toHaveLength(2);
   });
 });
 
@@ -368,17 +616,27 @@ describe('performUpdate integrity check', () => {
 describe('checkForUpdates', () => {
   const originalExecPath = process.execPath;
   const originalFetch = globalThis.fetch;
+  const dirs: string[] = [];
 
-  afterEach(() => {
+  afterEach(async () => {
     globalThis.fetch = originalFetch;
     Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    restorePlatform();
+    await removeDirs(dirs);
   });
 
-  it.each([
-    ['a Homebrew install', '/opt/homebrew/bin/slackcli', 'Run "brew upgrade slackcli" to update'],
-    ['a direct install', '/usr/local/bin/slackcli', 'Run "slackcli update" to update'],
-  ])('names the right update command for %s', async (_label, execPath, hint) => {
-    Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
+  type Install = 'homebrew' | 'writable' | 'locked';
+
+  async function install(kind: Install, platform: NodeJS.Platform) {
+    if (kind === 'homebrew') {
+      Object.defineProperty(process, 'execPath', { value: '/opt/homebrew/bin/slackcli', configurable: true });
+    } else {
+      await fakeBinary(dirs, { locked: kind === 'locked' });
+    }
+    setPlatform(platform);
+  }
+
+  async function printedHint(): Promise<string> {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ tag_name: 'v99.0.0', name: 'v99.0.0', body: '', assets: [] }), {
         status: 200,
@@ -387,11 +645,33 @@ describe('checkForUpdates', () => {
     try {
       const result = await checkForUpdates(false);
       expect(result.updateAvailable).toBe(true);
-      expect(log.mock.calls.flat().join('\n')).toContain(hint);
+      return log.mock.calls.flat().join('\n');
     } finally {
       log.mockRestore();
     }
-  });
+  }
+
+  it.each([
+    ['a Homebrew install', 'homebrew', 'darwin', 'Run "brew upgrade slackcli" to update'],
+    ['a writable direct install', 'writable', 'linux', 'Run "slackcli update" to update'],
+  ] as Array<[string, Install, NodeJS.Platform, string]>)(
+    'names the right update command for %s',
+    async (_label, kind, platform, hint) => {
+      await install(kind, platform);
+      expect(await printedHint()).toContain(hint);
+    },
+  );
+
+  it.skipIf(!canLockDirs).each([
+    ['linux', 'Run "sudo slackcli update" to update'],
+    ['win32', 'Run "slackcli update" from an Administrator terminal to update'],
+  ] as Array<[NodeJS.Platform, string]>)(
+    'names the right update command for an unwritable folder on %s',
+    async (platform, hint) => {
+      await install('locked', platform);
+      expect(await printedHint()).toContain(hint);
+    },
+  );
 });
 
 describe('isUpdateCommand', () => {
@@ -552,6 +832,48 @@ describe('notifyIfUpdateAvailable', () => {
       }
       return stderr.mock.calls.map((call: unknown[]) => String(call[0])).join('');
     }
+
+    it('tells a writable direct install to run slackcli update', async () => {
+      const dirs: string[] = [];
+      try {
+        await fakeBinary(dirs);
+        await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
+        await notifyIfUpdateAvailable(argv, NO_ENV);
+        expect(fireBeforeExit()).toContain('Run: slackcli update\n');
+      } finally {
+        await removeDirs(dirs);
+      }
+    });
+
+    it.skipIf(!canLockDirs)('suggests sudo when the install folder is not writable', async () => {
+      const dirs: string[] = [];
+      try {
+        await fakeBinary(dirs, { locked: true });
+        setPlatform('linux');
+        await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
+        await notifyIfUpdateAvailable(argv, NO_ENV);
+        expect(fireBeforeExit()).toContain('Run: sudo slackcli update\n');
+      } finally {
+        restorePlatform();
+        await removeDirs(dirs);
+      }
+    });
+
+    it.skipIf(!canLockDirs)('asks for an Administrator terminal on win32', async () => {
+      const dirs: string[] = [];
+      try {
+        await fakeBinary(dirs, { locked: true });
+        setPlatform('win32');
+        await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
+        await notifyIfUpdateAvailable(argv, NO_ENV);
+        const banner = fireBeforeExit();
+        expect(banner).toContain('Run: slackcli update from an Administrator terminal\n');
+        expect(banner).not.toContain('sudo');
+      } finally {
+        restorePlatform();
+        await removeDirs(dirs);
+      }
+    });
 
     it('bounds a hanging background check by its timeout and records the failure', async () => {
       globalThis.fetch = hangingFetch(() => fetchCalls++);

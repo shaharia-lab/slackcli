@@ -1,8 +1,18 @@
 import { writeFile, chmod, rename, unlink, mkdtemp, rm } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  accessSync,
+  constants,
+  openSync,
+  closeSync,
+  unlinkSync,
+} from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import chalk from 'chalk';
 import { getLogger } from '@logtape/logtape';
 import { errorMessageForLog } from './tildify.ts';
@@ -174,7 +184,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
-    info(`Run "${getUpdateCommand()}" to update`);
+    info(`Run ${getUpdateHint(command => `"${command}"`)} to update`);
   }
 
   return {
@@ -218,6 +228,13 @@ export async function performUpdate(): Promise<void> {
     });
     success(`Already on latest version (v${CURRENT_VERSION})`);
     return;
+  }
+
+  // Replacing the binary renames files inside its folder. Refuse before the
+  // download rather than fail at rename() with a raw EACCES afterwards (#284).
+  if (!isInstallDirWritable()) {
+    logger.error('Self-update refused: the install folder is not writable');
+    throw new Error(installDirNotWritableMessage(dirname(process.execPath)));
   }
 
   info(`Downloading version ${latestVersion}...`);
@@ -347,9 +364,53 @@ export function isInstalledViaHomebrew(): boolean {
   return execPath.includes('homebrew') || execPath.includes('Cellar') || execPath.includes('linuxbrew');
 }
 
-// Return the appropriate update command for this installation
+// True when the current user may create and rename files in the folder that
+// holds the binary, which is what replacing it needs (not write access to the
+// file itself). Takes the path so tests can point it at a folder they control.
+export function isInstallDirWritable(execPath: string = process.execPath): boolean {
+  const dir = dirname(execPath);
+  try {
+    if (process.platform === 'win32') {
+      // access(W_OK) on Windows only reads the read-only attribute, which
+      // folders never carry, and ignores the ACLs that protect folders such as
+      // C:\Program Files. Creating (then removing) a file is the real test.
+      const probe = join(dir, `.slackcli-write-test-${randomUUID()}`);
+      closeSync(openSync(probe, 'wx'));
+      unlinkSync(probe);
+    } else {
+      accessSync(dir, constants.W_OK);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Return the appropriate update command for this installation. A direct
+// install in a folder this user cannot write, such as /usr/local/bin, needs
+// elevated rights; slackcli never elevates itself, it only says how to.
 export function getUpdateCommand(): string {
-  return isInstalledViaHomebrew() ? 'brew upgrade slackcli' : 'slackcli update';
+  if (isInstalledViaHomebrew()) return 'brew upgrade slackcli';
+  // Windows has no sudo: there the command stays the same and getUpdateHint()
+  // asks for an Administrator terminal instead.
+  if (process.platform !== 'win32' && !isInstallDirWritable()) return 'sudo slackcli update';
+  return 'slackcli update';
+}
+
+// The update advice to show a user: the command (passed through `format`, e.g.
+// to quote it), plus "from an Administrator terminal" for an unwritable
+// Windows install. Messages that suggest an update command use this rather
+// than repeating the platform logic.
+export function getUpdateHint(format: (command: string) => string = command => command): string {
+  const command = getUpdateCommand();
+  const needsAdministrator =
+    process.platform === 'win32' && command === 'slackcli update' && !isInstallDirWritable();
+  return format(command) + (needsAdministrator ? ' from an Administrator terminal' : '');
+}
+
+// Why `slackcli update` refuses to start, and what to run instead.
+function installDirNotWritableMessage(installDir: string): string {
+  return `No write permission for ${installDir} — run: ${getUpdateHint()}`;
 }
 
 // True when the invoked command is `update` (or one of its subcommands).
@@ -428,7 +489,6 @@ export function notifyIfUpdateAvailable(
     return refresh;
   }
 
-  const updateCmd = getUpdateCommand();
   let printed = false;
 
   process.on('beforeExit', () => {
@@ -436,9 +496,10 @@ export function notifyIfUpdateAvailable(
     const latest = freshLatest ?? cachedLatest;
     if (latest === undefined || !isNewerVersion(latest, CURRENT_VERSION)) return;
     printed = true;
+    // Only now, when the notice prints: on Windows the hint writes a probe file.
     process.stderr.write(
       chalk.yellow(`\n  Update available: v${CURRENT_VERSION} → ${latest}\n`) +
-      chalk.dim(`  Run: ${updateCmd}\n`),
+      chalk.dim(`  Run: ${getUpdateHint()}\n`),
     );
   });
 

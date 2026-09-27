@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SLACKCLI_NO_UPDATE_NOTIFIER`**: set it to `1` to turn off the background update check and its "Update available" notice, with no cache read and no request to GitHub. The same applies automatically when the standard `CI` variable is set (`CI=true` / `CI=1`); `slackcli update` and `update check` work as before (#283)
 
 ### Changed
+- **`slackcli update` in a folder you cannot write to** (such as `/usr/local/bin`): it now stops before downloading and says `No write permission for <folder> — run: sudo slackcli update` (on Windows: run it from an Administrator terminal), instead of downloading the release and then failing with a raw `EACCES` error. The update notice and `update check` suggest `sudo slackcli update` for such installs too; Homebrew and writable installs are unchanged (#284)
 - **Corrupt `workspaces.json`**: the load error is now a one-line warning (`Error loading workspaces: <parse error>`) instead of a raw error dump, and quoted fragments of the file are no longer echoed to the terminal (#280)
 
 ### Fixed

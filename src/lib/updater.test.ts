@@ -4,6 +4,7 @@ import {
   isNewerVersion,
   isInstalledViaHomebrew,
   isUpdateCommand,
+  isUpdateNotifierDisabled,
   checkForUpdates,
   getUpdateCommand,
   getCurrentVersion,
@@ -407,7 +408,34 @@ describe('isUpdateCommand', () => {
   });
 });
 
+describe('isUpdateNotifierDisabled', () => {
+  it.each([
+    [{}, false],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: '1' }, true],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: 'true' }, true],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: 'yes' }, true],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: '' }, false],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: '0' }, false],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: 'false' }, false],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: 'FALSE' }, false],
+    [{ CI: 'true' }, true],
+    [{ CI: '1' }, true],
+    [{ CI: 'TRUE' }, true],
+    [{ CI: '' }, false],
+    [{ CI: '0' }, false],
+    [{ CI: 'false' }, false],
+    [{ CI: 'False' }, false],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: '0', CI: 'true' }, true],
+    [{ SLACKCLI_NO_UPDATE_NOTIFIER: '1', CI: 'false' }, true],
+  ])('%p → %p', (env, expected) => {
+    expect(isUpdateNotifierDisabled(env)).toBe(expected);
+  });
+});
+
 describe('notifyIfUpdateAvailable', () => {
+  // An explicit, empty environment: CI runners set `CI`, which would switch the
+  // notifier off and silently skip every assertion below.
+  const NO_ENV: NodeJS.ProcessEnv = {};
   const originalExecPath = process.execPath;
   const originalFetch = globalThis.fetch;
   let cacheDir: string;
@@ -451,19 +479,41 @@ describe('notifyIfUpdateAvailable', () => {
     ['update check', ['bun', 'slackcli', 'update', 'check']],
   ])('prints no banner during `%s`', async (_label, argv) => {
     await writeCache(Date.now());
-    notifyIfUpdateAvailable(argv);
+    notifyIfUpdateAvailable(argv, NO_ENV);
     expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length);
   });
 
   it('does not refresh a stale cache during `update`', async () => {
     await writeCache(0);
-    notifyIfUpdateAvailable(['bun', 'slackcli', 'update']);
+    notifyIfUpdateAvailable(['bun', 'slackcli', 'update'], NO_ENV);
     expect(fetchCalls).toBe(0);
   });
 
   it('still schedules the banner for other commands', async () => {
     await writeCache(Date.now());
-    notifyIfUpdateAvailable(['bun', 'slackcli', 'auth', 'list']);
+    notifyIfUpdateAvailable(['bun', 'slackcli', 'auth', 'list'], NO_ENV);
+    expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length + 1);
+  });
+
+  it.each([
+    ['SLACKCLI_NO_UPDATE_NOTIFIER=1', { SLACKCLI_NO_UPDATE_NOTIFIER: '1' }],
+    ['CI=true', { CI: 'true' }],
+    ['CI=1', { CI: '1' }],
+  ])('makes no request and schedules no banner with %s', async (_label, env) => {
+    // A stale cache announcing a newer version: both a refresh and a banner are due.
+    await writeCache(0);
+    await notifyIfUpdateAvailable(['bun', 'slackcli', 'auth', 'list'], env);
+    expect(fetchCalls).toBe(0);
+    expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length);
+  });
+
+  it.each([
+    ['SLACKCLI_NO_UPDATE_NOTIFIER=0', { SLACKCLI_NO_UPDATE_NOTIFIER: '0' }],
+    ['CI=false', { CI: 'false' }],
+  ])('still refreshes and schedules the banner with %s', async (_label, env) => {
+    await writeCache(0);
+    await notifyIfUpdateAvailable(['bun', 'slackcli', 'auth', 'list'], env);
+    expect(fetchCalls).toBe(1);
     expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length + 1);
   });
 
@@ -507,7 +557,7 @@ describe('notifyIfUpdateAvailable', () => {
       globalThis.fetch = hangingFetch(() => fetchCalls++);
       const started = Date.now();
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       const elapsed = Date.now() - started;
       expect(fetchCalls).toBe(1);
@@ -522,7 +572,7 @@ describe('notifyIfUpdateAvailable', () => {
       await writeRawCache({ checkedAt: 1000, latestVersion: 'v99.0.0' });
       const started = Date.now();
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fetchCalls).toBe(1);
       const cache = await readCache();
@@ -531,7 +581,7 @@ describe('notifyIfUpdateAvailable', () => {
     });
 
     it('records a failure even when there was no cache yet', async () => {
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       const cache = await readCache();
       expect(cache.checkedAt).toBe(0);
@@ -542,7 +592,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('makes no request within the back-off window after a failure', async () => {
       await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0', failedAt: Date.now() - 1000 });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fetchCalls).toBe(0);
       // The known newer version is still announced while backing off.
@@ -552,7 +602,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('retries once the back-off window has passed', async () => {
       await writeRawCache({ checkedAt: 0, failedAt: Date.now() - RETRY_AFTER_FAILURE_MS - 1 });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fetchCalls).toBe(1);
     });
@@ -560,20 +610,20 @@ describe('notifyIfUpdateAvailable', () => {
     it('does not let a failure timestamp in the future suppress checks', async () => {
       await writeRawCache({ checkedAt: 0, failedAt: Date.now() + 24 * 60 * 60 * 1000 });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fetchCalls).toBe(1);
     });
 
     it('does not refresh a successful check younger than 24h, even after a failure', async () => {
       await writeRawCache({ checkedAt: Date.now() - 60_000, latestVersion: 'v99.0.0' });
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
       await writeRawCache({
         checkedAt: Date.now() - 60_000,
         latestVersion: 'v99.0.0',
         failedAt: Date.now() - RETRY_AFTER_FAILURE_MS - 1,
       });
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fetchCalls).toBe(0);
     });
@@ -583,7 +633,7 @@ describe('notifyIfUpdateAvailable', () => {
       stubRelease('v99.0.0');
       const started = Date.now();
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       const cache = await readCache();
       expect(cache.latestVersion).toBe('v99.0.0');
@@ -595,7 +645,7 @@ describe('notifyIfUpdateAvailable', () => {
       await writeRawCache({ checkedAt: 0, latestVersion: 'v1.0.0' });
       stubRelease('v99.0.0');
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       const banner = fireBeforeExit();
       expect(banner).toContain('→ v99.0.0');
@@ -605,7 +655,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('announces a release found by the first ever check in the same run', async () => {
       stubRelease('v99.0.0');
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fireBeforeExit()).toContain('→ v99.0.0');
     });
@@ -613,7 +663,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('falls back to the cached version when the background check fails', async () => {
       await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0' });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fireBeforeExit()).toContain('→ v99.0.0');
     });
@@ -622,7 +672,7 @@ describe('notifyIfUpdateAvailable', () => {
       await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0' });
       globalThis.fetch = hangingFetch();
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fireBeforeExit()).toContain('→ v99.0.0');
     });
@@ -631,7 +681,7 @@ describe('notifyIfUpdateAvailable', () => {
       await writeRawCache({ checkedAt: 0, latestVersion: 'v99.0.0' });
       stubRelease('v0.0.1');
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fireBeforeExit()).toBe('');
     });
@@ -639,7 +689,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('prints nothing when neither the fetched nor the cached version is newer', async () => {
       await writeRawCache({ checkedAt: 0, latestVersion: 'v0.0.1' });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fireBeforeExit()).toBe('');
     });
@@ -647,7 +697,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('registers no listener when nothing is pending and nothing is newer', async () => {
       await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v0.0.1' });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(process.listeners('beforeExit')).toHaveLength(listenersBefore.length);
     });
@@ -655,7 +705,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('prints the banner only once when beforeExit fires repeatedly', async () => {
       await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
       fireBeforeExit();
       fireBeforeExit();
 
@@ -665,7 +715,7 @@ describe('notifyIfUpdateAvailable', () => {
     it('reads an old cache file without the failure field', async () => {
       await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fetchCalls).toBe(0);
       expect(fireBeforeExit()).toContain('→ v99.0.0');
@@ -678,7 +728,7 @@ describe('notifyIfUpdateAvailable', () => {
     ])('treats a cache with %s as stale without crashing', async (_label, cache) => {
       await writeRawCache(cache);
 
-      await notifyIfUpdateAvailable(argv);
+      await notifyIfUpdateAvailable(argv, NO_ENV);
 
       expect(fetchCalls).toBe(1);
       expect(fireBeforeExit()).toBe('');

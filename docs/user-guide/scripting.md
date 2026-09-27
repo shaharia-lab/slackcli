@@ -163,6 +163,9 @@ done
   file, or `SLACKCLI_LOG_DIR` to move it, e.g. in a read-only container.
 - **The update notice.** SlackCLI may append a one-line "update available" notice
   after a command. It goes to stderr and never contaminates `--json` on stdout.
+  Set `SLACKCLI_NO_UPDATE_NOTIFIER=1` to turn it and its daily request to GitHub
+  off; it is off automatically when `CI` is set (`CI=true`, `CI=1`). See
+  [Updating](installation.md#updating).
 - **`usergroups` writes need `--yes`.** `create`, `update`, `add`, `remove`,
   `enable`, and `disable` refuse to run with a non-zero exit when stdin is not a
   terminal and `--yes` is absent, so an unattended job must pass `--yes`

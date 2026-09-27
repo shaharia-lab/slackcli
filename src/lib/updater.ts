@@ -359,11 +359,29 @@ export function isUpdateCommand(argv: string[]): boolean {
   return command === 'update';
 }
 
+// An env flag is on when set to anything but empty, `0` or `false` (any case).
+function isTruthyEnv(value: string | undefined): boolean {
+  return !!value && !['0', 'false'].includes(value.toLowerCase());
+}
+
+// True when the user opted out (SLACKCLI_NO_UPDATE_NOTIFIER) or we run in CI.
+export function isUpdateNotifierDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isTruthyEnv(env.SLACKCLI_NO_UPDATE_NOTIFIER) || isTruthyEnv(env.CI);
+}
+
 // Show a one-line update notification after the command finishes (via beforeExit),
 // and refresh the cache in the background if it is stale. The banner uses the
 // freshly fetched version when the refresh finished, the cached one otherwise.
 // Returns the pending refresh so tests can await it; the CLI does not.
-export function notifyIfUpdateAvailable(argv: string[] = process.argv): Promise<void> {
+export function notifyIfUpdateAvailable(
+  argv: string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  // Opted out, or in CI: no cache read, no GitHub request, no banner (#283).
+  if (isUpdateNotifierDisabled(env)) {
+    return Promise.resolve();
+  }
+
   // `update` and `update check` report versions themselves; a banner read from
   // the pre-update version and cache would contradict them (#276).
   if (isUpdateCommand(argv)) {

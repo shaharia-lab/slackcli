@@ -245,7 +245,7 @@ Configuration lives in `~/.config/slackcli/` (directory mode `0700`):
 | File | Contents |
 |---|---|
 | `workspaces.json` | Workspace credentials (mode `0600`) |
-| `update-check.json` | Cached update check, refreshed at most daily |
+| `update-check.json` | Cached update check, refreshed at most daily (off with `SLACKCLI_NO_UPDATE_NOTIFIER=1` or in CI) |
 | `browser-profile/` | The browser profile used by `auth login-auto` |
 
 `workspaces.json` and `browser-profile/` both hold **live credentials** — do not commit,

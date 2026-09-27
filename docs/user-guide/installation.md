@@ -96,6 +96,14 @@ command. When a check does finish, the notice at the end of that same run
 already shows the version it found. `slackcli update` and `update check`, which
 you run on purpose, wait up to 10 seconds for GitHub.
 
+To turn the background check off, set `SLACKCLI_NO_UPDATE_NOTIFIER=1` (any value
+other than empty, `0` or `false`). SlackCLI then reads no cache, sends no request
+to GitHub and prints no notice. The same happens automatically when the `CI`
+environment variable is set to a value other than empty, `0` or `false`, as GitHub
+Actions, GitLab CI and most CI systems do. If you set `CI` yourself outside a CI
+job, you will stop seeing the notice too. `slackcli update check` and
+`slackcli update` are explicit requests and work the same either way.
+
 ## Uninstalling
 
 ```bash

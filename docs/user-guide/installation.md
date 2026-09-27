@@ -43,7 +43,9 @@ verify a manual download.
 
 ## From source
 
-Requires [Bun](https://bun.sh) 1.0 or newer.
+Requires [Bun](https://bun.sh) 1.4.1 or newer; `bun run build` stops with a clear
+message on an older Bun (see
+[why Bun is pinned](../development/build-and-release.md#why-bun-is-pinned)).
 
 ```bash
 git clone https://github.com/shaharia-lab/slackcli.git

@@ -26,7 +26,7 @@ Opening an issue first gives the community the opportunity to discuss the proble
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) v1.0+
+- [Bun](https://bun.sh/) v1.4.1+, required by the `--bytecode` build (see [why Bun is pinned](docs/development/build-and-release.md#why-bun-is-pinned))
 - [pre-commit](https://pre-commit.com/) — `brew install pre-commit` (macOS) or `pip install pre-commit` (Linux)
 
 ### Install Dependencies

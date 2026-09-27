@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { getLogger, resetSync } from '@logtape/logtape';
 import type { LogRecord } from '@logtape/logtape';
 import {
@@ -12,6 +12,8 @@ import {
   configureLogging,
   describeInvocation,
   detectInstallMethod,
+  installUsageErrorLogging,
+  isUsageError,
   resolveLogDir,
   resolveLogLevel,
   shouldWriteLogFile,
@@ -379,6 +381,201 @@ describe('configureLogging', () => {
   });
 });
 
+describe('isUsageError', () => {
+  it.each([
+    'commander.unknownOption',
+    'commander.unknownCommand',
+    'commander.missingArgument',
+    'commander.optionMissingArgument',
+    'commander.missingMandatoryOptionValue',
+    'commander.invalidArgument',
+    'commander.excessArguments',
+    'commander.conflictingOption',
+    'commander.error',
+  ])('is true for %s', (code) => {
+    expect(isUsageError(code)).toBe(true);
+  });
+
+  it.each([
+    'commander.helpDisplayed',
+    'commander.help',
+    'commander.version',
+    'commander.executeSubCommandAsync',
+    'unknownOption',
+    '',
+  ])('is false for %p', (code) => {
+    expect(isUsageError(code)).toBe(false);
+  });
+});
+
+describe('installUsageErrorLogging', () => {
+  class Exited extends Error {
+    constructor(readonly code: number) {
+      super(`exit ${code}`);
+    }
+  }
+
+  const envKeys = ['SLACKCLI_LOG_DIR', 'SLACKCLI_LOG_LEVEL'] as const;
+  let savedEnv: Record<string, string | undefined>;
+  let logDir: string;
+
+  beforeEach(() => {
+    savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+    logDir = join(tmp, 'logs');
+    process.env.SLACKCLI_LOG_DIR = logDir;
+    delete process.env.SLACKCLI_LOG_LEVEL;
+  });
+
+  afterEach(() => {
+    for (const key of envKeys) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+  });
+
+  const silence = (cmd: Command): Command => cmd.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+
+  // Mirrors src/index.ts: groups are built on their own and attached with
+  // addCommand(), which does not pass an exit override down.
+  function buildProgram(): Command {
+    const program = silence(new Command().name('slackcli').version('1.2.3').option('-v, --verbose'));
+    const messages = silence(new Command('messages'));
+    silence(messages.command('send').option('--recipient-id <id>').option('--message <text>').action(() => {}));
+    silence(
+      messages
+        .command('history')
+        .option('--limit <n>', 'limit', (value: string) => {
+          throw new InvalidArgumentError(`not a number: ${value}`);
+        })
+        .action(() => {}),
+    );
+    const users = silence(new Command('users'));
+    silence(users.command('info').argument('<user>').action(() => {}));
+    const logs = silence(new Command('logs'));
+    silence(logs.command('show').action(() => {}));
+    program.addCommand(messages);
+    program.addCommand(users);
+    program.addCommand(logs);
+    return program;
+  }
+
+  function run(argv: string[], options: { verbose?: boolean; loggingStarted?: boolean } = {}): number | undefined {
+    const program = buildProgram();
+    installUsageErrorLogging(program, {
+      verbose: () => options.verbose ?? false,
+      loggingStarted: () => options.loggingStarted ?? false,
+      exit: (code) => {
+        throw new Exited(code);
+      },
+    });
+    try {
+      program.parse(argv, { from: 'user' });
+      return undefined;
+    } catch (error) {
+      if (error instanceof Exited) return error.code;
+      throw error;
+    }
+  }
+
+  const logFile = () => join(logDir, LOG_FILE_NAME);
+
+  it('logs session_start and usage_error for an unknown option on a nested command', () => {
+    expect(run(['messages', 'send', '--recipient-id', 'C1', '--message', 'hello there', '--yes'])).toBe(1);
+
+    const [header, record, ...rest] = readLines(logFile());
+    expect(rest).toHaveLength(0);
+    expect(header!.properties).toMatchObject({
+      event: 'session_start',
+      command: 'messages send',
+      options: ['--message', '--recipient-id'],
+    });
+    expect(record!.level).toBe('WARN');
+    expect(record!.logger).toBe('slackcli.cli');
+    expect(record!.properties).toEqual({
+      run_id: header!.properties.run_id,
+      event: 'usage_error',
+      code: 'commander.unknownOption',
+      exit_code: 1,
+      command: 'messages send',
+    });
+    const raw = readFileSync(logFile(), 'utf-8');
+    expect(raw).not.toContain('hello there');
+    expect(raw).not.toContain('C1');
+    expect(raw).not.toContain('--yes');
+  });
+
+  it('covers every level of the tree: root, group and leaf', () => {
+    const cases: Array<[string[], string, string]> = [
+      [['nope'], 'commander.unknownCommand', ''],
+      [['messages', 'nope'], 'commander.unknownCommand', 'messages'],
+      [['users', 'info'], 'commander.missingArgument', 'users info'],
+      [['messages', 'send', '--message'], 'commander.optionMissingArgument', 'messages send'],
+    ];
+    for (const [argv, code, command] of cases) {
+      rmSync(logDir, { recursive: true, force: true });
+      expect(run(argv)).toBe(1);
+      const records = readLines(logFile());
+      expect(records.map((r) => r.properties.event)).toEqual(['session_start', 'usage_error']);
+      expect(records[1]!.properties).toMatchObject({ code, command });
+    }
+  });
+
+  it('never logs the value an invalidArgument message echoes', () => {
+    expect(run(['messages', 'history', '--limit', 'secret-value'])).toBe(1);
+
+    const raw = readFileSync(logFile(), 'utf-8');
+    expect(raw).toContain('commander.invalidArgument');
+    expect(raw).not.toContain('secret-value');
+    expect(raw).not.toContain('not a number');
+  });
+
+  it('keeps help and version exits side-effect free', () => {
+    expect(run(['--help'])).toBe(0);
+    expect(run(['messages', '--help'])).toBe(0);
+    expect(run(['help', 'messages'])).toBe(0);
+    expect(run(['--version'])).toBe(0);
+    // A group with no subcommand shows help and exits 1: still help, not a usage error.
+    expect(run(['messages'])).toBe(1);
+    expect(existsSync(logDir)).toBe(false);
+  });
+
+  it('does not write the file for a usage error under logs', () => {
+    expect(run(['logs', 'show', '--bogus'])).toBe(1);
+    expect(existsSync(logDir)).toBe(false);
+  });
+
+  it('writes nothing when SLACKCLI_LOG_LEVEL=off', () => {
+    process.env.SLACKCLI_LOG_LEVEL = 'off';
+    expect(run(['users', 'info'])).toBe(1);
+    expect(existsSync(logDir)).toBe(false);
+  });
+
+  it('does not write a second session_start when logging already started', () => {
+    configureLogging({ level: 'info', verbose: false, dir: logDir });
+    expect(run(['users', 'info'], { loggingStarted: true })).toBe(1);
+
+    const records = readLines(logFile());
+    expect(records.map((r) => r.properties.event)).toEqual(['usage_error']);
+  });
+
+  it('still exits with Commander\'s code when logging cannot be set up', () => {
+    writeFileSync(join(tmp, 'not-a-dir'), '');
+    process.env.SLACKCLI_LOG_DIR = join(tmp, 'not-a-dir');
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(run(['users', 'info'])).toBe(1);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('does not intercept a successful run', () => {
+    expect(run(['users', 'info', 'U1'])).toBeUndefined();
+    expect(existsSync(logDir)).toBe(false);
+  });
+});
+
 describe('process integration', () => {
   const root = join(import.meta.dir, '..', '..');
 
@@ -433,4 +630,58 @@ describe('process integration', () => {
     expect(quiet).toContain('Using info.');
     expect(run(['-v'])).toContain('Using debug.');
   });
+
+  it('logs usage errors from every command group in the real tree', () => {
+    const indexSource = readFileSync(join(root, 'src/index.ts'), 'utf-8');
+    const groups = [...indexSource.matchAll(/program\.addCommand\(create(\w+)Command\(\)\)/g)]
+      .map((match) => match[1]!.toLowerCase());
+    expect(groups.length).toBeGreaterThanOrEqual(13);
+    // The walk only reaches commands registered before it runs.
+    expect(indexSource.lastIndexOf('program.addCommand(')).toBeLessThan(indexSource.indexOf('installUsageErrorLogging(program'));
+
+    const run = (args: string[], dir: string) => Bun.spawnSync(
+      [process.execPath, 'run', join(root, 'src/index.ts'), ...args],
+      { cwd: root, env: { ...process.env, HOME: tmp, SLACKCLI_LOG_DIR: dir, SLACKCLI_LOG_LEVEL: '' } },
+    );
+
+    for (const group of groups) {
+      const dir = join(tmp, `logs-${group}`);
+      expect(run([group, '--no-such-flag'], dir).exitCode).toBe(1);
+      if (group === 'logs') {
+        expect(existsSync(dir)).toBe(false);
+        continue;
+      }
+      const records = readLines(join(dir, LOG_FILE_NAME));
+      expect(records.at(-1)!.properties).toMatchObject({ event: 'usage_error', code: 'commander.unknownOption', command: group });
+    }
+
+    const dir = join(tmp, 'logs-mandatory');
+    expect(run(['files', 'download', 'F1'], dir).exitCode).toBe(1);
+    expect(readLines(join(dir, LOG_FILE_NAME)).at(-1)!.properties).toMatchObject({
+      code: 'commander.missingMandatoryOptionValue',
+      command: 'files download',
+    });
+  }, 30_000);
+
+  it('logs a usage error with unchanged stderr and exit code, and help/version write nothing', () => {
+    const dir = join(tmp, 'logs');
+    const run = (args: string[]) => Bun.spawnSync(
+      [process.execPath, 'run', join(root, 'src/index.ts'), ...args],
+      { cwd: root, env: { ...process.env, HOME: tmp, SLACKCLI_LOG_DIR: dir, SLACKCLI_LOG_LEVEL: '' } },
+    );
+
+    for (const args of [['--help'], ['messages', '--help'], ['help', 'messages'], ['--version']]) {
+      expect(run(args).exitCode).toBe(0);
+    }
+    expect(existsSync(dir)).toBe(false);
+
+    const result = run(['messages', 'send', '--recipient-id', 'C0000000000', '--message', 'x', '--yes']);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout.toString()).toBe('');
+    expect(result.stderr.toString()).toBe("error: unknown option '--yes'\n");
+    const records = readLines(join(dir, LOG_FILE_NAME));
+    expect(records.map((r) => r.properties.event)).toEqual(['session_start', 'usage_error']);
+    expect(records[0]!.properties).toMatchObject({ command: 'messages send' });
+    expect(records[1]!.properties).toMatchObject({ code: 'commander.unknownOption', exit_code: 1 });
+  }, 15_000);
 });

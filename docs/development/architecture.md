@@ -269,9 +269,21 @@ Every run writes a JSON Lines log through [LogTape](https://logtape.org). The
 pieces:
 
 - **`src/lib/logger.ts`** is configuration only. `startLogging()` runs once, in
-  the root command's `preAction` hook in `src/index.ts`, so `--help` and
+  the root command's `preAction` hook in `src/index.ts` (or, for a rejected
+  command line, from the exit override described below), so `--help` and
   `--version` stay side-effect free. It resolves the level and directory,
   configures LogTape, and writes a `session_start` record.
+- **Usage errors** (unknown option, missing argument, invalid value, …) are
+  rejected by Commander before `preAction` runs, so they are logged from an
+  exit override instead. `installUsageErrorLogging()` walks the whole command
+  tree after the last `addCommand()` and installs one on every command:
+  `addCommand()` does not copy the parent's override, and Commander only calls
+  the failing command's own. On a code `isUsageError()` accepts, the override
+  calls `startLogging()` for the failing command (unless `preAction` already
+  did) and writes a `usage_error` record in `slackcli.cli` with the Commander
+  `code`, `exit_code` and command path, then exits with Commander's exit code.
+  Commander's message is not logged, since `invalidArgument` echoes the user's
+  value. Help and version exits skip logging entirely.
 - **Libraries log through categories**, `getLogger(['slackcli', '<area>'])`,
   imported straight from `@logtape/logtape` (not from `logger.ts`, which imports
   `updater.ts` and would invite an import cycle). A logger is a no-op until

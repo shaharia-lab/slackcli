@@ -89,6 +89,13 @@ The notice is never shown during `slackcli update` or `slackcli update check`,
 and a successful `slackcli update` refreshes the cache with the version it just
 installed.
 
+The background check never holds up your command: it gives GitHub 1.5 seconds
+to answer and then gives up quietly, and after a failed check (offline, proxy,
+rate limit) it waits an hour before trying again instead of retrying on every
+command. When a check does finish, the notice at the end of that same run
+already shows the version it found. `slackcli update` and `update check`, which
+you run on purpose, wait up to 10 seconds for GitHub.
+
 ## Uninstalling
 
 ```bash

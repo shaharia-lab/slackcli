@@ -14,10 +14,19 @@ const logger = getLogger(['slackcli', 'updater']);
 const DEFAULT_CONFIG_DIR = join(homedir(), '.config', 'slackcli');
 let configDir = DEFAULT_CONFIG_DIR;
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// After a failed background check, wait this long before trying again, so an
+// offline user does not pay for (and wait on) the check on every command.
+export const RETRY_AFTER_FAILURE_MS = 60 * 60 * 1000; // 1 hour
+// The background check must never make a finished command slow to exit.
+export const BACKGROUND_CHECK_TIMEOUT_MS = 1500;
+// `update` and `update check` were asked for explicitly, so they can wait longer.
+export const FOREGROUND_CHECK_TIMEOUT_MS = 10_000;
 
 interface UpdateCache {
   checkedAt: number;
-  latestVersion: string;
+  latestVersion?: string;
+  // Set when the last background check failed; cleared by the next success.
+  failedAt?: number;
 }
 
 const GITHUB_REPO = 'shaharia-lab/slackcli';
@@ -49,8 +58,11 @@ export function getCurrentVersion(): string {
   return CURRENT_VERSION;
 }
 
-// Fetch latest release from GitHub
-export async function fetchLatestRelease(): Promise<GitHubRelease | null> {
+// Fetch latest release from GitHub. The timeout covers the whole lookup,
+// body included; on expiry the request is aborted and this returns null.
+export async function fetchLatestRelease(
+  timeoutMs: number = FOREGROUND_CHECK_TIMEOUT_MS
+): Promise<GitHubRelease | null> {
   try {
     const response = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
@@ -59,6 +71,7 @@ export async function fetchLatestRelease(): Promise<GitHubRelease | null> {
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'SlackCLI',
         },
+        signal: AbortSignal.timeout(timeoutMs),
       }
     );
 
@@ -142,7 +155,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
   latestVersion?: string;
   currentVersion: string;
 }> {
-  const release = await fetchLatestRelease();
+  const release = await fetchLatestRelease(FOREGROUND_CHECK_TIMEOUT_MS);
 
   if (!release) {
     if (!silent) {
@@ -189,7 +202,7 @@ export async function performUpdate(): Promise<void> {
 
   info(`Checking for updates...`);
 
-  const release = await fetchLatestRelease();
+  const release = await fetchLatestRelease(FOREGROUND_CHECK_TIMEOUT_MS);
 
   if (!release) {
     logger.error('Self-update failed: could not fetch the latest release');
@@ -291,14 +304,26 @@ export async function performUpdate(): Promise<void> {
   }
 }
 
-// Read cached update check result synchronously
+// Read cached update check result synchronously. Fields of the wrong type are
+// dropped, so a hand-edited or older cache file cannot break the notifier.
 function readUpdateCache(): UpdateCache | null {
   try {
-    const data = readFileSync(updateCacheFile(), 'utf-8');
-    return JSON.parse(data) as UpdateCache;
+    const data: unknown = JSON.parse(readFileSync(updateCacheFile(), 'utf-8'));
+    if (typeof data !== 'object' || data === null) return null;
+    const { checkedAt, latestVersion, failedAt } = data as Record<string, unknown>;
+    const cache: UpdateCache = { checkedAt: typeof checkedAt === 'number' ? checkedAt : 0 };
+    if (typeof latestVersion === 'string') cache.latestVersion = latestVersion;
+    if (typeof failedAt === 'number') cache.failedAt = failedAt;
+    return cache;
   } catch {
     return null;
   }
+}
+
+// True when `timestamp` lies within the last `windowMs`. A timestamp in the
+// future (clock moved back) counts as outside, so it cannot suppress checks.
+function isWithin(timestamp: number | undefined, now: number, windowMs: number): boolean {
+  return timestamp !== undefined && timestamp <= now && now - timestamp < windowMs;
 }
 
 // Write update check result to cache
@@ -335,36 +360,54 @@ export function isUpdateCommand(argv: string[]): boolean {
 }
 
 // Show a one-line update notification after the command finishes (via beforeExit),
-// and refresh the cache in the background if it is stale.
-export function notifyIfUpdateAvailable(argv: string[] = process.argv): void {
+// and refresh the cache in the background if it is stale. The banner uses the
+// freshly fetched version when the refresh finished, the cached one otherwise.
+// Returns the pending refresh so tests can await it; the CLI does not.
+export function notifyIfUpdateAvailable(argv: string[] = process.argv): Promise<void> {
   // `update` and `update check` report versions themselves; a banner read from
   // the pre-update version and cache would contradict them (#276).
   if (isUpdateCommand(argv)) {
-    return;
+    return Promise.resolve();
   }
 
   // Local `bun run` / source checkout — not a release binary; skip self-update nags.
   if (isRunningUnderBun()) {
-    return;
+    return Promise.resolve();
   }
 
   const cache = readUpdateCache();
   const now = Date.now();
+  let freshLatest: string | undefined;
+  let refresh = Promise.resolve();
 
-  // Trigger a background cache refresh if missing or older than 24h
-  if (!cache || (now - cache.checkedAt) > CHECK_INTERVAL_MS) {
-    fetchLatestRelease()
+  // Refresh when the last successful check is older than 24h, unless a check
+  // failed within the back-off window.
+  const stale = !isWithin(cache?.checkedAt, now, CHECK_INTERVAL_MS);
+  const backingOff = isWithin(cache?.failedAt, now, RETRY_AFTER_FAILURE_MS);
+  const refreshing = stale && !backingOff;
+  if (stale && backingOff) {
+    logger.debug('Update check skipped: backing off after a failed check');
+  }
+  if (refreshing) {
+    refresh = fetchLatestRelease(BACKGROUND_CHECK_TIMEOUT_MS)
       .then(release => {
         if (release) {
+          freshLatest = release.tag_name;
           writeUpdateCache({ checkedAt: now, latestVersion: release.tag_name });
+        } else {
+          // Keep what we knew, and note the failure so the next run backs off.
+          writeUpdateCache({ ...cache, checkedAt: cache?.checkedAt ?? 0, failedAt: now });
         }
       })
       .catch(() => {});
   }
 
-  // Nothing to show if cache is empty or already on latest
-  if (!cache || !isNewerVersion(cache.latestVersion, CURRENT_VERSION)) {
-    return;
+  const cachedLatest = cache?.latestVersion;
+  const cachedIsNewer = cachedLatest !== undefined && isNewerVersion(cachedLatest, CURRENT_VERSION);
+
+  // Nothing can be shown: no refresh pending and the cache has nothing newer.
+  if (!refreshing && !cachedIsNewer) {
+    return refresh;
   }
 
   const updateCmd = getUpdateCommand();
@@ -372,10 +415,14 @@ export function notifyIfUpdateAvailable(argv: string[] = process.argv): void {
 
   process.on('beforeExit', () => {
     if (printed) return;
+    const latest = freshLatest ?? cachedLatest;
+    if (latest === undefined || !isNewerVersion(latest, CURRENT_VERSION)) return;
     printed = true;
     process.stderr.write(
-      chalk.yellow(`\n  Update available: v${CURRENT_VERSION} → ${cache.latestVersion}\n`) +
+      chalk.yellow(`\n  Update available: v${CURRENT_VERSION} → ${latest}\n`) +
       chalk.dim(`  Run: ${updateCmd}\n`),
     );
   });
+
+  return refresh;
 }

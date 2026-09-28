@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`auth login-auto` no longer fails with "The browser started but exposed no page to attach to" while the browser window flashes open and shut**: the page-target lookup now polls for up to 5s instead of probing once, covering the gap between Chrome writing `DevToolsActivePort` and registering its initial tab in `/json/list` (measured ~200–300 ms; previously the one-shot probe missed 5/5 launches on a fast machine) (#274)
+
 ### Added
 - **Diagnostic log file**: every command now writes a rotating JSON Lines log (`~/.local/state/slackcli/logs/slackcli.log` on Linux, `~/Library/Logs/slackcli/` on macOS, `%LOCALAPPDATA%\slackcli\logs\` on Windows) recording the environment and each Slack API call's method, outcome, Slack error code and duration (#279)
   - Tokens and cookies are redacted; message text, file contents and search queries are never logged

@@ -59,6 +59,20 @@ The `onProgress` callback is the house convention for feeding spinner text back
 to the command layer without the lib knowing about `ora` — see `unread.ts` and
 `saved.ts`.
 
+For diagnostics, log through a LogTape category rather than printing:
+
+```ts
+import { getLogger } from '@logtape/logtape';
+
+const logger = getLogger(['slackcli', 'members']);
+logger.debug('Resolved {count} members', { channel_id: channelId, count: members.length });
+```
+
+Log IDs, counts and durations — never message text, file contents, search
+queries or request params. Every Slack call made through `SlackClient.request()`
+is already logged. See [Logging](architecture.md#logging). Do not define a `-v`
+option on a subcommand: it is the global `--verbose`.
+
 ## 4. Add a formatter
 
 `src/lib/formatter.ts`, next to its siblings:

@@ -1,6 +1,6 @@
 {
   "name": "slackcli",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "A fast, developer-friendly CLI tool for interacting with Slack workspaces",
   "main": "src/index.ts",
   "type": "module",
@@ -25,9 +25,12 @@
   "author": "Shaharia Lab",
   "license": "MIT",
   "dependencies": {
+    "@logtape/file": "2.3.6",
+    "@logtape/logtape": "2.3.6",
+    "@logtape/redaction": "2.3.6",
     "@slack/web-api": "^7.15.2",
-    "commander": "^12.1.0",
     "chalk": "^5.3.0",
+    "commander": "^12.1.0",
     "ora": "^8.1.1"
   },
   "devDependencies": {
@@ -36,7 +39,7 @@
     "bun-types": "^1.1.38"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.4.1"
   },
   "overrides": {
     "form-data": "^4.0.6"

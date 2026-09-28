@@ -1,19 +1,42 @@
 import { writeFile, chmod, rename, unlink, mkdtemp, rm } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  accessSync,
+  constants,
+  openSync,
+  closeSync,
+  unlinkSync,
+} from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import chalk from 'chalk';
+import { getLogger } from '@logtape/logtape';
+import { errorMessageForLog } from './tildify.ts';
 import { info, success, error as logError } from './formatter.ts';
 import { getAppVersion, isRunningUnderBun } from '../version.ts';
 
-const CONFIG_DIR = join(homedir(), '.config', 'slackcli');
-const UPDATE_CACHE_FILE = join(CONFIG_DIR, 'update-check.json');
+const logger = getLogger(['slackcli', 'updater']);
+
+const DEFAULT_CONFIG_DIR = join(homedir(), '.config', 'slackcli');
+let configDir = DEFAULT_CONFIG_DIR;
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// After a failed background check, wait this long before trying again, so an
+// offline user does not pay for (and wait on) the check on every command.
+export const RETRY_AFTER_FAILURE_MS = 60 * 60 * 1000; // 1 hour
+// The background check must never make a finished command slow to exit.
+export const BACKGROUND_CHECK_TIMEOUT_MS = 1500;
+// `update` and `update check` were asked for explicitly, so they can wait longer.
+export const FOREGROUND_CHECK_TIMEOUT_MS = 10_000;
 
 interface UpdateCache {
   checkedAt: number;
-  latestVersion: string;
+  latestVersion?: string;
+  // Set when the last background check failed; cleared by the next success.
+  failedAt?: number;
 }
 
 const GITHUB_REPO = 'shaharia-lab/slackcli';
@@ -31,13 +54,25 @@ interface GitHubRelease {
   }>;
 }
 
+// Test seam: point the update cache at a throwaway directory; null restores the default.
+export function setUpdateCacheDirForTesting(dir: string | null): void {
+  configDir = dir ?? DEFAULT_CONFIG_DIR;
+}
+
+function updateCacheFile(): string {
+  return join(configDir, 'update-check.json');
+}
+
 // Get current version
 export function getCurrentVersion(): string {
   return CURRENT_VERSION;
 }
 
-// Fetch latest release from GitHub
-export async function fetchLatestRelease(): Promise<GitHubRelease | null> {
+// Fetch latest release from GitHub. The timeout covers the whole lookup,
+// body included; on expiry the request is aborted and this returns null.
+export async function fetchLatestRelease(
+  timeoutMs: number = FOREGROUND_CHECK_TIMEOUT_MS
+): Promise<GitHubRelease | null> {
   try {
     const response = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
@@ -46,16 +81,23 @@ export async function fetchLatestRelease(): Promise<GitHubRelease | null> {
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'SlackCLI',
         },
+        signal: AbortSignal.timeout(timeoutMs),
       }
     );
 
     if (!response.ok) {
+      logger.debug('Latest-release lookup returned HTTP {http_status}', { http_status: response.status });
       return null;
     }
 
-    return (await response.json()) as GitHubRelease;
-  } catch {
+    const release = (await response.json()) as GitHubRelease;
+    logger.debug('Latest release is {latest_version}', { latest_version: release?.tag_name });
+    return release;
+  } catch (err) {
     // Update checks fail soft: callers treat null as "could not check".
+    logger.debug('Latest-release lookup failed: {error}', {
+      error: errorMessageForLog(err),
+    });
     return null;
   }
 }
@@ -123,7 +165,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
   latestVersion?: string;
   currentVersion: string;
 }> {
-  const release = await fetchLatestRelease();
+  const release = await fetchLatestRelease(FOREGROUND_CHECK_TIMEOUT_MS);
 
   if (!release) {
     if (!silent) {
@@ -134,10 +176,15 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   const latestVersion = release.tag_name;
   const updateAvailable = isNewerVersion(latestVersion, CURRENT_VERSION);
+  logger.info('Update check: current {current_version}, latest {latest_version}, update available {update_available}', {
+    current_version: CURRENT_VERSION,
+    latest_version: latestVersion,
+    update_available: updateAvailable,
+  });
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
-    info('Run "slackcli update" to update');
+    info(`Run ${getUpdateHint(command => `"${command}"`)} to update`);
   }
 
   return {
@@ -150,23 +197,44 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 // Download and install update
 export async function performUpdate(): Promise<void> {
   if (isRunningUnderBun()) {
+    logger.info('Self-update skipped: running from source');
     info('Running from source (bun) — update with `git pull`, not `slackcli update`.');
+    return;
+  }
+
+  // Replacing a binary inside a Homebrew Cellar leaves brew's record out of
+  // sync with what is actually installed (#276), so defer to brew instead.
+  if (isInstalledViaHomebrew()) {
+    logger.info('Self-update skipped: installed via Homebrew');
+    info('Installed via Homebrew — run: brew upgrade slackcli');
     return;
   }
 
   info(`Checking for updates...`);
 
-  const release = await fetchLatestRelease();
+  const release = await fetchLatestRelease(FOREGROUND_CHECK_TIMEOUT_MS);
 
   if (!release) {
+    logger.error('Self-update failed: could not fetch the latest release');
     throw new Error('Unable to fetch latest release');
   }
 
   const latestVersion = release.tag_name;
 
   if (!isNewerVersion(latestVersion, CURRENT_VERSION)) {
+    logger.info('Self-update: already on {current_version} (latest {latest_version})', {
+      current_version: CURRENT_VERSION,
+      latest_version: latestVersion,
+    });
     success(`Already on latest version (v${CURRENT_VERSION})`);
     return;
+  }
+
+  // Replacing the binary renames files inside its folder. Refuse before the
+  // download rather than fail at rename() with a raw EACCES afterwards (#284).
+  if (!isInstallDirWritable()) {
+    logger.error('Self-update refused: the install folder is not writable');
+    throw new Error(installDirNotWritableMessage(dirname(process.execPath)));
   }
 
   info(`Downloading version ${latestVersion}...`);
@@ -174,7 +242,14 @@ export async function performUpdate(): Promise<void> {
   const binaryName = getBinaryName();
   const asset = release.assets.find(a => a.name === binaryName);
 
+  logger.info('Self-update: {current_version} → {latest_version} ({asset})', {
+    current_version: CURRENT_VERSION,
+    latest_version: latestVersion,
+    asset: binaryName,
+  });
+
   if (!asset) {
+    logger.error('Self-update failed: no release asset named {asset}', { asset: binaryName });
     throw new Error(`Binary not found for ${binaryName}`);
   }
 
@@ -182,14 +257,24 @@ export async function performUpdate(): Promise<void> {
   const response = await fetch(asset.browser_download_url);
 
   if (!response.ok) {
+    logger.error('Self-update download returned HTTP {http_status}', { http_status: response.status });
     throw new Error(`Failed to download: ${response.statusText}`);
   }
 
   const buffer = await response.arrayBuffer();
   const bytes = new Uint8Array(buffer);
+  logger.info('Downloaded {bytes} bytes', { bytes: bytes.length });
 
   // Before anything touches the disk: these bytes become the running binary.
-  verifyAssetDigest(binaryName, bytes, asset.digest);
+  try {
+    verifyAssetDigest(binaryName, bytes, asset.digest);
+  } catch (err) {
+    logger.error('Digest verification failed: {error}', {
+      error: errorMessageForLog(err),
+    });
+    throw err;
+  }
+  logger.info('Digest verification passed ({digest})', { digest: asset.digest });
 
   // mkdtemp creates a fresh 0700 directory and fails rather than reusing an
   // existing path, so a same-host user cannot pre-create the file we are about
@@ -217,10 +302,18 @@ export async function performUpdate(): Promise<void> {
     // Remove backup
     await unlink(backupPath);
 
+    // Keep the notifier's cache in step with what is now installed, so the
+    // next run does not announce an update from a stale cached check.
+    writeUpdateCache({ checkedAt: Date.now(), latestVersion });
+
+    logger.info('Self-update installed {latest_version}', { latest_version: latestVersion });
     success(`Updated to version ${latestVersion}`);
     info('Please restart slackcli to use the new version');
   } catch (error: any) {
     // Try to restore from backup if it exists
+    logger.error('Self-update install failed: {error}', {
+      error: errorMessageForLog(error),
+    });
     logError(`Update failed: ${error.message}`);
     throw error;
   } finally {
@@ -228,25 +321,40 @@ export async function performUpdate(): Promise<void> {
   }
 }
 
-// Read cached update check result synchronously
+// Read cached update check result synchronously. Fields of the wrong type are
+// dropped, so a hand-edited or older cache file cannot break the notifier.
 function readUpdateCache(): UpdateCache | null {
   try {
-    const data = readFileSync(UPDATE_CACHE_FILE, 'utf-8');
-    return JSON.parse(data) as UpdateCache;
+    const data: unknown = JSON.parse(readFileSync(updateCacheFile(), 'utf-8'));
+    if (typeof data !== 'object' || data === null) return null;
+    const { checkedAt, latestVersion, failedAt } = data as Record<string, unknown>;
+    const cache: UpdateCache = { checkedAt: typeof checkedAt === 'number' ? checkedAt : 0 };
+    if (typeof latestVersion === 'string') cache.latestVersion = latestVersion;
+    if (typeof failedAt === 'number') cache.failedAt = failedAt;
+    return cache;
   } catch {
     return null;
   }
 }
 
+// True when `timestamp` lies within the last `windowMs`. A timestamp in the
+// future (clock moved back) counts as outside, so it cannot suppress checks.
+function isWithin(timestamp: number | undefined, now: number, windowMs: number): boolean {
+  return timestamp !== undefined && timestamp <= now && now - timestamp < windowMs;
+}
+
 // Write update check result to cache
 function writeUpdateCache(cache: UpdateCache): void {
   try {
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true, mode: 0o700 });
     }
-    writeFileSync(UPDATE_CACHE_FILE, JSON.stringify(cache, null, 2));
-  } catch {
+    writeFileSync(updateCacheFile(), JSON.stringify(cache, null, 2));
+  } catch (err) {
     // Silently fail — cache is best-effort
+    logger.debug('Could not write the update cache: {error}', {
+      error: errorMessageForLog(err),
+    });
   }
 }
 
@@ -256,47 +364,144 @@ export function isInstalledViaHomebrew(): boolean {
   return execPath.includes('homebrew') || execPath.includes('Cellar') || execPath.includes('linuxbrew');
 }
 
-// Return the appropriate update command for this installation
+// True when the current user may create and rename files in the folder that
+// holds the binary, which is what replacing it needs (not write access to the
+// file itself). Takes the path so tests can point it at a folder they control.
+export function isInstallDirWritable(execPath: string = process.execPath): boolean {
+  const dir = dirname(execPath);
+  try {
+    if (process.platform === 'win32') {
+      // access(W_OK) on Windows only reads the read-only attribute, which
+      // folders never carry, and ignores the ACLs that protect folders such as
+      // C:\Program Files. Creating (then removing) a file is the real test.
+      const probe = join(dir, `.slackcli-write-test-${randomUUID()}`);
+      closeSync(openSync(probe, 'wx'));
+      unlinkSync(probe);
+    } else {
+      accessSync(dir, constants.W_OK);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Return the appropriate update command for this installation. A direct
+// install in a folder this user cannot write, such as /usr/local/bin, needs
+// elevated rights; slackcli never elevates itself, it only says how to.
 export function getUpdateCommand(): string {
-  return isInstalledViaHomebrew() ? 'brew upgrade slackcli' : 'slackcli update';
+  if (isInstalledViaHomebrew()) return 'brew upgrade slackcli';
+  // Windows has no sudo: there the command stays the same and getUpdateHint()
+  // asks for an Administrator terminal instead.
+  if (process.platform !== 'win32' && !isInstallDirWritable()) return 'sudo slackcli update';
+  return 'slackcli update';
+}
+
+// The update advice to show a user: the command (passed through `format`, e.g.
+// to quote it), plus "from an Administrator terminal" for an unwritable
+// Windows install. Messages that suggest an update command use this rather
+// than repeating the platform logic.
+export function getUpdateHint(format: (command: string) => string = command => command): string {
+  const command = getUpdateCommand();
+  const needsAdministrator =
+    process.platform === 'win32' && command === 'slackcli update' && !isInstallDirWritable();
+  return format(command) + (needsAdministrator ? ' from an Administrator terminal' : '');
+}
+
+// Why `slackcli update` refuses to start, and what to run instead.
+function installDirNotWritableMessage(installDir: string): string {
+  return `No write permission for ${installDir} — run: ${getUpdateHint()}`;
+}
+
+// True when the invoked command is `update` (or one of its subcommands).
+// argv is process.argv-shaped: runtime, script, then the user's arguments.
+export function isUpdateCommand(argv: string[]): boolean {
+  const command = argv.slice(2).find(arg => !arg.startsWith('-'));
+  return command === 'update';
+}
+
+// An env flag is on when set to anything but empty, `0` or `false` (any case).
+function isTruthyEnv(value: string | undefined): boolean {
+  return !!value && !['0', 'false'].includes(value.toLowerCase());
+}
+
+// True when the user opted out (SLACKCLI_NO_UPDATE_NOTIFIER) or we run in CI.
+export function isUpdateNotifierDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isTruthyEnv(env.SLACKCLI_NO_UPDATE_NOTIFIER) || isTruthyEnv(env.CI);
 }
 
 // Show a one-line update notification after the command finishes (via beforeExit),
-// and refresh the cache in the background if it is stale.
-export function notifyIfUpdateAvailable(): void {
+// and refresh the cache in the background if it is stale. The banner uses the
+// freshly fetched version when the refresh finished, the cached one otherwise.
+// Returns the pending refresh so tests can await it; the CLI does not.
+export function notifyIfUpdateAvailable(
+  argv: string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  // Opted out, or in CI: no cache read, no GitHub request, no banner (#283).
+  if (isUpdateNotifierDisabled(env)) {
+    return Promise.resolve();
+  }
+
+  // `update` and `update check` report versions themselves; a banner read from
+  // the pre-update version and cache would contradict them (#276).
+  if (isUpdateCommand(argv)) {
+    return Promise.resolve();
+  }
+
   // Local `bun run` / source checkout — not a release binary; skip self-update nags.
   if (isRunningUnderBun()) {
-    return;
+    return Promise.resolve();
   }
 
   const cache = readUpdateCache();
   const now = Date.now();
+  let freshLatest: string | undefined;
+  let refresh = Promise.resolve();
 
-  // Trigger a background cache refresh if missing or older than 24h
-  if (!cache || (now - cache.checkedAt) > CHECK_INTERVAL_MS) {
-    fetchLatestRelease()
+  // Refresh when the last successful check is older than 24h, unless a check
+  // failed within the back-off window.
+  const stale = !isWithin(cache?.checkedAt, now, CHECK_INTERVAL_MS);
+  const backingOff = isWithin(cache?.failedAt, now, RETRY_AFTER_FAILURE_MS);
+  const refreshing = stale && !backingOff;
+  if (stale && backingOff) {
+    logger.debug('Update check skipped: backing off after a failed check');
+  }
+  if (refreshing) {
+    refresh = fetchLatestRelease(BACKGROUND_CHECK_TIMEOUT_MS)
       .then(release => {
         if (release) {
+          freshLatest = release.tag_name;
           writeUpdateCache({ checkedAt: now, latestVersion: release.tag_name });
+        } else {
+          // Keep what we knew, and note the failure so the next run backs off.
+          writeUpdateCache({ ...cache, checkedAt: cache?.checkedAt ?? 0, failedAt: now });
         }
       })
       .catch(() => {});
   }
 
-  // Nothing to show if cache is empty or already on latest
-  if (!cache || !isNewerVersion(cache.latestVersion, CURRENT_VERSION)) {
-    return;
+  const cachedLatest = cache?.latestVersion;
+  const cachedIsNewer = cachedLatest !== undefined && isNewerVersion(cachedLatest, CURRENT_VERSION);
+
+  // Nothing can be shown: no refresh pending and the cache has nothing newer.
+  if (!refreshing && !cachedIsNewer) {
+    return refresh;
   }
 
-  const updateCmd = getUpdateCommand();
   let printed = false;
 
   process.on('beforeExit', () => {
     if (printed) return;
+    const latest = freshLatest ?? cachedLatest;
+    if (latest === undefined || !isNewerVersion(latest, CURRENT_VERSION)) return;
     printed = true;
+    // Only now, when the notice prints: on Windows the hint writes a probe file.
     process.stderr.write(
-      chalk.yellow(`\n  Update available: v${CURRENT_VERSION} → ${cache.latestVersion}\n`) +
-      chalk.dim(`  Run: ${updateCmd}\n`),
+      chalk.yellow(`\n  Update available: v${CURRENT_VERSION} → ${latest}\n`) +
+      chalk.dim(`  Run: ${getUpdateHint()}\n`),
     );
   });
+
+  return refresh;
 }

@@ -11,8 +11,9 @@ bun run build:all        # all three
 ```
 
 All of them go through `scripts/build.ts`, a thin wrapper around
-`bun build --compile --minify --bytecode --splitting --format=esm` whose one
-real job is injecting the version:
+`bun build --compile --minify --bytecode --splitting --format=esm` whose real
+jobs are refusing a Bun older than 1.4.1 (see [Why Bun is pinned](#why-bun-is-pinned))
+and injecting the version:
 
 ```
 --define __APP_VERSION__=<version from package.json>
@@ -101,8 +102,13 @@ CI (`ci.yml`, `test.yml`) and the release workflow all pin **Bun 1.4.1**. Bun
 1.3.12 produced corrupt macOS code signatures
 ([oven-sh/bun#29120](https://github.com/oven-sh/bun/issues/29120)), and 1.4.1 is
 the first release where `--bytecode` works for every target we ship (see
-[Why bytecode](#why-bytecode)). Bump the pin deliberately, in all three files at
-once, after reading Bun's release notes.
+[Why bytecode](#why-bytecode)), so it is also the minimum for building from
+source: `scripts/build.ts` exits with `slackcli builds need Bun >= 1.4.1` on an
+older Bun instead of Bun's own `format must be 'cjs' when bytecode is true`
+error. Bump the pin deliberately, in all three workflow files at once, after
+reading Bun's release notes; if the new pin is the new minimum, raise
+`MIN_BUN_VERSION` in `scripts/build.ts` and `engines.bun` in `package.json` with
+it.
 
 ### Why the 150 MB budget matters
 
@@ -155,7 +161,7 @@ same.
 
 ## The self-updater
 
-`src/lib/updater.ts` backs `slackcli update`. Three behaviours worth knowing
+`src/lib/updater.ts` backs `slackcli update`. Four behaviours worth knowing
 before you change it:
 
 - It **fails closed** on verification: the release asset's digest must be a
@@ -164,6 +170,32 @@ before you change it:
   unverified binary.
 - It **refuses to act** when installed via Homebrew (detected from the exec path
   containing `homebrew`, `Cellar`, or `linuxbrew`) or when running under Bun.
+- It **refuses before downloading** when `isInstallDirWritable()` finds the
+  binary's folder unwritable (replacing the binary renames inside that folder),
+  and `getUpdateCommand()` then suggests `sudo slackcli update` — on Windows the
+  command is unchanged and `getUpdateHint()` adds "from an Administrator
+  terminal". The notice, `update check` and the refusal message all build their
+  advice with `getUpdateHint()`; the notice builds it only when it prints. The Homebrew
+  check comes first. slackcli never elevates itself.
+  On Windows the check creates and removes a probe file, because `access(W_OK)`
+  there ignores folder ACLs and always reports a folder writable. Tests make a
+  folder unwritable with `chmod 0o555` and skip those cases as root or on
+  Windows, where mode bits do not apply.
 - The background check runs at most every 24 hours, caches to
   `~/.config/slackcli/update-check.json`, and prints its notice to **stderr** on
-  `beforeExit` — so it never contaminates `--json` on stdout.
+  `beforeExit` — so it never contaminates `--json` on stdout. Its GitHub lookup
+  is aborted after `BACKGROUND_CHECK_TIMEOUT_MS` (1.5 s; `update` / `update check`
+  use `FOREGROUND_CHECK_TIMEOUT_MS`, 10 s), a failure is recorded as `failedAt`
+  and suppresses retries for `RETRY_AFTER_FAILURE_MS` (1 h), and the notice uses
+  the version fetched in the same run when there is one, the cached one
+  otherwise. It is skipped
+  entirely for `update` and `update check`, which report versions themselves,
+  and a successful self-update rewrites the cache with the installed version so
+  the next run does not show a stale notice. It is also skipped entirely (no
+  cache read, no request, no notice) when `isUpdateNotifierDisabled()` finds
+  `SLACKCLI_NO_UPDATE_NOTIFIER` or `CI` set to anything but empty, `0` or
+  `false`. Tests point the cache at a temp directory with
+  `setUpdateCacheDirForTesting()`, never at the real `~/.config/slackcli`, and
+  pass an explicit `env` (e.g. `{}`) to `notifyIfUpdateAvailable()`: CI runners
+  set `CI`, so a test that relies on `process.env` would silently skip its
+  assertions there.

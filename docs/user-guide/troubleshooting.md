@@ -62,6 +62,12 @@ redirect and 2FA) before the `--timeout` window closes, or raise it with
 `--timeout=600`. Note that `--headless` only works *after* a first interactive
 sign-in has populated the profile.
 
+Every `login-auto` run records in the [log file](#logs) which browser was
+used, whether the slackcli browser profile was created or reused, whether the
+DevTools port came up, and the failure reason (for example `browser_exited`,
+`capture_timeout`, `no_cookie`). Captured tokens and cookies are never logged.
+Include those lines when you report a `login-auto` problem.
+
 ## `auth parse-curl` cannot read the clipboard
 
 Clipboard access uses `pbpaste` (macOS), PowerShell (Windows), and
@@ -112,11 +118,17 @@ with what you ran.
 - **Installed via Homebrew**: use `brew upgrade slackcli`. The self-updater
   detects this and refuses so it does not fight the package manager.
 - **Running from source**: there is no binary to replace — `git pull`.
-- **Permission denied**: you lack write access to the binary's location. Install
-  to `~/.local/bin` instead of a system directory.
+- **`No write permission for <folder> — run: sudo slackcli update`**: the binary
+  lives in a folder you cannot write to (for example `/usr/local/bin`), so the
+  update stops before downloading anything. Run `sudo slackcli update`, or on
+  Windows run `slackcli update` from an Administrator terminal. To update
+  without elevated rights, install to `~/.local/bin` instead.
 - **Checksum mismatch**: the update is aborted deliberately. Do not work around
   it — download the binary manually and check it against `checksums.txt` from
   the release.
+- **`Unable to check for updates`**: GitHub did not answer within 10 seconds or
+  returned an error. The background update notice is separate and bounded to
+  1.5 seconds, so a slow network never delays the end of a normal command.
 
 ## Rate limits and slow commands
 
@@ -132,10 +144,79 @@ request (`--types`, `--limit`) to make it finish sooner.
 
 If Slack itself rate-limits you anyway, retry after a pause.
 
+## Logs
+
+Every command writes a diagnostic log. It records what ran (command name and
+option names, never their values), your OS and slackcli version, and each Slack
+API call's method, outcome, Slack error code and duration. It also records
+authentication and `login-auto` steps, workspace config load and save (IDs
+only), credential-store failures, update checks, and any unexpected error with
+its stack trace. A command line that slackcli rejects (an unknown option or
+subcommand, a missing argument, an invalid value) is recorded too, as a
+`usage_error` with the error code, so `logs show --last 1` shows that run and
+not the one before it; `--help` and `--version` write nothing. Tokens and
+cookies are redacted, and message text, file contents and search queries are
+never logged.
+
+| OS | Log file |
+|---|---|
+| Linux | `~/.local/state/slackcli/logs/slackcli.log` (or `$XDG_STATE_HOME/slackcli/logs/`) |
+| macOS | `~/Library/Logs/slackcli/slackcli.log` |
+| Windows | `%LOCALAPPDATA%\slackcli\logs\slackcli.log` |
+
+The file rotates at 5 MiB and keeps 5 rotated files (`slackcli.log.1` … `.5`)
+next to the current one, so it never uses more than about 30 MB. Each line is one JSON object, and every line
+from one run shares a `run_id`.
+
+- **See it live**: add `-v` / `--verbose` to any command to also print debug
+  logs to stderr: `slackcli conversations list -v`.
+- **Choose the level**: `SLACKCLI_LOG_LEVEL=trace|debug|info|warning|error|off`
+  (default `info`). `-v` takes precedence and means `debug`
+  (or keeps `trace` if `SLACKCLI_LOG_LEVEL=trace`).
+- **Turn it off**: `SLACKCLI_LOG_LEVEL=off`.
+- **Put it elsewhere**: `SLACKCLI_LOG_DIR=/path/to/dir`.
+
+If the log directory is not writable, the command still runs and prints one
+warning.
+
+### The `logs` command
+
+```bash
+slackcli logs path                 # where the log file is (works even if logging is off)
+slackcli logs show                 # the most recent run, redacted
+slackcli logs show --last 3        # the last 3 runs, oldest first
+slackcli logs show --run <run_id>  # one run
+slackcli logs clear                # delete the log and its rotated copies (asks first)
+```
+
+- `logs show` puts each run back together across rotated files and prints its
+  environment header (version, OS, install method, command) as `key: value`
+  lines, then one line per record. The patterns that redact the file are
+  applied again on output, so a token written by an older build is still
+  hidden. Unreadable lines are skipped and counted on stderr. `--json` prints
+  `{ log_path, runs: [{ run_id, records }], skipped_lines }`. An unknown
+  `--run` exits 1.
+- `logs path --json` prints `{ log_path, log_dir, exists }`.
+- `logs clear` deletes only `slackcli.log` and `slackcli.log.<n>`, never other
+  files in the directory. It prompts on a terminal; in a script or pipe it
+  refuses unless you pass `--yes`.
+- `logs` commands never write to the log themselves, so `logs show` shows the
+  command you ran before it.
+
+### Sharing logs in a bug report
+
+1. Reproduce the problem.
+2. Run `slackcli logs show --last 1` and paste the output into the issue's
+   **Diagnostic log** field.
+3. Read it before you paste. Tokens and cookies are redacted automatically, but
+   the log still contains IDs (workspace, channel, user) and your OS details;
+   remove anything you do not want public.
+
 ## Still stuck?
 
 - [Open an issue](https://github.com/shaharia-lab/slackcli/issues) with the exact
-  command, the error, and `slackcli --version`.
+  command, the error, and the output of `slackcli logs show --last 1`
+  ([how](#sharing-logs-in-a-bug-report)); skim it before pasting.
 - [Discussions](https://github.com/shaharia-lab/slackcli/discussions) for
   questions.
 - Never paste a token, a cURL command, or your `workspaces.json` into a public

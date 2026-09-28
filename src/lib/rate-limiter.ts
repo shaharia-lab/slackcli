@@ -10,6 +10,10 @@
 // ships as a `bun build --compile` binary under a 150MB CI budget, and this is
 // ~60 lines with no other consumer.
 
+import { getLogger } from '@logtape/logtape';
+
+const logger = getLogger(['slackcli', 'rate-limiter']);
+
 export interface RateLimiterOptions {
   /** Maximum number of tasks allowed to run at the same time. Must be >= 1. */
   maxConcurrent: number;
@@ -73,6 +77,12 @@ export class RateLimiter {
 
   private acquire(): Promise<void> {
     return new Promise<void>((resolve) => {
+      if (this.inFlight >= this.maxConcurrent) {
+        logger.debug('Rate limiter queueing request: {in_flight} in flight', {
+          in_flight: this.inFlight,
+          queued: this.waiters.length + 1,
+        });
+      }
       this.waiters.push(resolve);
       void this.pump();
     });
@@ -93,7 +103,14 @@ export class RateLimiter {
     try {
       while (this.waiters.length > 0 && this.inFlight < this.maxConcurrent) {
         const wait = this.minIntervalMs - (Date.now() - this.lastStartedAt);
-        if (wait > 0) await sleep(wait);
+        if (wait > 0) {
+          logger.debug('Rate limiter waiting {wait_ms} ms ({queued} queued)', {
+            wait_ms: wait,
+            queued: this.waiters.length,
+            in_flight: this.inFlight,
+          });
+          await sleep(wait);
+        }
 
         const next = this.waiters.shift();
         if (!next) break;

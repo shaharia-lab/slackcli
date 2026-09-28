@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { resetSync } from '@logtape/logtape';
+import type { LogRecord } from '@logtape/logtape';
+import { configureLogging } from './logger.ts';
 import {
   RateLimiter,
   SLACK_MAX_CONCURRENT_REQUESTS,
@@ -155,5 +158,34 @@ describe('slackRateLimiter defaults', () => {
     expect(slackRateLimiter).toBeInstanceOf(RateLimiter);
     expect(SLACK_MAX_CONCURRENT_REQUESTS).toBeGreaterThanOrEqual(1);
     expect(SLACK_MIN_REQUEST_INTERVAL_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('RateLimiter logging', () => {
+  afterEach(() => resetSync());
+
+  it('logs a debug record when a task has to wait for the interval', async () => {
+    const records: LogRecord[] = [];
+    configureLogging({ level: 'debug', verbose: false, sinks: { capture: (r) => records.push(r) } });
+
+    await drive(new RateLimiter({ maxConcurrent: 1, minIntervalMs: 20 }), 3);
+
+    const waits = records.filter((r) => r.properties.wait_ms !== undefined);
+    expect(waits.length).toBeGreaterThanOrEqual(1);
+    for (const record of waits) {
+      expect(record.level).toBe('debug');
+      expect(record.category).toEqual(['slackcli', 'rate-limiter']);
+      expect(record.properties.wait_ms).toBeGreaterThan(0);
+    }
+    expect(records.some((r) => r.message.join('').includes('queueing'))).toBe(true);
+  });
+
+  it('logs nothing when no task waits', async () => {
+    const records: LogRecord[] = [];
+    configureLogging({ level: 'debug', verbose: false, sinks: { capture: (r) => records.push(r) } });
+
+    await new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }).run(async () => 'once');
+
+    expect(records).toHaveLength(0);
   });
 });

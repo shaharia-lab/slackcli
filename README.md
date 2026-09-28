@@ -99,6 +99,8 @@ and put it somewhere on your `PATH`.
 <details>
 <summary>From source (Bun)</summary>
 
+Requires Bun 1.4.1+.
+
 ```bash
 git clone https://github.com/shaharia-lab/slackcli.git
 cd slackcli
@@ -245,7 +247,7 @@ Configuration lives in `~/.config/slackcli/` (directory mode `0700`):
 | File | Contents |
 |---|---|
 | `workspaces.json` | Workspace credentials (mode `0600`) |
-| `update-check.json` | Cached update check, refreshed at most daily |
+| `update-check.json` | Cached update check, refreshed at most daily (off with `SLACKCLI_NO_UPDATE_NOTIFIER=1` or in CI) |
 | `browser-profile/` | The browser profile used by `auth login-auto` |
 
 `workspaces.json` and `browser-profile/` both hold **live credentials** — do not commit,
@@ -257,7 +259,7 @@ sync, or share them. `slackcli auth logout` clears both.
 
 ## 📖 Command reference
 
-Seven command groups. `slackcli <group> --help` always prints the authoritative options
+Command groups at a glance. `slackcli <group> --help` always prints the authoritative options
 for the version you have installed.
 
 <details>
@@ -343,7 +345,7 @@ slackcli search people "ada@example.com"
 </details>
 
 <details>
-<summary><code>saved</code> · <code>canvas</code> · <code>files</code> · <code>update</code></summary>
+<summary><code>saved</code> · <code>canvas</code> · <code>files</code> · <code>update</code> · <code>logs</code></summary>
 
 <br>
 
@@ -356,9 +358,10 @@ slackcli files read F1234567890              # email plain_text or original text
 slackcli files download F1234567890 --output ./report.pdf
 slackcli update check                        # is there a newer version?
 slackcli update                              # install it
+slackcli logs show --last 1                  # redacted diagnostic log of the last run
 ```
 
-📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md) · [files](docs/user-guide/files.md)
+📄 [saved items](docs/user-guide/saved.md) · [canvas](docs/user-guide/canvas.md) · [files](docs/user-guide/files.md) · [logs](docs/user-guide/troubleshooting.md#logs)
 
 </details>
 

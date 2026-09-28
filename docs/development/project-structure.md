@@ -16,7 +16,7 @@ slackcli/
 │   │   └── update.ts
 │   ├── lib/                      All logic; tests live beside each file
 │   └── types/index.ts            Shared interfaces
-├── scripts/build.ts              Compile wrapper that injects __APP_VERSION__
+├── scripts/build.ts              Compile wrapper: checks Bun >= 1.4.1, injects __APP_VERSION__
 ├── .github/workflows/            CI, tests, release, policy checks
 ├── .github/ISSUE_TEMPLATE/       Issue forms; blank issues are disabled
 ├── .github/PULL_REQUEST_TEMPLATE.md  Linked-issue reference + checklist
@@ -40,6 +40,7 @@ They hold no Slack API knowledge.
 | `canvas.ts` | `list`, `read` |
 | `conversations.ts` | `list`, `read`, `get`, `unread` |
 | `files.ts` | `info`, `read`, `download` |
+| `logs.ts` | `path`, `show`, `clear` |
 | `messages.ts` | `send`, `react`, `edit`, `draft`, `list-drafts` |
 | `saved.ts` | `list` |
 | `search.ts` | `messages`, `channels`, `people` |
@@ -49,7 +50,7 @@ They hold no Slack API knowledge.
 
 | Module | Responsibility |
 |---|---|
-| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter. |
+| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, and logs each call's method, auth type, duration and outcome. |
 | `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
@@ -63,7 +64,12 @@ They hold no Slack API knowledge.
 | `drafts.ts` | Validates draft-list limits, extracts text from `rich_text`, and projects undocumented responses into the public command contract. |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
 | `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
-| `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. |
+| `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. Logs waits at `debug`. |
+| `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header, and the exit override that logs Commander usage errors. Called once from `src/index.ts`; libs log via LogTape's `getLogger` directly. |
+| `log-redaction.ts` | The token/cookie/JWT redaction patterns applied to every log line. |
+| `logs.ts` | `logs` command work: lists the log file and its rotations oldest first, reads them line by line, redacts each line again, groups records by `run_id`, selects runs, formats them as text, and deletes only the log files. |
+| `tildify.ts` | Home directory as `~` in log records: `tildify()` for a path, `tildifyText()` for free text, `errorMessageForLog()` for an error's message. Its own module so libs can use it without importing `logger.ts`. |
+| `process-errors.ts` | Last-resort `unhandledRejection` / `uncaughtException` handlers: log the error with its stack, print the message, exit 1. Installed from `src/index.ts`. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types. |

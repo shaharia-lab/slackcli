@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
+import { resetSync } from '@logtape/logtape';
 import { SlackClient } from './slack-client.ts';
+import { configureLogging } from './logger.ts';
 import { RateLimiter, SLACK_MIN_REQUEST_INTERVAL_MS } from './rate-limiter.ts';
 
 class TestSlackClient extends SlackClient {
@@ -825,5 +828,198 @@ describe('SlackClient request throttling', () => {
 
     await expect(client.getUserInfo('U1')).rejects.toThrow('network down');
     await expect(client.getUserInfo('U2')).resolves.toMatchObject({ ok: true });
+  });
+});
+
+describe('SlackClient request logging', () => {
+  const browserConfig = {
+    workspace_id: 'T123',
+    workspace_name: 'Test Workspace',
+    auth_type: 'browser',
+    xoxd_token: 'xoxd-AbCdEf%2FGhIjKl%3D%3D',
+    xoxc_token: 'xoxc-1234567890-1234567890-abcdef0123456789',
+    workspace_url: 'https://example.slack.com',
+  } as const;
+  const noPacing = () => new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 });
+
+  let logDir: string;
+
+  afterEach(async () => {
+    resetSync();
+    await rm(logDir, { recursive: true, force: true });
+  });
+
+  async function logTo(): Promise<string> {
+    logDir = await mkdtemp(join(tmpdir(), 'slackcli-client-log-'));
+    return configureLogging({ level: 'trace', verbose: false, dir: logDir }).logFile!;
+  }
+
+  function records(file: string): Array<Record<string, any>> {
+    return readFileSync(file, 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
+  }
+
+  it('logs a failing browser call with its Slack error and HTTP status, and no credential', async () => {
+    const file = await logTo();
+    globalThis.fetch = (async (_input, _init) => Response.json({ ok: false, error: 'channel_not_found' })) as typeof fetch;
+
+    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing() });
+    await expect(client.postMessage('C123', 'confidential message text')).rejects.toThrow('channel_not_found');
+
+    const text = readFileSync(file, 'utf-8');
+    expect(text).not.toContain('xoxc-');
+    expect(text).not.toContain('xoxd-');
+    expect(text).not.toContain('AbCdEf');
+    expect(text).not.toContain('confidential message text');
+
+    const failure = records(file).find((r) => r.level === 'WARN')!;
+    expect(failure.properties).toMatchObject({
+      method: 'chat.postMessage',
+      auth_type: 'browser',
+      ok: false,
+      http_status: 200,
+      slack_error: 'channel_not_found',
+      reason: 'channel_not_found',
+    });
+    expect(typeof failure.properties.duration_ms).toBe('number');
+  });
+
+  it('logs the HTTP status of a non-2xx browser response', async () => {
+    const file = await logTo();
+    globalThis.fetch = (async (_input, _init) => new Response('slow down', { status: 429 })) as typeof fetch;
+
+    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing() });
+    await expect(client.getUserInfo('U1')).rejects.toThrow('status: 429');
+
+    const failure = records(file).find((r) => r.level === 'WARN')!;
+    expect(failure.properties).toMatchObject({ method: 'users.info', http_status: 429, ok: false, reason: 'HTTP 429' });
+    expect(failure.properties.slack_error).toBeUndefined();
+    expect(failure.message).toBe('Slack API "users.info" failed: "HTTP 429"');
+    expect(failure.message).not.toContain('undefined');
+  });
+
+  it('labels a transport failure with no HTTP status as a request error', async () => {
+    const file = await logTo();
+    globalThis.fetch = (async (_input, _init): Promise<Response> => {
+      throw new TypeError('network down');
+    }) as typeof fetch;
+
+    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing() });
+    await expect(client.getUserInfo('U1')).rejects.toThrow('network down');
+
+    const failure = records(file).find((r) => r.level === 'WARN')!;
+    expect(failure.properties).toMatchObject({ method: 'users.info', ok: false, reason: 'request error' });
+    expect(failure.properties.http_status).toBeUndefined();
+    expect(failure.message).not.toContain('undefined');
+  });
+
+  it('logs a successful call at info with its duration, and only param names at trace', async () => {
+    const file = await logTo();
+    globalThis.fetch = (async (_input, _init) => Response.json({ ok: true, user: { id: 'U1' } })) as typeof fetch;
+
+    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing() });
+    await client.getUserInfo('U1');
+
+    const all = records(file);
+    const ok = all.find((r) => r.level === 'INFO')!;
+    expect(ok.properties).toMatchObject({ method: 'users.info', auth_type: 'browser', ok: true, http_status: 200 });
+    expect(typeof ok.properties.duration_ms).toBe('number');
+    const trace = all.find((r) => r.level === 'TRACE')!;
+    expect(trace.properties.param_names).toEqual(['user']);
+    expect(JSON.stringify(trace)).not.toContain('"U1"');
+  });
+
+  it('logs the Slack error code of a failing standard-token call', async () => {
+    const file = await logTo();
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-1234567890-abcdefghijkl',
+      token_type: 'bot',
+    }, { rateLimiter: noPacing() });
+    (client as unknown as { webClient: { apiCall: () => Promise<unknown> } }).webClient = {
+      apiCall: async () => {
+        throw Object.assign(new Error('An API error occurred: not_authed'), { data: { ok: false, error: 'not_authed' } });
+      },
+    };
+
+    await expect(client.testAuth()).rejects.toThrow('not_authed');
+
+    const failure = records(file).find((r) => r.level === 'WARN')!;
+    expect(failure.properties).toMatchObject({
+      method: 'auth.test',
+      auth_type: 'standard',
+      ok: false,
+      slack_error: 'not_authed',
+    });
+    expect(readFileSync(file, 'utf-8')).not.toContain('abcdefghijkl');
+  });
+
+  it('logs a file upload with its status, size and duration, but not the upload URL or file name', async () => {
+    const file = await logTo();
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-upload-log-'));
+    const filePath = join(dir, 'secret-plans.txt');
+    await Bun.write(filePath, 'Quarterly report');
+    globalThis.fetch = (async (_input, _init) => new Response('', { status: 200 })) as typeof fetch;
+
+    try {
+      await new TestSlackClient().uploadFileExternal('C123', filePath);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+
+    const text = readFileSync(file, 'utf-8');
+    expect(text).not.toContain('uploads.slack.test');
+    expect(text).not.toContain('secret-plans');
+    const upload = records(file).find((r) => r.message.startsWith('File upload'))!;
+    expect(upload.properties).toMatchObject({ http_status: 200, bytes: 16 });
+    expect(typeof upload.properties.duration_ms).toBe('number');
+  });
+
+  it('logs each file download hop by host only, never the path or file name', async () => {
+    const file = await logTo();
+    let call = 0;
+    globalThis.fetch = (async (_input, _init) => {
+      call += 1;
+      if (call === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'https://downloads.slack-edge.com/F123/secret-plans.pdf?t=xyz' },
+        });
+      }
+      return new Response('bytes', { status: 200 });
+    }) as typeof fetch;
+
+    await new TestSlackClient().fetchFile('https://files.slack.com/files-pri/T123-F123/secret-plans.pdf');
+
+    const text = readFileSync(file, 'utf-8');
+    expect(text).not.toContain('secret-plans');
+    expect(text).not.toContain('files-pri');
+    const hops = records(file).filter((r) => r.message.startsWith('File download'));
+    expect(hops.map((r) => r.properties)).toEqual([
+      expect.objectContaining({ host: 'files.slack.com', http_status: 302, redirects: 0 }),
+      expect.objectContaining({ host: 'downloads.slack-edge.com', http_status: 200, redirects: 1 }),
+    ]);
+  });
+
+  it('routes @slack/web-api warnings into the log but drops its debug output', async () => {
+    const file = await logTo();
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-1234567890-abcdefghijkl',
+      token_type: 'bot',
+    });
+    const sdkLogger = (client as unknown as { webClient: { logger: { debug: (m: string) => void; info: (m: string) => void } } })
+      .webClient.logger;
+
+    sdkLogger.debug('http request body: {"text":"private words"}');
+    sdkLogger.info('API Call failed due to rate limiting. Will retry in 3 seconds.');
+
+    const text = readFileSync(file, 'utf-8');
+    expect(text).not.toContain('private words');
+    const retry = records(file).find((r) => r.logger === 'slackcli.slack-web-api')!;
+    expect(retry.properties.text).toContain('rate limiting');
   });
 });

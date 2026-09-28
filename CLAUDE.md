@@ -86,14 +86,14 @@ The hooks run the same checks as CI: trailing whitespace, EOF, YAML/JSON, merge-
 
 Detailed, maintained references live in `docs/development/` — [architecture.md](docs/development/architecture.md), [project-structure.md](docs/development/project-structure.md) (per-file responsibilities), [adding-a-command.md](docs/development/adding-a-command.md), [testing.md](docs/development/testing.md), [build-and-release.md](docs/development/build-and-release.md). Read the relevant page before touching an area; do not rely on this summary alone.
 
-- **Entry point**: `src/index.ts` registers the Commander.js groups `auth`, `canvas`, `conversations`, `emoji`, `files`, `messages`, `saved`, `search`, `team`, `usergroups`, and `update`. Each lives in `src/commands/<group>.ts` as a `create<Group>Command()` factory.
+- **Entry point**: `src/index.ts` registers the Commander.js groups `auth`, `canvas`, `conversations`, `emoji`, `files`, `logs`, `messages`, `saved`, `search`, `team`, `usergroups`, `users`, and `update`. Each lives in `src/commands/<group>.ts` as a `create<Group>Command()` factory.
 - **Commands parse and print; `src/lib/` does the work.** Anything worth testing belongs in `src/lib/`, not in a command file.
 - **Dual auth, one seam**: `src/lib/slack-client.ts` dispatches every call to `standardRequest()` (via `@slack/web-api`) or `browserRequest()` (raw `fetch` with browser headers) based on the workspace's stored `auth_type`. Add new Slack API calls there. Every call is paced by the process-wide rate limiter in `src/lib/rate-limiter.ts` — never call Slack around it.
 - **Browser-only capabilities**: `drafts.create` (message drafts) and reading thread replies need browser auth; guard and document such paths.
 - **Token capture**: paste a DevTools cURL command (`curl-parser.ts`), or `auth login-auto`, which launches a Chromium-family browser with a dedicated profile and harvests tokens over the Chrome DevTools Protocol (`browser-launcher.ts` → `cdp-client.ts` → `browser-auth.ts`). `cdp-client.ts` is hand-rolled because Playwright would blow the 150 MB binary budget.
 - **Workspace config**: `src/lib/workspaces.ts` owns `~/.config/slackcli/workspaces.json` (dir `0o700`, file `0o600`). The first workspace becomes the default; `auth set-default` changes it.
 - **Shared types**: all in `src/types/index.ts`. `WorkspaceConfig` is a discriminated union on `auth_type`; narrow it rather than string-checking.
-- **Dependencies**: exactly four runtime deps (`@slack/web-api`, `commander`, `chalk`, `ora`) and a 150 MB binary budget. A new dependency needs a real justification (constitution §8).
+- **Dependencies**: exactly seven runtime deps (`@slack/web-api`, `commander`, `chalk`, `ora`, and the zero-dependency LogTape trio `@logtape/logtape`, `@logtape/file`, `@logtape/redaction`) and a 150 MB binary budget. A new dependency needs a real justification (constitution §8).
 
 ## Conventions New Code Must Follow
 
@@ -101,6 +101,7 @@ Detailed, maintained references live in `docs/development/` — [architecture.md
 - **Write commands gate on confirmation**: use `confirmWrite()` (see `src/commands/usergroups.ts`). `--yes` proceeds, a TTY prompts y/N, a non-TTY without `--yes` refuses. Never auto-pass.
 - **Accept a Slack URL wherever an ID is accepted** (`normalizeIdentifier` in `slack-url-parser.ts`) and warn on workspace mismatch; support `--workspace <id|name>`.
 - **Never print a token value.** Config and token handling must keep the `0o600`/`0o700` modes.
+- **Logging**: libs log through `getLogger(['slackcli', '<area>'])` imported from `@logtape/logtape`; `src/lib/logger.ts` configures it once from `src/index.ts`. Log IDs, method names, counts and durations — never request params, message text, file contents or search queries. Records are redacted at the sink, but that is the safety net, not the policy. stdout is never a log sink; `-v` is reserved globally.
 - **Progress**: commands own the `ora` spinner; libs report through an `onProgress` callback. Errors: `spinner.fail(...)`, `error(message)`, `process.exit(1)`.
 - **Tests** sit next to the source as `*.test.ts` using Bun's runner; every `src/lib/` module gets one, covering edge cases. `curl-parser.test.ts` and `cdp-client.test.ts` are the reference patterns (the latter shows testing around an untestable transport via a seam).
 - **Commit messages** follow the existing `type(scope): imperative summary` style (`feat`, `fix`, `docs`, `ci`, `chore`), one focused change per PR.

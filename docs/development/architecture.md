@@ -5,7 +5,7 @@ parse and print, libraries do the work, and exactly one class knows how to talk
 to Slack.
 
 ```
-src/index.ts                 Commander program; registers 7 command groups
+src/index.ts                 Commander program; registers the command groups
         │
         ▼
 src/commands/*.ts            Parse flags, call lib, format output, set exit code
@@ -263,6 +263,87 @@ That is [issue #73](https://github.com/shaharia-lab/slackcli/issues/73), and
 [#77](https://github.com/shaharia-lab/slackcli/issues/77) tracks the same hazard
 on the non-JSON paths.
 
+## Logging
+
+Every run writes a JSON Lines log through [LogTape](https://logtape.org). The
+pieces:
+
+- **`src/lib/logger.ts`** is configuration only. `startLogging()` runs once, in
+  the root command's `preAction` hook in `src/index.ts` (or, for a rejected
+  command line, from the exit override described below), so `--help` and
+  `--version` stay side-effect free. It resolves the level and directory,
+  configures LogTape, and writes a `session_start` record.
+- **Usage errors** (unknown option, missing argument, invalid value, …) are
+  rejected by Commander before `preAction` runs, so they are logged from an
+  exit override instead. `installUsageErrorLogging()` walks the whole command
+  tree after the last `addCommand()` and installs one on every command:
+  `addCommand()` does not copy the parent's override, and Commander only calls
+  the failing command's own. On a code `isUsageError()` accepts, the override
+  calls `startLogging()` for the failing command (unless `preAction` already
+  did) and writes a `usage_error` record in `slackcli.cli` with the Commander
+  `code`, `exit_code` and command path, then exits with Commander's exit code.
+  Commander's message is not logged, since `invalidArgument` echoes the user's
+  value. Help and version exits skip logging entirely.
+- **Libraries log through categories**, `getLogger(['slackcli', '<area>'])`,
+  imported straight from `@logtape/logtape` (not from `logger.ts`, which imports
+  `updater.ts` and would invite an import cycle). A logger is a no-op until
+  configured, so lib code and its tests need no setup. Current categories:
+  `session`, `slack-client`, `slack-web-api` (the SDK's own messages),
+  `rate-limiter`, `auth`, `browser-launcher`, `cdp`, `browser-auth`,
+  `workspaces`, `secret-store`, `updater`, `process`. Paths go through
+  `tildify()` (`src/lib/tildify.ts`), every logged `error` field through
+  `errorMessageForLog()`, and stack traces through `tildifyText()`, so the home
+  directory (and with it the username) is written as `~`.
+- **Sinks.** A rotating file sink (`@logtape/file`, 5 MiB per file, the live
+  file plus 5 rotated ones, so about 30 MB at most) with `bufferSize: 0`, so
+  every record is on disk before the next line of code runs
+  and survives any `process.exit()`. A stderr sink is added only with
+  `-v/--verbose`. **stdout is never a sink**, so `--json` output is unaffected.
+  The `["logtape", "meta"]` category is configured explicitly, because an
+  unconfigured meta logger gets LogTape's default console sink, which prints to
+  stdout.
+- **Every record carries `run_id`**, added by the sinks, so one run's lines can
+  be pulled out of a shared file.
+- **Redaction** (`src/lib/log-redaction.ts`, `@logtape/redaction`) is applied to
+  the formatted line in every sink: Slack tokens (`xox?-…`, including
+  `xoxe.xoxp-` and URL-encoded values), the `d=` cookie, and JWTs. It is the
+  safety net. The policy is that call sites **never log request params, message
+  text, file contents or search queries** — log IDs, method names, counts,
+  statuses and durations. `SlackClient.request()` logs only param *names*, at
+  `trace`. The SDK adapter drops `@slack/web-api`'s debug output, which
+  serialises full request bodies. The `login-auto` path logs outcomes and typed
+  failure reasons only: `cdp` never logs command `params`/`result` or event
+  payloads, `browser-auth` logs "found / not found" and team IDs, never a
+  token, cookie or `postData`, and the launcher logs the start URL's origin
+  only. A corrupt `workspaces.json` is logged by its parse error, with quoted
+  fragments (which can be file contents) replaced by `<redacted>`.
+- **Unhandled errors**: `src/index.ts` runs `program.parse()`, so a rejection
+  from an async action is not awaited. `installProcessErrorHandlers()`
+  (`src/lib/process-errors.ts`), registered in `preAction` after logging is
+  configured, logs `unhandledRejection` / `uncaughtException` at `error` with
+  the stack, prints the message with `formatter.error`, and exits 1.
+- **Location**: `SLACKCLI_LOG_DIR`, else `$XDG_STATE_HOME/slackcli/logs` (default
+  `~/.local/state/slackcli/logs`) on Linux, `~/Library/Logs/slackcli` on macOS,
+  `%LOCALAPPDATA%\slackcli\logs` on Windows. The directory is created `0o700`
+  and the file kept `0o600`; the rotating sink opens files itself, so the
+  process umask is tightened to `077` around its calls to cover files created by
+  rotation. An existing directory's mode is left alone.
+- **Level**: `-v` (debug) > `SLACKCLI_LOG_LEVEL` > `info`; `-v` never lowers an
+  explicit `trace`. `off` configures no sinks and creates no file.
+- **`slackcli logs` does not write the file** (`shouldWriteLogFile()`): `logs
+  show` would otherwise show its own run, and `logs clear` would delete a file
+  the process holds open (which fails on Windows). Reading is in
+  `src/lib/logs.ts`, which re-applies `SLACK_REDACTION_PATTERNS` to every line.
+- **Fail-safe**: an unusable directory, or a write failing mid-run, disables the
+  file sink with exactly one stderr warning. Logging never fails a command.
+
+`session_start` records `version`, `os`, `os_release`, `arch`, `runtime`,
+`install_method` (`homebrew` | `source` | `binary`, reusing
+`isRunningUnderBun()` then `isInstalledViaHomebrew()`, so a source run under a
+Homebrew-installed Bun reports `source`), `exec_path` (home as
+`~`), `command` (the subcommand path), `options` (option **names** given on the
+command line, never values or positional arguments) and `stdout_tty`.
+
 ## Adding to the client
 
 To wire up a new Slack API method:
@@ -273,5 +354,9 @@ To wire up a new Slack API method:
 3. Add types to `src/types/index.ts` rather than passing `any` around.
 4. Add a formatter if the output is human-facing, and a `--json` shape if it is
    script-facing.
+
+The call is logged for free by `request()` (method, auth type, duration,
+outcome, Slack error code; the failure line's `reason` is that code, else
+`HTTP <status>`, else `request error`). Do not add logging that includes `params`.
 
 Worked example: [adding a command](adding-a-command.md).

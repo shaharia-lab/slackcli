@@ -1,14 +1,15 @@
 /* ==========================================================================
    SlackCLI site - components
 
-   Everything here reads colour through the tokens in tokens.css. The rules are
-   ordered shared primitives, then chrome, then per-surface (landing, blog).
-   Docs pages are Starlight's markup and are themed in starlight.css.
+   Everything here reads colour through the design tokens, which come from
+   site-kit's agento-code theme (imported in src/layouts/Page.astro). The rules
+   are ordered shared primitives, then chrome, then per-surface (landing, blog).
+   Docs pages are Starlight's markup and are themed by site-kit.
 
    The element defaults and the page-level primitives are NOT here: `*`, `body`,
    `a`, `img`, `.label`, `.serif`, `.rule`, `.shell`, `.section`, `.split`,
    `.grid3` and `.codeblock` all come from the design system's base.css, which
-   tokens.css imports. Re-declaring one of them here is how a design system
+   the theme's tokens.css imports. Re-declaring one of them here is how a design system
    stops being one.
 
    One rule in particular must not come back. `.codeblock .s` setting the code

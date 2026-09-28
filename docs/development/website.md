@@ -111,26 +111,44 @@ so a post is the one place a route is spelled out by hand, and
 | `web/site.config.mjs` | The address, the repo, the share card, the analytics and consent snippets |
 | `web/docs.manifest.mjs` | Which docs publish, in what order, under what heading |
 | `web/faq.config.mjs` | The landing FAQ, rendered both as markup and as `FAQPage` structured data |
-| `web/astro.config.mjs` | Astro, Starlight, the sidebar, the code-block theme |
+| `web/astro.config.mjs` | Astro, Starlight, the sidebar, and the site-kit options (theme, Star button, Edit on GitHub map) |
 | `web/src/pages/index.astro` | The landing page |
 | `web/src/components/Term.astro` | The replayed terminal session in the hero |
 | `web/src/components/Install.astro` | The install section, driven by the release API |
-| `web/src/styles/` | `tokens.css` (design system shim), `site.css` (landing and blog), `starlight.css` (docs) |
+| `web/src/styles/` | `site.css` (landing and blog) and `consent.css` (cookie banner); the theme itself comes from site-kit |
 | `web/scripts/` | `sync-docs`, `fetch-release`, `clean`, `check-links`, `render-og` |
 | `web/design/og-image.html` | Source for `public/og.png`, rendered by hand |
 
-## Design system
+## Design system and site-kit
 
-All colour, type, spacing, border and motion tokens come from
-[`@shaharia-lab/agento-code`](https://www.npmjs.com/package/@shaharia-lab/agento-code),
-the design system shared by every Shaharia Lab open-source project site.
-`web/src/styles/tokens.css` is a shim that imports it; nothing in this
-repository redefines a token.
+The look and the docs chrome come from
+[`@shaharia-lab/site-kit`](https://github.com/shaharia-lab/site-kit)
+([docs](https://shaharia-lab.github.io/site-kit/docs/)), the layer shared by
+every Shaharia Lab open-source project site. `web/astro.config.mjs` passes it to
+Starlight as `plugins: siteKit({ ... })`:
 
-Read a colour through a token, never as a literal. The two deliberate
-exceptions are documented where they sit: the code-block ground in
-`astro.config.mjs`, which Expressive Code has to parse as a real colour at build
-time, and `web/design/og-image.html`, which is rendered standalone with no
+- **Theme.** The `agento-code` theme with the `forest` accent: colour, type,
+  spacing, border and motion tokens from
+  [`@shaharia-lab/agento-code`](https://www.npmjs.com/package/@shaharia-lab/agento-code),
+  self-hosted fonts, the Starlight surfaces and the code-block colours, in light
+  and dark. `web/src/layouts/Page.astro` imports the same theme files, so the
+  landing page and blog share one definition with the docs.
+- **Page actions** under every docs title: Copy page, Open in ChatGPT, Open in
+  Claude, View as Markdown and Edit on GitHub.
+- **A Markdown twin** of every docs page at its URL plus `.md`, and
+  `/llms.txt`, `/llms-full.txt`, `/llms-small.txt`.
+- **Edit on GitHub** is mapped from `web/docs.manifest.mjs` to the file in
+  `docs/`, because the generated copy under `web/src/content/docs/` is
+  gitignored and would 404.
+- **The Star button** in the docs header, with the count from
+  `web/src/data/repo.json`.
+
+A change to the look or the docs chrome belongs in site-kit, not here: it lands
+once and reaches every site with a version bump. Only site-specific CSS lives in
+`web/src/styles/`.
+
+Read a colour through a token, never as a literal. The one deliberate exception
+here is `web/design/og-image.html`, which is rendered standalone with no
 stylesheet behind it.
 
 ## Analytics

@@ -118,6 +118,13 @@ repo. It installs with Bun 1.4.1, runs `bun test --coverage
 - **The quality gate** is SonarCloud's default "Sonar way". Its coverage
   condition is **at least 80% on new code**, not on the overall figure, so a PR
   that adds untested lines (typically in `src/commands/`) fails the gate.
+- **What counts as new code.** On a PR it is always the PR's own diff. On
+  `main` the project uses SonarCloud's **Previous version** definition: new code
+  is everything since the analysed version last changed. The workflow sends
+  `sonar.projectVersion` from `package.json` (validated as SemVer first), so the
+  period resets when a release PR bumps the version, and `main`'s gate judges
+  what is going into the next release. Leave the SonarCloud setting on
+  "Previous version"; without a version it would never reset (#306).
 
 Results: [shaharia-lab_slackcli on SonarQube Cloud](https://sonarcloud.io/project/overview?id=shaharia-lab_slackcli).
 

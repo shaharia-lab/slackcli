@@ -93,7 +93,7 @@ function applyPattern(text: string, { pattern, replacement }: RedactionPattern):
  * redacted, but a line written by an older build, or edited by hand, may not be.
  */
 export function redactText(text: string): string {
-  return SLACK_REDACTION_PATTERNS.reduce(applyPattern, text);
+  return SLACK_REDACTION_PATTERNS.reduce((acc, pattern) => applyPattern(acc, pattern), text);
 }
 
 function parseLine(line: string): { runId: string; record: LogRecord } | undefined {

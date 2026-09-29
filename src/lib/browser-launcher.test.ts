@@ -17,6 +17,7 @@ import {
   PROFILE_FORMAT,
   hasExited,
   signalBrowserTree,
+  buildLaunchArgs,
 } from './browser-launcher';
 
 const CHROME_MAC = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -169,6 +170,39 @@ describe('escapeEre', () => {
       '/home/user/slackcli-profile'
     );
   });
+});
+
+describe('buildLaunchArgs', () => {
+  const BASE_ARGS = [
+    '--remote-debugging-port=0',
+    '--user-data-dir=/p',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-blink-features=AutomationControlled',
+  ];
+
+  it('builds the base flags with no headless flag and no start URL', () => {
+    expect(buildLaunchArgs('/p', {})).toEqual({ ok: true, args: BASE_ARGS });
+  });
+
+  it('adds --headless=new and appends a safe start URL last', () => {
+    expect(buildLaunchArgs('/p', { headless: true, startUrl: 'https://acme.slack.com/' })).toEqual({
+      ok: true,
+      args: [...BASE_ARGS, '--headless=new', 'https://acme.slack.com/'],
+    });
+  });
+
+  it.each(['--proxy-server=http://evil', 'file:///etc/passwd', 'javascript:alert(1)', 'not a url'])(
+    'refuses the unsafe start URL %p instead of passing it as argv',
+    (startUrl) => {
+      const result = buildLaunchArgs('/p', { startUrl });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe('invalid_start_url');
+        expect(result.message).toContain(startUrl);
+      }
+    }
+  );
 });
 
 describe('hasExited', () => {

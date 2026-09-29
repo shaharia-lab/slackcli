@@ -112,6 +112,7 @@ Detailed, maintained references live in `docs/development/` — [architecture.md
 
 - **CI** (`ci.yml`): actionlint (same pinned hook as pre-commit) → type-check → build → binary smoke test (`--version`/`--help`) → binary size check (max 150 MB).
 - **Tests** (`test.yml`): `bun test`, plus built-binary smoke tests of `--help`, `--version`, and `auth --help`.
+- **SonarQube Cloud** (`sonar.yml`): `bun test` LCOV coverage → `sonarqube-scan-action` scan + quality-gate wait, on `main` pushes and same-repo PRs (fork and Dependabot PRs skipped). Config in `sonar-project.properties`. Non-blocking for now: the scan step is `continue-on-error`, so check its output, not the check colour.
 - **PR gate** (`pr-linked-issue.yml`): the PR must link an open issue labelled `ready-for-pr` (constitution §1–2); the `no-issue-needed` label on the PR is the maintainer escape hatch.
 - **Signed commits** (`signed-commits.yml`): advisory comment on unverified commits; the `main` ruleset makes them unmergeable regardless.
 - **Stale** (`stale.yml`): issues are labelled stale after 7 idle days, reminded at 14, closed at 21; PRs at 14 / 21 / 28.

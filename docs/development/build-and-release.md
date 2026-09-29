@@ -70,7 +70,8 @@ refuses to build if the pushed tag disagrees with it.
 
 ## CI
 
-Two workflows run on every push and PR to `main`.
+`ci.yml` and `test.yml` run on every push and PR to `main`. `sonar.yml`
+([below](#sonarqube-cloud)) also runs on pushes to `main` and on same-repo PRs.
 
 **`ci.yml`**
 
@@ -96,9 +97,49 @@ smoke-tests it.
 Other policy workflows: `pr-linked-issue.yml` (a PR must link an open issue),
 `signed-commits.yml`, and `stale.yml`.
 
+### SonarQube Cloud
+
+**`sonar.yml`** runs on every push to `main` and every PR from a branch in this
+repo. It installs with Bun 1.4.1, runs `bun test --coverage
+--coverage-reporter=lcov`, then scans with `SonarSource/sonarqube-scan-action`
+(pinned to a commit SHA) and waits for the quality gate
+(`-Dsonar.qualitygate.wait=true`). Analysis settings live in
+`sonar-project.properties` at the repo root:
+
+- **What is analysed:** `src/`, `scripts/`, `web/` and `.github/`, so the
+  workflow (`githubactions:*`) and website rules keep running. `*.test.ts` files
+  count as tests. Generated `web/` output (the synced docs, `dist/`, the
+  release data) is excluded.
+- **What counts toward coverage:** only the CLI in `src/`, read from
+  `coverage/lcov.info`. This is a scoping decision (#295): `web/` and `.github/`
+  are not measured by `bun test` at all, `scripts/` is build tooling, and the
+  `src/index.ts` bootstrap and the type-only `src/types/` carry no logic worth a
+  coverage target.
+- **The quality gate** is SonarCloud's default "Sonar way". Its coverage
+  condition is **at least 80% on new code**, not on the overall figure, so a PR
+  that adds untested lines (typically in `src/commands/`) fails the gate.
+
+Results: [shaharia-lab_slackcli on SonarQube Cloud](https://sonarcloud.io/project/overview?id=shaharia-lab_slackcli).
+
+- **Non-blocking (phase 1).** The scan step has `continue-on-error: true`, so a
+  failed quality gate or a scanner error shows only as an annotation on the run.
+  A broken `SONAR_TOKEN` also stays green, so read the step's output and the
+  dashboard rather than trusting the check colour. Making the check blocking,
+  and then required, are later phases.
+- **Fork and Dependabot PRs are skipped**, not failed: GitHub gives neither of
+  them Actions secrets, so the job's `if:` runs it only for pushes and for
+  same-repo PRs not opened by Dependabot.
+- **Secrets and permissions.** `SONAR_TOKEN` (an Actions secret) reaches only the
+  scan step, through `env:`. The workflow token is `contents: read`; PR
+  decoration comes from the SonarCloud GitHub App.
+- **Automatic Analysis must stay off** in the SonarCloud project (Administration
+  → Analysis Method). With it on, the CI scan fails with "You are running CI
+  analysis while Automatic Analysis is enabled", and `continue-on-error` hides
+  that.
+
 ### Why Bun is pinned
 
-CI (`ci.yml`, `test.yml`) and the release workflow all pin **Bun 1.4.1**. Bun
+CI (`ci.yml`, `test.yml`, `sonar.yml`) and the release workflow all pin **Bun 1.4.1**. Bun
 1.3.12 produced corrupt macOS code signatures
 ([oven-sh/bun#29120](https://github.com/oven-sh/bun/issues/29120)), and 1.4.1 is
 the first release where `--bytecode` works for every target we ship (see

@@ -94,12 +94,20 @@ machine that has never authenticated.
 
 ## CI
 
-Two workflows exercise tests:
+Three workflows exercise tests:
 
 - **Tests** (`test.yml`) — `unit-tests` runs `bun test`; `integration-tests`
   builds the binary and smoke-tests `--help` and `--version` on the real
   artefact.
 - **CI** (`ci.yml`) — lints workflow files with `actionlint`, then type-checks,
   builds, verifies the binary runs, and enforces the 150 MB size budget.
+- **SonarQube Cloud** (`sonar.yml`) — runs
+  `bun test --coverage --coverage-reporter=lcov` and uploads the analysis plus
+  `coverage/lcov.info` to SonarQube Cloud. It is non-blocking for now (see
+  [build and release](build-and-release.md#sonarqube-cloud)).
+
+To produce the same coverage report locally, run
+`bun test --coverage --coverage-reporter=lcov`. It writes `coverage/lcov.info`,
+which is git-ignored.
 
 See [build and release](build-and-release.md).

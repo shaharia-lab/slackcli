@@ -112,8 +112,9 @@ Results: [shaharia-lab_slackcli on SonarQube Cloud](https://sonarcloud.io/projec
   A broken `SONAR_TOKEN` also stays green, so read the step's output and the
   dashboard rather than trusting the check colour. Making the check blocking,
   and then required, are later phases.
-- **Fork PRs are skipped**, not failed: they get no secrets, so the job's `if:`
-  runs it only for pushes and same-repo PRs.
+- **Fork and Dependabot PRs are skipped**, not failed: GitHub gives neither of
+  them Actions secrets, so the job's `if:` runs it only for pushes and for
+  same-repo PRs not opened by Dependabot.
 - **Secrets and permissions.** `SONAR_TOKEN` (an Actions secret) reaches only the
   scan step, through `env:`. The workflow token is `contents: read`; PR
   decoration comes from the SonarCloud GitHub App.

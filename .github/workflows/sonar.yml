@@ -13,8 +13,12 @@ permissions:
 
 jobs:
   sonar:
-    # Fork PRs get no secrets, so skip them cleanly instead of failing.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # Fork PRs and Dependabot PRs get no Actions secrets, so skip them cleanly
+    # instead of scanning with an empty SONAR_TOKEN.
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
 
     steps:

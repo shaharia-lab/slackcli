@@ -70,7 +70,8 @@ refuses to build if the pushed tag disagrees with it.
 
 ## CI
 
-Two workflows run on every push and PR to `main`.
+`ci.yml` and `test.yml` run on every push and PR to `main`. `sonar.yml`
+([below](#sonarqube-cloud)) also runs on pushes to `main` and on same-repo PRs.
 
 **`ci.yml`**
 

@@ -221,7 +221,10 @@ change without notice. With a standard token the command fails with
 `Draft creation requires browser authentication`.
 
 The text is converted from Slack mrkdwn into `rich_text` blocks so the draft
-opens in the composer already formatted. `--message-file` works here exactly as
+opens in the composer already formatted. User, user group, channel and
+broadcast tokens (`<@U…>`, `<!subteam^S…>`, `<#C…>`, `<!here>`) and links
+(`<https://…|label>`) become real mentions and links; any other `<…>` text stays
+literal. `--message-file` works here exactly as
 it does on `messages send`.
 
 `--json` prints the draft's identity. A draft is unsent, so it has no message

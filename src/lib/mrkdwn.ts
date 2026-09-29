@@ -1,5 +1,6 @@
 // Parse Slack mrkdwn text into rich_text block elements.
-// Supports: *bold*, _italic_, ~strike~, `code`, and combinations.
+// Supports: *bold*, _italic_, ~strike~, `code`, and combinations, plus the
+// <@U…>, <!subteam^S…>, <#C…>, <!here|channel|everyone> and <url|label> tokens.
 
 interface RichTextStyle {
   bold?: boolean;
@@ -8,11 +9,14 @@ interface RichTextStyle {
   code?: boolean;
 }
 
-interface RichTextElement {
-  type: 'text';
-  text: string;
-  style?: RichTextStyle;
-}
+type RichTextElement = (
+  | { type: 'text'; text: string }
+  | { type: 'user'; user_id: string }
+  | { type: 'usergroup'; usergroup_id: string }
+  | { type: 'channel'; channel_id: string }
+  | { type: 'broadcast'; range: 'here' | 'channel' | 'everyone' }
+  | { type: 'link'; url: string; text?: string }
+) & { style?: RichTextStyle };
 
 interface RichTextSection {
   type: 'rich_text_section';
@@ -100,10 +104,9 @@ function styleSpan(inner: string, styleKey: keyof RichTextStyle): RichTextElemen
     return [{ type: 'text', text: inner, style }];
   }
 
-  // Recursively parse inner content for nested formatting
+  // Recursively parse inner content for nested formatting, keeping each element's type
   return parseInline(inner).map(el => ({
-    type: 'text',
-    text: el.text,
+    ...el,
     style: { ...el.style, [styleKey]: true },
   }));
 }
@@ -124,7 +127,7 @@ function tryMatchMarker(text: string, i: number): MarkerMatch | null {
 // Plain character: append to last plain element or create new one
 function appendPlainChar(elements: RichTextElement[], char: string): void {
   const last = elements.at(-1);
-  if (last && !last.style) {
+  if (last && last.type === 'text' && !last.style) {
     last.text += char;
   } else {
     elements.push({ type: 'text', text: char });
@@ -145,12 +148,51 @@ function stripEmptyStyles(elements: RichTextElement[]): RichTextElement[] {
   });
 }
 
+// Angle-bracket tokens, matched on the body between "<" and ">". The optional
+// "|label" is dropped for mentions and channels, and kept as text for links.
+const TOKEN_LABEL = '(?:\\|[^>]*)?';
+const USER_TOKEN = new RegExp(`^@([UW][A-Z0-9]+)${TOKEN_LABEL}$`);
+const USERGROUP_TOKEN = new RegExp(`^!subteam\\^([A-Z0-9]+)${TOKEN_LABEL}$`);
+const CHANNEL_TOKEN = new RegExp(`^#([CG][A-Z0-9]+)${TOKEN_LABEL}$`);
+const BROADCAST_TOKEN = new RegExp(`^!(here|channel|everyone)${TOKEN_LABEL}$`);
+const LINK_TOKEN = /^((?:https?:\/\/|mailto:)[^|\s>]+)(?:\|([^>]*))?$/;
+
+function tokenElement(body: string): RichTextElement | null {
+  const user = USER_TOKEN.exec(body);
+  if (user) return { type: 'user', user_id: user[1] };
+
+  const usergroup = USERGROUP_TOKEN.exec(body);
+  if (usergroup) return { type: 'usergroup', usergroup_id: usergroup[1] };
+
+  const channel = CHANNEL_TOKEN.exec(body);
+  if (channel) return { type: 'channel', channel_id: channel[1] };
+
+  const broadcast = BROADCAST_TOKEN.exec(body);
+  if (broadcast) return { type: 'broadcast', range: broadcast[1] as 'here' | 'channel' | 'everyone' };
+
+  const link = LINK_TOKEN.exec(body);
+  if (!link) return null;
+  return link[2] ? { type: 'link', url: link[1], text: link[2] } : { type: 'link', url: link[1] };
+}
+
+// Try to read a "<…>" token at `i`. Unknown forms return null and stay literal text.
+function tryMatchToken(text: string, i: number): MarkerMatch | null {
+  if (text[i] !== '<') return null;
+
+  const end = text.indexOf('>', i + 1);
+  if (end === -1) return null;
+
+  const element = tokenElement(text.substring(i + 1, end));
+  return element ? { elements: [element], nextIndex: end + 1 } : null;
+}
+
 function parseInline(text: string): RichTextElement[] {
   const elements: RichTextElement[] = [];
 
   let i = 0;
   while (i < text.length) {
-    const match = tryMatchMarker(text, i);
+    // Tokens go first so a marker character inside a URL never opens a span
+    const match = tryMatchToken(text, i) ?? tryMatchMarker(text, i);
     if (match) {
       elements.push(...match.elements);
       i = match.nextIndex;

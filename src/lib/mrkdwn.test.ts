@@ -269,4 +269,76 @@ describe('parseMrkdwn', () => {
       { type: 'text', text: 'important', style: { strike: true } },
     ]);
   });
+
+  describe('angle-bracket tokens', () => {
+    const tokenCases: [string, unknown][] = [
+      ['<@U123ABC>', { type: 'user', user_id: 'U123ABC' }],
+      ['<@U123ABC|rafael>', { type: 'user', user_id: 'U123ABC' }],
+      ['<!subteam^S123>', { type: 'usergroup', usergroup_id: 'S123' }],
+      ['<!subteam^S123|@eng>', { type: 'usergroup', usergroup_id: 'S123' }],
+      ['<#C123ABC>', { type: 'channel', channel_id: 'C123ABC' }],
+      ['<#C123ABC|general>', { type: 'channel', channel_id: 'C123ABC' }],
+      ['<!here>', { type: 'broadcast', range: 'here' }],
+      ['<!channel>', { type: 'broadcast', range: 'channel' }],
+      ['<!everyone>', { type: 'broadcast', range: 'everyone' }],
+      ['<https://example.com/a>', { type: 'link', url: 'https://example.com/a' }],
+      ['<https://example.com/a|the docs>', { type: 'link', url: 'https://example.com/a', text: 'the docs' }],
+      ['<mailto:a@b.co>', { type: 'link', url: 'mailto:a@b.co' }],
+    ];
+
+    it.each(tokenCases)('parses %s', (input, expected) => {
+      expect(elements(input)).toEqual([expected] as ReturnType<typeof elements>);
+    });
+
+    it('keeps text and punctuation around a mention', () => {
+      expect(elements('<@U1>, hi')).toEqual([
+        { type: 'user', user_id: 'U1' },
+        { type: 'text', text: ', hi' },
+      ]);
+    });
+
+    it('does not glue text after a mention onto it', () => {
+      expect(elements('<@U1> hello\nworld <#C1> ok')).toEqual([
+        { type: 'user', user_id: 'U1' },
+        { type: 'text', text: ' hello\nworld ' },
+        { type: 'channel', channel_id: 'C1' },
+        { type: 'text', text: ' ok' },
+      ]);
+    });
+
+    it('does not glue text before a mention onto the previous text', () => {
+      expect(elements('ping <@U1>')).toEqual([
+        { type: 'text', text: 'ping ' },
+        { type: 'user', user_id: 'U1' },
+      ]);
+    });
+
+    it('keeps a bold user mention a user element', () => {
+      expect(elements('*<@U123>*')).toEqual([
+        { type: 'user', user_id: 'U123', style: { bold: true } },
+      ]);
+    });
+
+    it('styles a mention nested in a longer span', () => {
+      expect(elements('_hi <!here>_')).toEqual([
+        { type: 'text', text: 'hi ', style: { italic: true } },
+        { type: 'broadcast', range: 'here', style: { italic: true } },
+      ]);
+    });
+
+    it('does not let an underscore in a URL open an italic span', () => {
+      expect(elements('<https://host/a_b_c|link> and _it_')).toEqual([
+        { type: 'link', url: 'https://host/a_b_c', text: 'link' },
+        { type: 'text', text: ' and ' },
+        { type: 'text', text: 'it', style: { italic: true } },
+      ]);
+    });
+
+    it.each(['a < b', 'a < b > c', '<foo>', '<@lowercase>', '<https://a b>', '<!unknown>', 'x <@U1'])(
+      'leaves %j as literal text',
+      input => {
+        expect(elements(input)).toEqual([{ type: 'text', text: input }]);
+      },
+    );
+  });
 });

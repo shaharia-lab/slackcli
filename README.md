@@ -10,7 +10,6 @@ No Slack app to build, no admin approval to wait for.
 
 [![Release](https://img.shields.io/github/v/release/shaharia-lab/slackcli?style=flat-square&color=3fa045)](https://github.com/shaharia-lab/slackcli/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/shaharia-lab/slackcli/ci.yml?branch=main&style=flat-square&label=CI&logo=github)](https://github.com/shaharia-lab/slackcli/actions/workflows/ci.yml)
-[![Downloads](https://img.shields.io/github/downloads/shaharia-lab/slackcli/total?style=flat-square&color=blue)](https://github.com/shaharia-lab/slackcli/releases)
 [![Stars](https://img.shields.io/github/stars/shaharia-lab/slackcli?style=flat-square&color=f5c518)](https://github.com/shaharia-lab/slackcli/stargazers)
 [![License](https://img.shields.io/github/license/shaharia-lab/slackcli?style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/shaharia-lab/slackcli?style=flat-square)](https://github.com/shaharia-lab/slackcli/commits/main)

@@ -77,7 +77,8 @@ export function listLogFiles(dir: string): string[] {
     files.push({ path, rotation: match[1] ? Number(match[1]) : 0 });
   }
 
-  return files.sort((a, b) => b.rotation - a.rotation).map((file) => file.path);
+  files.sort((a, b) => b.rotation - a.rotation);
+  return files.map((file) => file.path);
 }
 
 // Same call the sink's `redactByPattern()` makes; every pattern is global.
@@ -124,24 +125,10 @@ export async function readRuns(dir: string): Promise<ReadRunsResult> {
   const runs = new Map<string, LogRecord[]>();
   let skipped = 0;
 
+  // One file at a time, oldest rotation first, so each run keeps file order.
   for (const file of listLogFiles(dir)) {
-    let lines: AsyncIterable<string>;
     try {
-      lines = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
-      for await (const line of lines) {
-        if (line.trim() === '') continue;
-        const parsed = parseLine(line);
-        if (!parsed) {
-          skipped += 1;
-          continue;
-        }
-        const records = runs.get(parsed.runId);
-        if (records) {
-          records.push(parsed.record);
-        } else {
-          runs.set(parsed.runId, [parsed.record]);
-        }
-      }
+      skipped += await readLogFile(file, runs);
     } catch (err) {
       // Rotated away between listing and reading.
       if (isMissing(err)) continue;
@@ -153,6 +140,27 @@ export async function readRuns(dir: string): Promise<ReadRunsResult> {
     runs: [...runs].map(([run_id, records]) => ({ run_id, records })),
     skipped,
   };
+}
+
+// Appends `file`'s records to `runs`; returns how many lines it skipped.
+async function readLogFile(file: string, runs: Map<string, LogRecord[]>): Promise<number> {
+  let skipped = 0;
+  const lines = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
+  for await (const line of lines) {
+    if (line.trim() === '') continue;
+    const parsed = parseLine(line);
+    if (!parsed) {
+      skipped += 1;
+      continue;
+    }
+    const records = runs.get(parsed.runId);
+    if (records) {
+      records.push(parsed.record);
+    } else {
+      runs.set(parsed.runId, [parsed.record]);
+    }
+  }
+  return skipped;
 }
 
 /**

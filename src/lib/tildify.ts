@@ -32,6 +32,23 @@ export function errorMessageForLog(
   fallback = 'unknown error',
   home: string = homedir(),
 ): string {
-  const message = error instanceof Error ? error.message : error == null ? fallback : String(error);
-  return tildifyText(message || fallback, home);
+  return tildifyText(rawErrorMessage(error) || fallback, home);
+}
+
+function rawErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  switch (typeof error) {
+    case 'string':
+      return error;
+    case 'number':
+    case 'bigint':
+    case 'boolean':
+    case 'symbol':
+      return error.toString();
+    default:
+      // null/undefined, and objects or functions: String() would log
+      // "[object Object]" or source code, and serialising could log request
+      // data, so these get the fallback instead.
+      return '';
+  }
 }

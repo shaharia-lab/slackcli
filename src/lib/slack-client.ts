@@ -455,21 +455,21 @@ export class SlackClient {
   }
 
   // Get multiple users info
+  // Lookups are issued together; the rate limiter still paces them.
   async getUsersInfo(userIds: string[]): Promise<any> {
-    const users: any[] = [];
-
-    for (const userId of userIds) {
-      try {
-        const response = await this.getUserInfo(userId);
-        if (response.ok && response.user) {
-          users.push(response.user);
+    const responses = await Promise.all(
+      userIds.map(async (userId) => {
+        try {
+          return await this.getUserInfo(userId);
+        } catch {
+          // Skip users we can't fetch
+          console.error(`Failed to fetch user ${userId}`);
+          return undefined;
         }
-      } catch (error) {
-        // Skip users we can't fetch
-        console.error(`Failed to fetch user ${userId}`);
-      }
-    }
-
+      })
+    );
+    // Promise.all keeps input order, so users come back in the order asked.
+    const users = responses.filter((response) => response?.ok && response.user).map((response) => response.user);
     return { ok: true, users };
   }
 

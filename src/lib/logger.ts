@@ -174,7 +174,8 @@ export function describeInvocation(actionCommand: Command): Invocation {
     }
   }
 
-  return { command: names.join(' '), options: options.sort() };
+  options.sort();
+  return { command: names.join(' '), options };
 }
 
 /**

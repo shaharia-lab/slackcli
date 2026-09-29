@@ -90,6 +90,31 @@ describe('extractDraftText', () => {
 
     expect(text).toBe('Sep 21 preserved');
   });
+
+  it('degrades malformed leaf elements the same way as before, without throwing', () => {
+    const text = extractDraftText([{
+      type: 'rich_text',
+      elements: [{
+        type: 'rich_text_section',
+        elements: [
+          { type: 'text', text: 42 },
+          { type: 'emoji', name: null },
+          { type: 'link' },
+          // Missing ids fall through to the element's own text.
+          { type: 'channel', text: '#general' },
+          { type: 'user', text: ' @someone' },
+          { type: 'date', text: ' tomorrow' },
+          // Type names that are Object.prototype keys are not renderers.
+          { type: 'toString', text: ' kept' },
+          { type: 'constructor' },
+          'not an element',
+          null,
+        ],
+      }],
+    }]);
+
+    expect(text).toBe('#general @someone tomorrow kept');
+  });
 });
 
 describe('projectDraft', () => {

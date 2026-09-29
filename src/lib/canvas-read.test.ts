@@ -328,6 +328,20 @@ describe('resolveCanvasMentions', () => {
     expect(Array.from(mentions.channels.entries())).toEqual([['C3', 'ok']]);
   });
 
+  it('keeps channels in mention order when lookups settle out of order', async () => {
+    const delays: Record<string, number> = { C1: 30, C2: 0, C3: 10 };
+    const { client } = createFakeClient({
+      getConversationInfo: async (ch) => {
+        await new Promise((resolve) => setTimeout(resolve, delays[ch]));
+        return { channel: { name: `chan-${ch}` } };
+      },
+    });
+
+    const mentions = await resolveCanvasMentions(client, '<#C1> <#C2> <#C3>');
+
+    expect(Array.from(mentions.channels.keys())).toEqual(['C1', 'C2', 'C3']);
+  });
+
   it('lets a failed user lookup propagate', async () => {
     const usersError = new Error('ratelimited');
     const { client } = createFakeClient({ getUsersInfo: () => Promise.reject(usersError) });

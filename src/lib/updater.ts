@@ -184,7 +184,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<{
 
   if (updateAvailable && !silent) {
     info(`New version available: ${latestVersion} (current: v${CURRENT_VERSION})`);
-    info(`Run ${getUpdateHint(command => `"${command}"`)} to update`);
+    info(`Run ${getUpdateHint(quoteCommand)} to update`);
   }
 
   return {
@@ -395,6 +395,11 @@ export function getUpdateCommand(): string {
   // asks for an Administrator terminal instead.
   if (process.platform !== 'win32' && !isInstallDirWritable()) return 'sudo slackcli update';
   return 'slackcli update';
+}
+
+/** Wraps a command in double quotes, for `getUpdateHint()` in prose. */
+export function quoteCommand(command: string): string {
+  return `"${command}"`;
 }
 
 // The update advice to show a user: the command (passed through `format`, e.g.

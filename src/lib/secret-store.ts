@@ -302,7 +302,7 @@ function buildKeychainError(result: SecurityCliResult, action: string): SecretSt
   return new SecretStoreError(
     'keychain',
     'access_denied',
-    `Keychain ${action} failed (${result.stderr || `security exited ${result.code}`}).`,
+    `Keychain ${action} failed (${result.stderr || 'security exited ' + result.code}).`,
   );
 }
 

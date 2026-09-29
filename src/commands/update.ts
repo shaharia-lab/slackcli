@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { checkForUpdates, getUpdateHint, performUpdate } from '../lib/updater.ts';
+import { checkForUpdates, getUpdateHint, performUpdate, quoteCommand } from '../lib/updater.ts';
 import { success, error, info } from '../lib/formatter.ts';
 
 export function createUpdateCommand(): Command {
@@ -26,7 +26,7 @@ export function createUpdateCommand(): Command {
 
         if (result.updateAvailable && result.latestVersion) {
           info(`Latest version: ${result.latestVersion}`);
-          success(`Update available! Run ${getUpdateHint(command => `"${command}"`)} to update.`);
+          success(`Update available! Run ${getUpdateHint(quoteCommand)} to update.`);
         } else {
           success('You are on the latest version!');
         }

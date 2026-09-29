@@ -40,13 +40,15 @@ const bySourceFile = new Map(PAGES.map((p) => [p.file, p]));
 
 /** Every `.md` under docs/, as paths relative to docs/. */
 async function markdownFiles(dir, prefix = '') {
-  const out = [];
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) out.push(...(await markdownFiles(join(dir, entry.name), rel)));
-    else if (entry.name.endsWith('.md')) out.push(rel);
-  }
-  return out;
+  const entries = await readdir(dir, { withFileTypes: true });
+  const nested = await Promise.all(
+    entries.map((entry) => {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) return markdownFiles(join(dir, entry.name), rel);
+      return entry.name.endsWith('.md') ? [rel] : [];
+    })
+  );
+  return nested.flat();
 }
 
 /** The published route for a docs-relative path, or null if it is not a page. */
@@ -131,7 +133,8 @@ function summarise(text, max = 165) {
 }
 
 function yaml(value) {
-  return `"${value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`)}"`;
+  const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
+  return `"${escaped}"`;
 }
 
 /**
@@ -193,21 +196,25 @@ async function main() {
   await rm(OUT, { recursive: true, force: true });
 
   const present = new Set(await markdownFiles(SRC));
-  let written = 0;
 
-  for (const page of PAGES) {
-    if (!present.has(page.file)) {
-      throw new Error(
-        `docs/${page.file} is listed in docs.manifest.mjs but does not exist. ` +
-          `Update PAGES if the file was renamed or removed.`
-      );
-    }
-    const raw = await readFile(join(SRC, page.file), 'utf8');
-    const out = join(OUT, `${page.slug}.md`);
-    await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, transform(raw, page), 'utf8');
-    written++;
+  // Checked before anything is written, so a stale manifest fails cleanly.
+  const missing = PAGES.find((page) => !present.has(page.file));
+  if (missing) {
+    throw new Error(
+      `docs/${missing.file} is listed in docs.manifest.mjs but does not exist. ` +
+        `Update PAGES if the file was renamed or removed.`
+    );
   }
+
+  await Promise.all(
+    PAGES.map(async (page) => {
+      const raw = await readFile(join(SRC, page.file), 'utf8');
+      const out = join(OUT, `${page.slug}.md`);
+      await mkdir(dirname(out), { recursive: true });
+      await writeFile(out, transform(raw, page), 'utf8');
+    })
+  );
+  const written = PAGES.length;
 
   // A doc added to docs/ and not listed in the manifest would silently never
   // publish, and - worse - every existing link to it would quietly turn into a

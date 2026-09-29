@@ -249,6 +249,56 @@ export function isSafeStartUrl(candidate: string): boolean {
   }
 }
 
+/** Whether the browser process has exited or been killed by a signal. Exported for tests. */
+export function hasExited(child: Pick<ChildProcess, 'exitCode' | 'signalCode'>): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+/** Seams for `signalBrowserTree()`; tests replace them. */
+export interface SignalTreeDeps {
+  platform?: NodeJS.Platform;
+  spawnProcess?: (command: string, args: string[]) => unknown;
+  sweep?: (profileDir: string) => void;
+}
+
+/**
+ * Signal the browser's whole process group.
+ *
+ * Falls back to the bare child if the group signal fails (no group leader,
+ * or the process is already gone). Windows has no process groups, so the
+ * tree is torn down with taskkill /T. Exported for tests.
+ */
+export function signalBrowserTree(
+  child: Pick<ChildProcess, 'pid' | 'kill'>,
+  profileDir: string,
+  signal: NodeJS.Signals,
+  deps: SignalTreeDeps = {}
+): void {
+  const pid = child.pid;
+  if (pid === undefined) return;
+  if ((deps.platform ?? process.platform) === 'win32') {
+    const spawnProcess =
+      deps.spawnProcess ?? ((command: string, args: string[]) => spawn(command, args, { stdio: 'ignore' }));
+    try {
+      spawnProcess('taskkill', ['/pid', String(pid), '/T', '/F']);
+    } catch {
+      // Nothing further to try.
+    }
+    return;
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Already gone.
+  }
+  // Chrome's renderer and GPU helpers outlive a signalled parent and get
+  // reparented to init. Every one of them carries our --user-data-dir on its
+  // command line, and that path is unique to this profile, so matching on it
+  // reaps exactly our tree and nothing else — no process group required, so
+  // the browser keeps its keyring access.
+  if (signal === 'SIGKILL') (deps.sweep ?? sweepProfileHelpers)(profileDir);
+}
+
 /**
  * Launch the browser and wait until its DevTools endpoint is addressable.
  *
@@ -384,36 +434,7 @@ export async function launchBrowser(
   // a user hits Ctrl-C because nothing appears to be happening. Without this,
   // that interrupt strands a signed-in browser holding an open, unauthenticated
   // DevTools port indefinitely.
-  /**
-   * Signal the browser's whole process group.
-   *
-   * Falls back to the bare child if the group signal fails (no group leader,
-   * or the process is already gone). Windows has no process groups, so the
-   * tree is torn down with taskkill /T.
-   */
-  const signalTree = (signal: NodeJS.Signals): void => {
-    const pid = child.pid;
-    if (pid === undefined) return;
-    if (process.platform === 'win32') {
-      try {
-        spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
-      } catch {
-        // Nothing further to try.
-      }
-      return;
-    }
-    try {
-      child.kill(signal);
-    } catch {
-      // Already gone.
-    }
-    // Chrome's renderer and GPU helpers outlive a signalled parent and get
-    // reparented to init. Every one of them carries our --user-data-dir on its
-    // command line, and that path is unique to this profile, so matching on it
-    // reaps exactly our tree and nothing else — no process group required, so
-    // the browser keeps its keyring access.
-    if (signal === 'SIGKILL') sweepProfileHelpers(profileDir);
-  };
+  const signalTree = (signal: NodeJS.Signals): void => signalBrowserTree(child, profileDir, signal);
 
   const reap = (): void => signalTree('SIGKILL');
 
@@ -451,7 +472,7 @@ export async function launchBrowser(
 
   const stop = async (): Promise<void> => {
     unregisterReap();
-    if (child.exitCode !== null || child.signalCode !== null) {
+    if (hasExited(child)) {
       // The parent is gone but helpers may not be; sweep the group regardless.
       signalTree('SIGKILL');
       return;
@@ -461,7 +482,7 @@ export async function launchBrowser(
     // and localConfig_v2 we depend on next run live there.
     signalTree('SIGTERM');
     for (let i = 0; i < 30; i++) {
-      if (child.exitCode !== null || child.signalCode !== null) break;
+      if (hasExited(child)) break;
       await sleep(100);
     }
     signalTree('SIGKILL');

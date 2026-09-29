@@ -104,8 +104,18 @@ repo. It installs with Bun 1.4.1, runs `bun test --coverage
 --coverage-reporter=lcov`, then scans with `SonarSource/sonarqube-scan-action`
 (pinned to a commit SHA) and waits for the quality gate
 (`-Dsonar.qualitygate.wait=true`). Analysis settings live in
-`sonar-project.properties` at the repo root: `src/` holds both sources and tests,
-`*.test.ts` files count as tests, and coverage is read from `coverage/lcov.info`.
+`sonar-project.properties` at the repo root:
+
+- **What is analysed:** `src/`, `scripts/`, `web/` and `.github/`, so the
+  workflow (`githubactions:*`) and website rules keep running. `*.test.ts` files
+  count as tests. Generated `web/` output (the synced docs, `dist/`, the
+  release data) is excluded.
+- **What counts toward coverage:** only `src/`, read from `coverage/lcov.info`.
+  `scripts/`, `web/`, `.github/`, the `src/index.ts` bootstrap and the type-only
+  `src/types/` are excluded, because `bun test` does not measure them.
+- **The quality gate** is SonarCloud's default "Sonar way". Its coverage
+  condition is **at least 80% on new code**, not on the overall figure, so a PR
+  that adds untested lines (typically in `src/commands/`) fails the gate.
 Results: [shaharia-lab_slackcli on SonarQube Cloud](https://sonarcloud.io/project/overview?id=shaharia-lab_slackcli).
 
 - **Non-blocking (phase 1).** The scan step has `continue-on-error: true`, so a

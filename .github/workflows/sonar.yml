@@ -41,6 +41,19 @@ jobs:
       - name: Run tests with coverage
         run: bun test --coverage --coverage-reporter=lcov
 
+      # SonarQube Cloud's new-code definition is "Previous version": new code on
+      # main is everything since the version last changed, so the version comes
+      # from package.json, which each release PR bumps (#306).
+      - name: Read project version
+        id: version
+        run: |
+          VERSION="$(jq -r .version package.json)"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::package.json version '${VERSION}' is not a SemVer version"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
       # Phase 1 of a phased rollout (#295): the scan never fails the workflow.
       # A failed quality gate or a scanner error shows as an annotation only,
       # so check this step and the SonarCloud dashboard. Dropping
@@ -53,3 +66,4 @@ jobs:
         with:
           args: >
             -Dsonar.qualitygate.wait=true
+            -Dsonar.projectVersion=${{ steps.version.outputs.version }}

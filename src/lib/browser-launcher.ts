@@ -300,6 +300,62 @@ export function signalBrowserTree(
 }
 
 /**
+ * The browser's argv for this launch, or the refusal to return when the start
+ * URL is unsafe. Exported for tests.
+ */
+export function buildLaunchArgs(
+  profileDir: string,
+  options: Pick<LaunchOptions, 'headless' | 'startUrl'>
+): { ok: true; args: string[] } | Extract<BrowserLaunchResult, { ok: false }> {
+  const args = [
+    '--remote-debugging-port=0',
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    // Slack serves a degraded client to obviously-automated browsers.
+    '--disable-blink-features=AutomationControlled',
+  ];
+  if (options.headless) args.push('--headless=new');
+  if (!options.startUrl) return { ok: true, args };
+  // Defence in depth against argument injection: a start URL is positional
+  // argv, so any value beginning with `-` would be read by the browser as a
+  // switch instead. `--proxy-server=...` alone would route the user's entire
+  // sign-in through an attacker's host. Callers validate too; this is the
+  // last gate before exec, so it must not trust them.
+  if (!isSafeStartUrl(options.startUrl)) {
+    logger.warn('Refusing an unsupported start URL', { reason: 'invalid_start_url' });
+    return {
+      ok: false,
+      reason: 'invalid_start_url',
+      message: `Refusing to open an unsupported URL: ${options.startUrl}`,
+    };
+  }
+  args.push(options.startUrl);
+  return { ok: true, args };
+}
+
+/**
+ * Log fields for a launch. Flags only, with the profile path tildified: the
+ * positional start URL is reduced to its origin, since a caller-supplied URL
+ * could carry a query.
+ */
+function launchLogFields(
+  args: string[],
+  profileDir: string,
+  home: string,
+  options: Pick<LaunchOptions, 'headless' | 'startUrl'>
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {
+    args: args
+      .filter((arg) => arg !== options.startUrl)
+      .map((arg) => (arg.startsWith('--user-data-dir=') ? `--user-data-dir=${tildify(profileDir, home)}` : arg)),
+    headless: Boolean(options.headless),
+  };
+  if (options.startUrl) fields.start_url_origin = new URL(options.startUrl).origin;
+  return fields;
+}
+
+/**
  * Launch the browser and wait until its DevTools endpoint is addressable.
  *
  * `--remote-debugging-port=0` lets the OS assign a free port, which the
@@ -367,41 +423,11 @@ export async function launchBrowser(
   // port, pointing the session at a browser that is already gone.
   await rm(join(profileDir, 'DevToolsActivePort'), { force: true }).catch(() => {});
 
-  const args = [
-    '--remote-debugging-port=0',
-    `--user-data-dir=${profileDir}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    // Slack serves a degraded client to obviously-automated browsers.
-    '--disable-blink-features=AutomationControlled',
-  ];
-  if (options.headless) args.push('--headless=new');
-  // Defence in depth against argument injection: a start URL is positional
-  // argv, so any value beginning with `-` would be read by the browser as a
-  // switch instead. `--proxy-server=...` alone would route the user's entire
-  // sign-in through an attacker's host. Callers validate too; this is the
-  // last gate before exec, so it must not trust them.
-  if (options.startUrl) {
-    if (!isSafeStartUrl(options.startUrl)) {
-      logger.warn('Refusing an unsupported start URL', { reason: 'invalid_start_url' });
-      return {
-        ok: false,
-        reason: 'invalid_start_url',
-        message: `Refusing to open an unsupported URL: ${options.startUrl}`,
-      };
-    }
-    args.push(options.startUrl);
-  }
+  const built = buildLaunchArgs(profileDir, options);
+  if (!built.ok) return built;
+  const { args } = built;
 
-  // Flags only, with the profile path tildified: the positional start URL is
-  // reduced to its origin, since a caller-supplied URL could carry a query.
-  logger.info('Launching browser', {
-    args: args
-      .filter((arg) => arg !== options.startUrl)
-      .map((arg) => (arg.startsWith('--user-data-dir=') ? `--user-data-dir=${tildify(profileDir, home)}` : arg)),
-    headless: Boolean(options.headless),
-    ...(options.startUrl ? { start_url_origin: new URL(options.startUrl).origin } : {}),
-  });
+  logger.info('Launching browser', launchLogFields(args, profileDir, home, options));
 
   let child: ChildProcess;
   try {

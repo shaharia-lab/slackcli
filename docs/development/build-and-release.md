@@ -110,12 +110,15 @@ repo. It installs with Bun 1.4.1, runs `bun test --coverage
   workflow (`githubactions:*`) and website rules keep running. `*.test.ts` files
   count as tests. Generated `web/` output (the synced docs, `dist/`, the
   release data) is excluded.
-- **What counts toward coverage:** only `src/`, read from `coverage/lcov.info`.
-  `scripts/`, `web/`, `.github/`, the `src/index.ts` bootstrap and the type-only
-  `src/types/` are excluded, because `bun test` does not measure them.
+- **What counts toward coverage:** only the CLI in `src/`, read from
+  `coverage/lcov.info`. This is a scoping decision (#295): `web/` and `.github/`
+  are not measured by `bun test` at all, `scripts/` is build tooling, and the
+  `src/index.ts` bootstrap and the type-only `src/types/` carry no logic worth a
+  coverage target.
 - **The quality gate** is SonarCloud's default "Sonar way". Its coverage
   condition is **at least 80% on new code**, not on the overall figure, so a PR
   that adds untested lines (typically in `src/commands/`) fails the gate.
+
 Results: [shaharia-lab_slackcli on SonarQube Cloud](https://sonarcloud.io/project/overview?id=shaharia-lab_slackcli).
 
 - **Non-blocking (phase 1).** The scan step has `continue-on-error: true`, so a

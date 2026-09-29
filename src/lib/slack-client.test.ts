@@ -52,6 +52,10 @@ class TestSlackClient extends SlackClient {
       return { ok: true, drafts: [], files: [], has_more: false };
     }
 
+    if (method === 'drafts.create') {
+      return { ok: true, draft: { id: 'Dr123' } };
+    }
+
     if (method === 'drafts.delete') {
       return { ok: true };
     }
@@ -507,6 +511,23 @@ describe('SlackClient.listDrafts', () => {
 
     await expect(client.listDrafts({ limit: 100 }))
       .rejects.toThrow('Draft listing requires browser authentication');
+  });
+});
+
+describe('SlackClient.createDraft', () => {
+  it('sends mentions and links as rich_text elements, not literal text', async () => {
+    const client = new TestSlackClient();
+
+    await client.createDraft('C123', 'hi <@U1|bob> see <https://x.test|docs>');
+
+    expect(client.calls[0]?.method).toBe('drafts.create');
+    const blocks = JSON.parse(String(client.calls[0]?.params.blocks));
+    expect(blocks[0].elements[0].elements).toEqual([
+      { type: 'text', text: 'hi ' },
+      { type: 'user', user_id: 'U1' },
+      { type: 'text', text: ' see ' },
+      { type: 'link', url: 'https://x.test', text: 'docs' },
+    ]);
   });
 });
 

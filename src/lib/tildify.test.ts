@@ -43,4 +43,9 @@ describe('errorMessageForLog', () => {
     expect(errorMessageForLog(null, 'unknown error', '/home/u')).toBe('unknown error');
     expect(errorMessageForLog(new Error(''), 'unknown error', '/home/u')).toBe('unknown error');
   });
+
+  it('falls back for a non-Error object instead of "[object Object]" or its contents', () => {
+    expect(errorMessageForLog({ text: 'secret message' }, 'unknown error', '/home/u')).toBe('unknown error');
+    expect(errorMessageForLog([1, 2], 'unknown error', '/home/u')).toBe('unknown error');
+  });
 });

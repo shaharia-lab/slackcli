@@ -48,7 +48,9 @@ export function formatDraftList(drafts: DraftSummary[], nowMs: number = Date.now
       metadata.push(`scheduled: ${formatTimestamp(String(draft.date_scheduled))}`);
     }
 
-    output += `  ${chalk.dim(`${index + 1}.`)} ${chalk.bold(draft.channel_id)} ${chalk.dim(`(${age})`)}\n`;
+    const position = chalk.dim(`${index + 1}.`);
+    const ageLabel = chalk.dim(`(${age})`);
+    output += `  ${position} ${chalk.bold(draft.channel_id)} ${ageLabel}\n`;
     output += `     ${preview}\n`;
     output += `     ${chalk.dim(metadata.join(' | '))}\n\n`;
   });

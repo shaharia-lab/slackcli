@@ -429,8 +429,7 @@ function removeTags(html: string, rejoin: boolean): string {
       out.push(ch);
       continue;
     }
-    let j = known;
-    while (j < opens.length && !opensTag(out, opens[j])) j++;
+    const j = firstTagOpen(out, opens, known);
     if (j === opens.length) {
       out.push(ch);
       opens.length = 0;
@@ -447,11 +446,24 @@ function removeTags(html: string, rejoin: boolean): string {
       continue;
     }
     opens.length = j;
-    // Only a '<' within two characters of the cut sees new characters after it.
-    known = j;
-    while (known > 0 && opens[known - 1] >= start - 2) known--;
+    known = settledOpens(opens, start);
   }
   return out.join('');
+}
+
+// Index of the first '<' in opens[from..] that opens a tag, or opens.length.
+function firstTagOpen(out: string[], opens: number[], from: number): number {
+  let j = from;
+  while (j < opens.length && !opensTag(out, opens[j])) j++;
+  return j;
+}
+
+// How many of `opens` stay known not to open a tag after a cut at `start`:
+// only a '<' within two characters of the cut sees new characters after it.
+function settledOpens(opens: number[], start: number): number {
+  let known = opens.length;
+  while (known > 0 && opens[known - 1] >= start - 2) known--;
+  return known;
 }
 
 function decodeEntities(html: string): string {

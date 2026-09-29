@@ -9,6 +9,7 @@ import {
   checkForUpdates,
   getUpdateCommand,
   getUpdateHint,
+  quoteCommand,
   getCurrentVersion,
   notifyIfUpdateAvailable,
   performUpdate,
@@ -203,6 +204,7 @@ describe('getUpdateCommand', () => {
     Object.defineProperty(process, 'execPath', { value: '/opt/homebrew/bin/slackcli', configurable: true });
     expect(getUpdateCommand()).toBe('brew upgrade slackcli');
     expect(getUpdateHint()).toBe(getUpdateCommand());
+    expect(getUpdateHint(quoteCommand)).toBe('"brew upgrade slackcli"');
   });
 
   it('returns slackcli update for a writable direct install', async () => {

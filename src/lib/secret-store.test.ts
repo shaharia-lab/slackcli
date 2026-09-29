@@ -325,7 +325,7 @@ describe('MacOSKeychainSecretStore', () => {
   it('treats deleting an absent item as success', async () => {
     const { run } = fakeRunner([notFound]);
     const store = new MacOSKeychainSecretStore(run, 'darwin');
-    await store.delete('T1:token'); // does not throw
+    await expect(store.delete('T1:token')).resolves.toBeUndefined();
   });
 
   it('raises access_denied on a keychain failure, distinct from not-found', async () => {

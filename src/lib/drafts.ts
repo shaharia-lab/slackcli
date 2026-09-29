@@ -10,7 +10,7 @@ export function parseDraftLimit(value: string): number {
 
   const limit = Number(value);
   if (!Number.isSafeInteger(limit)) {
-    throw new Error('--limit must be a positive integer');
+    throw new RangeError('--limit must be a positive integer');
   }
   return limit;
 }
@@ -20,36 +20,37 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+function stringField(element: Record<string, unknown>, key: string): string | undefined {
+  const value = element[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function wrapped(value: string | undefined, prefix: string, suffix = '>'): string | undefined {
+  return value === undefined ? undefined : `${prefix}${value}${suffix}`;
+}
+
+// Leaf elements, rendered as Slack's own mrkdwn tokens. `undefined` means the
+// element lacked the field it needs and falls through to the generic handling.
+const LEAF_RENDERERS: Record<string, (element: Record<string, unknown>) => string | undefined> = {
+  text: (element) => stringField(element, 'text') ?? '',
+  emoji: (element) => wrapped(stringField(element, 'name'), ':', ':') ?? '',
+  link: (element) => stringField(element, 'text') ?? stringField(element, 'url') ?? '',
+  channel: (element) => wrapped(stringField(element, 'channel_id'), '<#'),
+  user: (element) => wrapped(stringField(element, 'user_id'), '<@'),
+  usergroup: (element) => wrapped(stringField(element, 'usergroup_id'), '<!subteam^'),
+  broadcast: (element) => wrapped(stringField(element, 'range'), '<!'),
+  date: (element) => stringField(element, 'fallback'),
+};
+
 function richTextValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(richTextValue).join('');
 
   const element = asRecord(value);
   if (!element) return '';
 
-  const type = typeof element.type === 'string' ? element.type : '';
-  if (type === 'text') return typeof element.text === 'string' ? element.text : '';
-  if (type === 'emoji') {
-    return typeof element.name === 'string' ? `:${element.name}:` : '';
-  }
-  if (type === 'link') {
-    if (typeof element.text === 'string') return element.text;
-    return typeof element.url === 'string' ? element.url : '';
-  }
-  if (type === 'channel' && typeof element.channel_id === 'string') {
-    return `<#${element.channel_id}>`;
-  }
-  if (type === 'user' && typeof element.user_id === 'string') {
-    return `<@${element.user_id}>`;
-  }
-  if (type === 'usergroup' && typeof element.usergroup_id === 'string') {
-    return `<!subteam^${element.usergroup_id}>`;
-  }
-  if (type === 'broadcast' && typeof element.range === 'string') {
-    return `<!${element.range}>`;
-  }
-  if (type === 'date' && typeof element.fallback === 'string') {
-    return element.fallback;
-  }
+  const type = stringField(element, 'type') ?? '';
+  const leaf = Object.hasOwn(LEAF_RENDERERS, type) ? LEAF_RENDERERS[type](element) : undefined;
+  if (leaf !== undefined) return leaf;
 
   const children = Array.isArray(element.elements) ? element.elements : [];
   const separator = type === 'rich_text_list' ? '\n' : '';
@@ -57,7 +58,7 @@ function richTextValue(value: unknown): string {
 
   // Preserve text from an unfamiliar element type rather than silently
   // dropping it if Slack extends the undocumented response shape.
-  return typeof element.text === 'string' ? element.text : '';
+  return stringField(element, 'text') ?? '';
 }
 
 export function extractDraftText(blocks: Array<Record<string, unknown>> = []): string {

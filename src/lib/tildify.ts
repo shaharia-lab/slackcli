@@ -32,6 +32,14 @@ export function errorMessageForLog(
   fallback = 'unknown error',
   home: string = homedir(),
 ): string {
-  const message = error instanceof Error ? error.message : error == null ? fallback : String(error);
-  return tildifyText(message || fallback, home);
+  return tildifyText(rawErrorMessage(error) || fallback, home);
+}
+
+function rawErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error == null) return '';
+  // A non-Error object would stringify as "[object Object]", and serialising
+  // it could log request data, so it gets the fallback instead.
+  if (typeof error === 'object') return '';
+  return String(error);
 }

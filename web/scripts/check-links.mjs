@@ -21,17 +21,18 @@ import { BASE } from '../site.config.mjs';
 const DIST = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
 
 async function htmlFiles(dir) {
-  const out = [];
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === 'pagefind') continue; // generated search index
-      out.push(...(await htmlFiles(path)));
-    } else if (entry.name.endsWith('.html')) {
-      out.push(path);
-    }
-  }
-  return out;
+  const entries = await readdir(dir, { withFileTypes: true });
+  const nested = await Promise.all(
+    entries.map((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        // Skip the generated search index.
+        return entry.name === 'pagefind' ? [] : htmlFiles(path);
+      }
+      return entry.name.endsWith('.html') ? [path] : [];
+    })
+  );
+  return nested.flat();
 }
 
 /** `/slackcli/docs/user-guide/` -> the file that serves it. */
@@ -41,46 +42,46 @@ function fileFor(href) {
   return join(DIST, rel.replace(/^\//, ''));
 }
 
+// Cached as promises, so pages checked concurrently read each target once.
 const ids = new Map();
-async function idsOf(file) {
+function idsOf(file) {
   if (!ids.has(file)) {
-    let html;
-    try {
-      html = await readFile(file, 'utf8');
-    } catch {
-      ids.set(file, null);
-      return null;
-    }
-    ids.set(file, new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])));
+    ids.set(
+      file,
+      readFile(file, 'utf8').then(
+        (html) => new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])),
+        () => null
+      )
+    );
   }
   return ids.get(file);
 }
 
-const files = await htmlFiles(DIST);
-const problems = [];
+/** The problem with one internal link on `page`, or null when it resolves. */
+async function checkHref(page, href) {
+  const [path, hash] = href.split('#');
+  const target = fileFor(path);
+  const targetIds = await idsOf(target);
 
-for (const file of files) {
+  if (targetIds === null) return `${page} -> ${href} (no page at ${target.slice(DIST.length)})`;
+  if (hash && !targetIds.has(hash)) return `${page} -> ${href} (page exists, no element with id="${hash}")`;
+  return null;
+}
+
+/** Every broken internal link on one built page. */
+async function checkPage(file) {
   const html = await readFile(file, 'utf8');
   const page = file.slice(DIST.length) || '/';
-  const hrefs = new Set([...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]));
-
-  for (const href of hrefs) {
-    if (!href.startsWith(BASE + '/') && href !== BASE) continue;
-    if (/\.(css|js|xml|json|svg|png|webp|woff2?)$/.test(href)) continue;
-
-    const [path, hash] = href.split('#');
-    const target = fileFor(path);
-    const targetIds = await idsOf(target);
-
-    if (targetIds === null) {
-      problems.push(`${page} -> ${href} (no page at ${target.slice(DIST.length)})`);
-      continue;
-    }
-    if (hash && !targetIds.has(hash)) {
-      problems.push(`${page} -> ${href} (page exists, no element with id="${hash}")`);
-    }
-  }
+  const hrefs = [...new Set([...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]))]
+    .filter((href) => href.startsWith(BASE + '/') || href === BASE)
+    .filter((href) => !/\.(css|js|xml|json|svg|png|webp|woff2?)$/.test(href));
+  const results = await Promise.all(hrefs.map((href) => checkHref(page, href)));
+  return results.filter((problem) => problem !== null);
 }
+
+const files = await htmlFiles(DIST);
+// Promise.all keeps input order, so the report lists pages as before.
+const problems = (await Promise.all(files.map(checkPage))).flat();
 
 if (problems.length) {
   console.error(`check-links: ${problems.length} broken:\n  ${problems.join('\n  ')}`);

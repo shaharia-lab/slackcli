@@ -127,7 +127,7 @@ function tryMatchMarker(text: string, i: number): MarkerMatch | null {
 // Plain character: append to last plain element or create new one
 function appendPlainChar(elements: RichTextElement[], char: string): void {
   const last = elements.at(-1);
-  if (last && last.type === 'text' && !last.style) {
+  if (last?.type === 'text' && !last.style) {
     last.text += char;
   } else {
     elements.push({ type: 'text', text: char });
@@ -150,9 +150,9 @@ function stripEmptyStyles(elements: RichTextElement[]): RichTextElement[] {
 
 // Angle-bracket tokens, matched on the body between "<" and ">". The optional
 // "|label" is dropped for mentions and channels, and kept as text for links.
-const TOKEN_LABEL = '(?:\\|[^>]*)?';
+const TOKEN_LABEL = String.raw`(?:\|[^>]*)?`;
 const USER_TOKEN = new RegExp(`^@([UW][A-Z0-9]+)${TOKEN_LABEL}$`);
-const USERGROUP_TOKEN = new RegExp(`^!subteam\\^([A-Z0-9]+)${TOKEN_LABEL}$`);
+const USERGROUP_TOKEN = new RegExp(String.raw`^!subteam\^([A-Z0-9]+)${TOKEN_LABEL}$`);
 const CHANNEL_TOKEN = new RegExp(`^#([CG][A-Z0-9]+)${TOKEN_LABEL}$`);
 const BROADCAST_TOKEN = new RegExp(`^!(here|channel|everyone)${TOKEN_LABEL}$`);
 const LINK_TOKEN = /^((?:https?:\/\/|mailto:)[^|\s>]+)(?:\|([^>]*))?$/;

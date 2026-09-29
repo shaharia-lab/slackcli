@@ -37,9 +37,18 @@ export function errorMessageForLog(
 
 function rawErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  if (error == null) return '';
-  // A non-Error object would stringify as "[object Object]", and serialising
-  // it could log request data, so it gets the fallback instead.
-  if (typeof error === 'object') return '';
-  return String(error);
+  switch (typeof error) {
+    case 'string':
+      return error;
+    case 'number':
+    case 'bigint':
+    case 'boolean':
+    case 'symbol':
+      return error.toString();
+    default:
+      // null/undefined, and objects or functions: String() would log
+      // "[object Object]" or source code, and serialising could log request
+      // data, so these get the fallback instead.
+      return '';
+  }
 }

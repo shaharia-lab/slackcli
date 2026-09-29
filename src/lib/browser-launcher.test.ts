@@ -15,6 +15,8 @@ import {
   clearBrowserProfile,
   resetProfileIfStale,
   PROFILE_FORMAT,
+  hasExited,
+  signalBrowserTree,
 } from './browser-launcher';
 
 const CHROME_MAC = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -166,6 +168,94 @@ describe('escapeEre', () => {
     expect(escapeEre('/home/user/slackcli-profile')).toBe(
       '/home/user/slackcli-profile'
     );
+  });
+});
+
+describe('hasExited', () => {
+  it('is false only while neither an exit code nor a signal is recorded', () => {
+    expect(hasExited({ exitCode: null, signalCode: null })).toBe(false);
+    expect(hasExited({ exitCode: 0, signalCode: null })).toBe(true);
+    expect(hasExited({ exitCode: null, signalCode: 'SIGTERM' })).toBe(true);
+  });
+});
+
+describe('signalBrowserTree', () => {
+  function fakeChild(pid: number | undefined, kill: (signal?: NodeJS.Signals | number) => boolean = () => true) {
+    const signals: Array<NodeJS.Signals | number | undefined> = [];
+    return {
+      signals,
+      child: {
+        pid,
+        kill: (signal?: NodeJS.Signals | number) => {
+          signals.push(signal);
+          return kill(signal);
+        },
+      },
+    };
+  }
+
+  function recorder() {
+    const spawned: Array<[string, string[]]> = [];
+    const swept: string[] = [];
+    return {
+      spawned,
+      swept,
+      spawnProcess: (command: string, args: string[]) => {
+        spawned.push([command, args]);
+      },
+      sweep: (dir: string) => {
+        swept.push(dir);
+      },
+    };
+  }
+
+  it('does nothing for a child that never got a pid', () => {
+    const { child, signals } = fakeChild(undefined);
+    const deps = recorder();
+    signalBrowserTree(child, '/p', 'SIGKILL', { platform: 'linux', ...deps });
+    expect(signals).toEqual([]);
+    expect(deps.spawned).toEqual([]);
+    expect(deps.swept).toEqual([]);
+  });
+
+  it('signals the child without sweeping helpers on SIGTERM', () => {
+    const { child, signals } = fakeChild(42);
+    const deps = recorder();
+    signalBrowserTree(child, '/p', 'SIGTERM', { platform: 'linux', ...deps });
+    expect(signals).toEqual(['SIGTERM']);
+    expect(deps.swept).toEqual([]);
+    expect(deps.spawned).toEqual([]);
+  });
+
+  it('sweeps the profile helpers on SIGKILL, even when the child is already gone', () => {
+    const { child, signals } = fakeChild(42, () => {
+      throw new Error('ESRCH');
+    });
+    const deps = recorder();
+    signalBrowserTree(child, '/p', 'SIGKILL', { platform: 'darwin', ...deps });
+    expect(signals).toEqual(['SIGKILL']);
+    expect(deps.swept).toEqual(['/p']);
+  });
+
+  it('tears the tree down with taskkill on Windows instead of signalling', () => {
+    const { child, signals } = fakeChild(42);
+    const deps = recorder();
+    signalBrowserTree(child, 'C:\\p', 'SIGKILL', { platform: 'win32', ...deps });
+    expect(deps.spawned).toEqual([['taskkill', ['/pid', '42', '/T', '/F']]]);
+    expect(signals).toEqual([]);
+    expect(deps.swept).toEqual([]);
+  });
+
+  it('swallows a taskkill that cannot be started', () => {
+    const { child } = fakeChild(42);
+    expect(() =>
+      signalBrowserTree(child, 'C:\\p', 'SIGTERM', {
+        platform: 'win32',
+        spawnProcess: () => {
+          throw new Error('ENOENT');
+        },
+      })
+    ).not.toThrow();
   });
 });
 

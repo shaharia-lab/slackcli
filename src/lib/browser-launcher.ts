@@ -249,8 +249,16 @@ export function isSafeStartUrl(candidate: string): boolean {
   }
 }
 
-function hasExited(child: ChildProcess): boolean {
+/** Whether the browser process has exited or been killed by a signal. Exported for tests. */
+export function hasExited(child: Pick<ChildProcess, 'exitCode' | 'signalCode'>): boolean {
   return child.exitCode !== null || child.signalCode !== null;
+}
+
+/** Seams for `signalBrowserTree()`; tests replace them. */
+export interface SignalTreeDeps {
+  platform?: NodeJS.Platform;
+  spawnProcess?: (command: string, args: string[]) => unknown;
+  sweep?: (profileDir: string) => void;
 }
 
 /**
@@ -258,14 +266,21 @@ function hasExited(child: ChildProcess): boolean {
  *
  * Falls back to the bare child if the group signal fails (no group leader,
  * or the process is already gone). Windows has no process groups, so the
- * tree is torn down with taskkill /T.
+ * tree is torn down with taskkill /T. Exported for tests.
  */
-function signalBrowserTree(child: ChildProcess, profileDir: string, signal: NodeJS.Signals): void {
+export function signalBrowserTree(
+  child: Pick<ChildProcess, 'pid' | 'kill'>,
+  profileDir: string,
+  signal: NodeJS.Signals,
+  deps: SignalTreeDeps = {}
+): void {
   const pid = child.pid;
   if (pid === undefined) return;
-  if (process.platform === 'win32') {
+  if ((deps.platform ?? process.platform) === 'win32') {
+    const spawnProcess =
+      deps.spawnProcess ?? ((command: string, args: string[]) => spawn(command, args, { stdio: 'ignore' }));
     try {
-      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      spawnProcess('taskkill', ['/pid', String(pid), '/T', '/F']);
     } catch {
       // Nothing further to try.
     }
@@ -281,7 +296,7 @@ function signalBrowserTree(child: ChildProcess, profileDir: string, signal: Node
   // command line, and that path is unique to this profile, so matching on it
   // reaps exactly our tree and nothing else — no process group required, so
   // the browser keeps its keyring access.
-  if (signal === 'SIGKILL') sweepProfileHelpers(profileDir);
+  if (signal === 'SIGKILL') (deps.sweep ?? sweepProfileHelpers)(profileDir);
 }
 
 /**

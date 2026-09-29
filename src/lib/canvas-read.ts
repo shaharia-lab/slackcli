@@ -133,16 +133,23 @@ export async function resolveCanvasMentions(
     });
   }
 
-  for (const channelId of channelIds) {
-    try {
-      const info = await client.getConversationInfo(channelId);
-      if (info.channel?.name) {
-        mentions.channels.set(channelId, info.channel.name);
+  // Issued together; the rate limiter still paces them. Entries are added in
+  // mention order once every lookup has settled.
+  const channelNames = await Promise.all(
+    Array.from(channelIds, async (channelId) => {
+      try {
+        const info = await client.getConversationInfo(channelId);
+        return info.channel?.name;
+      } catch {
+        // Skip channels we can't resolve
+        return undefined;
       }
-    } catch {
-      // Skip channels we can't resolve
-    }
-  }
+    })
+  );
+  Array.from(channelIds).forEach((channelId, index) => {
+    const name = channelNames[index];
+    if (name) mentions.channels.set(channelId, name);
+  });
 
   return mentions;
 }

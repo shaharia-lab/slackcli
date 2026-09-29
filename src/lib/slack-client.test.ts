@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -630,6 +630,63 @@ describe('SlackClient.postMessage', () => {
     expect(body?.get('channel')).toBe('C123');
     expect(body?.get('text')).toBe('Status table');
     expect(body?.get('blocks')).toBe(JSON.stringify(blocks));
+  });
+});
+
+describe('SlackClient.getUsersInfo', () => {
+  class UsersClient extends SlackClient {
+    constructor(private readonly respond: (user: string) => Promise<unknown>) {
+      super({
+        workspace_id: 'T123',
+        workspace_name: 'Test Workspace',
+        auth_type: 'browser',
+        xoxd_token: 'xoxd-test',
+        xoxc_token: 'xoxc-test',
+        workspace_url: 'https://example.slack.com',
+      });
+    }
+
+    override async request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+      expect(method).toBe('users.info');
+      return this.respond(String(params.user));
+    }
+  }
+
+  it('returns users in request order even when lookups settle out of order', async () => {
+    const delays: Record<string, number> = { U1: 30, U2: 0, U3: 10 };
+    const client = new UsersClient(async (user) => {
+      await new Promise((resolve) => setTimeout(resolve, delays[user]));
+      return { ok: true, user: { id: user } };
+    });
+
+    const response = await client.getUsersInfo(['U1', 'U2', 'U3']);
+
+    expect(response).toEqual({ ok: true, users: [{ id: 'U1' }, { id: 'U2' }, { id: 'U3' }] });
+  });
+
+  it('skips users that fail or come back without a user, and still resolves', async () => {
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const client = new UsersClient(async (user) => {
+        if (user === 'U2') throw new Error('user_not_found');
+        if (user === 'U3') return { ok: false };
+        return { ok: true, user: { id: user } };
+      });
+
+      const response = await client.getUsersInfo(['U1', 'U2', 'U3', 'U4']);
+
+      expect(response).toEqual({ ok: true, users: [{ id: 'U1' }, { id: 'U4' }] });
+      expect(errorSpy).toHaveBeenCalledWith('Failed to fetch user U2');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('returns an empty list for no ids', async () => {
+    const client = new UsersClient(async () => {
+      throw new Error('should not be called');
+    });
+    expect(await client.getUsersInfo([])).toEqual({ ok: true, users: [] });
   });
 });
 

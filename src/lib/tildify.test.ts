@@ -47,5 +47,12 @@ describe('errorMessageForLog', () => {
   it('falls back for a non-Error object instead of "[object Object]" or its contents', () => {
     expect(errorMessageForLog({ text: 'secret message' }, 'unknown error', '/home/u')).toBe('unknown error');
     expect(errorMessageForLog([1, 2], 'unknown error', '/home/u')).toBe('unknown error');
+    expect(errorMessageForLog(() => 'source', 'unknown error', '/home/u')).toBe('unknown error');
+  });
+
+  it('keeps stringifying other primitives as before', () => {
+    expect(errorMessageForLog(true, 'unknown error', '/home/u')).toBe('true');
+    expect(errorMessageForLog(10n, 'unknown error', '/home/u')).toBe('10');
+    expect(errorMessageForLog(Symbol('x'), 'unknown error', '/home/u')).toBe('Symbol(x)');
   });
 });

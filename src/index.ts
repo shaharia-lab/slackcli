@@ -60,8 +60,10 @@ installUsageErrorLogging(program, {
   loggingStarted: () => loggingStarted,
 });
 
-// Show update notification after command output if a newer version is cached
-notifyIfUpdateAvailable();
+// Show update notification after command output if a newer version is cached.
+// Not awaited on purpose: the notice prints from a `beforeExit` handler, and
+// awaiting would hold up the command on the background release check.
+void notifyIfUpdateAvailable();
 
 // Parse arguments
 program.parse(process.argv);

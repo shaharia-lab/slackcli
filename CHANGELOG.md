@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Browser-session workspaces no longer fail on the first rate limit**: a `HTTP error! status: 429` from Slack is now retried after the `Retry-After` delay, as it already was for app tokens, instead of failing the command (#315)
+  - Every call is retried on a 429, including sends: Slack rejected the request, so it cannot be applied twice
+  - Read-only calls are also retried after a Slack 5xx or a dropped connection, with exponential backoff; sends and other changes are not, since the first attempt may already have gone through
+  - At most 3 retries, 60 s per wait and 2 minutes of waiting per call; a waiting call does not hold up other calls
 - **Drafts now render mentions, channels, broadcasts and links**: `messages draft` converted only formatting markers into `rich_text` blocks, so `<@U…>`, `<!subteam^S…>`, `<#C…>`, `<!here>` / `<!channel>` / `<!everyone>` and `<https://…|label>` showed up as literal text in the composer. They now become user, usergroup, channel, broadcast and link elements (labels on mentions and channels are dropped, link labels are kept), can carry bold/italic/strike, and an `_` inside a URL no longer opens an italic span. Unrecognised `<…>` text stays literal (#299)
 - **`auth login-auto` no longer fails with "The browser started but exposed no page to attach to" while the browser window flashes open and shut**: the page-target lookup now polls for up to 5s instead of probing once, covering the gap between Chrome writing `DevToolsActivePort` and registering its initial tab in `/json/list` (measured ~200–300 ms; previously the one-shot probe missed 5/5 launches on a fast machine) (#274)
 

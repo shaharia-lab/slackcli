@@ -11,6 +11,8 @@ import type {
 import { parseMrkdwn } from './mrkdwn.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
 import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
+import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
+import type { RetryOptions } from './retry.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
@@ -20,6 +22,27 @@ interface ExternalUploadUrlResponse {
 export interface SlackClientOptions {
   /** Overrides the process-wide limiter. Intended for tests. */
   rateLimiter?: RateLimiter;
+  /** Waits between browser-auth retries. Intended for tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Overrides the browser-auth retry policy's limits. Intended for tests. */
+  retry?: Partial<RetryOptions>;
+}
+
+/**
+ * A browser-auth call that failed below the Slack API: a non-2xx response or a
+ * `fetch` that never got one. Carries what the retry policy needs; the message
+ * keeps the `Slack API error: …` shape every other failure has.
+ */
+export class SlackTransportError extends Error {
+  constructor(
+    message: string,
+    readonly httpStatus: number | undefined,
+    readonly retryAfterMs: number | undefined,
+    readonly networkError: boolean,
+  ) {
+    super(message);
+    this.name = 'SlackTransportError';
+  }
 }
 
 // files.completeUploadExternal echoes the files it attached. Only the id is
@@ -35,6 +58,8 @@ const sdkLogger = getLogger(['slackcli', 'slack-web-api']);
 interface CallMeta {
   httpStatus?: number;
 }
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Routes @slack/web-api's own logging (rate-limit retries, response warnings,
 // transport failures) into LogTape. Its debug output is dropped on purpose: it
@@ -125,10 +150,14 @@ export class SlackClient {
   private readonly config: WorkspaceConfig;
   private readonly webClient?: WebClient;
   private readonly rateLimiter: RateLimiter;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly retryOptions: RetryOptions;
 
   constructor(config: WorkspaceConfig, options: SlackClientOptions = {}) {
     this.config = config;
     this.rateLimiter = options.rateLimiter ?? slackRateLimiter;
+    this.sleep = options.sleep ?? defaultSleep;
+    this.retryOptions = resolveRetryOptions(options.retry);
 
     // Only use WebClient for standard auth
     if (config.auth_type === 'standard') {
@@ -145,44 +174,87 @@ export class SlackClient {
   // The limiter applies to both auth types — the anomaly is about volume, not
   // about which transport produced it.
   //
-  // Each call is logged with its method, auth type, duration and outcome. The
-  // params are never logged (they hold message text and, on the browser path,
-  // the token) — only their names, at trace.
+  // Each attempt is logged with its method, auth type, duration and outcome.
+  // The params are never logged (they hold message text and, on the browser
+  // path, the token) — only their names, at trace.
+  //
+  // Browser auth retries here, per `retry.ts`: a 429 for any method, a 5xx or
+  // network error for reads only. Each attempt takes its own limiter slot and
+  // the wait happens between them, outside `run()`, so a call sitting out a
+  // `Retry-After` does not stall every other call behind it. The standard path
+  // is left to `@slack/web-api`, which retries by itself.
   async request(method: string, params: Record<string, any> = {}): Promise<any> {
-    return this.rateLimiter.run(async () => {
-      const authType = this.config.auth_type;
-      const meta: CallMeta = {};
-      logger.debug('Slack API {method} started', { method, auth_type: authType });
-      logger.trace('Slack API {method} params', { method, param_names: Object.keys(params) });
-      const startedAt = performance.now();
+    if (this.config.auth_type === 'standard') {
+      return this.rateLimiter.run(() => this.attempt(method, params, 1));
+    }
 
+    let waitedMs = 0;
+    let attempt = 1;
+    while (true) {
       try {
-        const response = authType === 'standard'
-          ? await this.standardRequest(method, params)
-          : await this.browserRequest(method, params, meta);
-        logger.info('Slack API {method} ok in {duration_ms} ms', {
+        return await this.rateLimiter.run(() => this.attempt(method, params, attempt));
+      } catch (error: unknown) {
+        if (!(error instanceof SlackTransportError)) throw error;
+        const decision = decideRetry({
           method,
-          auth_type: authType,
-          ok: true,
-          http_status: meta.httpStatus,
-          duration_ms: Math.round(performance.now() - startedAt),
-        });
-        return response;
-      } catch (error: any) {
-        const slackError = slackErrorCode(error);
-        logger.warn('Slack API {method} failed: {reason}', {
+          status: error.httpStatus,
+          networkError: error.networkError,
+          retryAfterMs: error.retryAfterMs,
+          attempt,
+          waitedMs,
+        }, this.retryOptions);
+        if (!decision.retry) throw error;
+
+        logger.info('Slack API {method} retrying in {wait_ms} ms', {
           method,
-          auth_type: authType,
-          ok: false,
-          reason: failureReason(slackError, meta.httpStatus),
-          http_status: meta.httpStatus,
-          slack_error: slackError,
-          error_message: error?.message,
-          duration_ms: Math.round(performance.now() - startedAt),
+          auth_type: this.config.auth_type,
+          attempt,
+          wait_ms: decision.waitMs,
+          http_status: error.httpStatus,
         });
-        throw error;
+        await this.sleep(decision.waitMs);
+        waitedMs += decision.waitMs;
+        attempt += 1;
       }
-    });
+    }
+  }
+
+  // One attempt of one call, run inside a rate-limiter slot.
+  private async attempt(method: string, params: Record<string, any>, attempt: number): Promise<any> {
+    const authType = this.config.auth_type;
+    const meta: CallMeta = {};
+    logger.debug('Slack API {method} started', { method, auth_type: authType, attempt });
+    logger.trace('Slack API {method} params', { method, param_names: Object.keys(params) });
+    const startedAt = performance.now();
+
+    try {
+      const response = authType === 'standard'
+        ? await this.standardRequest(method, params)
+        : await this.browserRequest(method, params, meta);
+      logger.info('Slack API {method} ok in {duration_ms} ms', {
+        method,
+        auth_type: authType,
+        ok: true,
+        attempt,
+        http_status: meta.httpStatus,
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
+      return response;
+    } catch (error: any) {
+      const slackError = slackErrorCode(error);
+      logger.warn('Slack API {method} failed: {reason}', {
+        method,
+        auth_type: authType,
+        ok: false,
+        attempt,
+        reason: failureReason(slackError, meta.httpStatus),
+        http_status: meta.httpStatus,
+        slack_error: slackError,
+        error_message: error?.message,
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
+      throw error;
+    }
   }
 
   // Standard token request (using @slack/web-api)
@@ -225,12 +297,12 @@ export class SlackClient {
       formParams[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
     }
     const formBody = new URLSearchParams(formParams);
+    // URL-encode the xoxd token for the cookie
+    const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
 
+    let response: Response;
     try {
-      // URL-encode the xoxd token for the cookie
-      const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method: 'POST',
         headers: {
           'Cookie': `d=${encodedXoxdToken}`,
@@ -240,12 +312,25 @@ export class SlackClient {
         },
         body: formBody,
       });
-      meta.httpStatus = response.status;
+    } catch (error: any) {
+      // No response at all: the request may or may not have reached Slack.
+      throw new SlackTransportError(`Slack API error: ${error?.message}`, undefined, undefined, true);
+    }
+    meta.httpStatus = response.status;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+    if (!response.ok) {
+      // Best effort: a body that already errored rejects its cancel(), and that
+      // must not replace the transport error the retry policy acts on.
+      await response.body?.cancel().catch(() => {});
+      throw new SlackTransportError(
+        `Slack API error: HTTP error! status: ${response.status}`,
+        response.status,
+        parseRetryAfter(response.headers.get('retry-after')),
+        false,
+      );
+    }
 
+    try {
       const data: any = await response.json();
 
       if (!data.ok) {

@@ -142,7 +142,14 @@ The visible cost is that commands resolving many names one entity at a time —
 workspace. The spinner keeps running; it is throttling, not hanging. Narrow the
 request (`--types`, `--limit`) to make it finish sooner.
 
-If Slack itself rate-limits you anyway, retry after a pause.
+If Slack rate-limits you anyway (HTTP 429), slackcli waits as long as Slack
+asks (up to 60 seconds at a time) and retries, up to 3 times and 2 minutes of
+waiting per call. That is slackcli's own retry on browser-session workspaces;
+app-token workspaces are retried by the Slack SDK instead. Read-only calls are also
+retried after a Slack server error (5xx) or a dropped connection; sends and
+other changes are not, because the first attempt may already have gone through
+— check before re-running a command that failed that way. If a call still fails
+after the retries, wait a minute and run it again.
 
 ## Logs
 

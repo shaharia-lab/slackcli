@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { resetSync } from '@logtape/logtape';
-import { SlackClient } from './slack-client.ts';
+import { SlackClient, SlackTransportError } from './slack-client.ts';
 import { configureLogging } from './logger.ts';
 import { RateLimiter, SLACK_MIN_REQUEST_INTERVAL_MS } from './rate-limiter.ts';
 
@@ -902,7 +902,7 @@ describe('SlackClient request throttling', () => {
       xoxd_token: 'xoxd-test',
       xoxc_token: 'xoxc-test',
       workspace_url: 'https://example.slack.com',
-    }, { rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }) });
+    }, { rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }), retry: { maxRetries: 0 } });
 
     await expect(client.getUserInfo('U1')).rejects.toThrow('network down');
     await expect(client.getUserInfo('U2')).resolves.toMatchObject({ ok: true });
@@ -965,7 +965,7 @@ describe('SlackClient request logging', () => {
     const file = await logTo();
     globalThis.fetch = (async (_input, _init) => new Response('slow down', { status: 429 })) as typeof fetch;
 
-    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing() });
+    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing(), retry: { maxRetries: 0 } });
     await expect(client.getUserInfo('U1')).rejects.toThrow('status: 429');
 
     const failure = records(file).find((r) => r.level === 'WARN')!;
@@ -981,7 +981,7 @@ describe('SlackClient request logging', () => {
       throw new TypeError('network down');
     }) as typeof fetch;
 
-    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing() });
+    const client = new SlackClient({ ...browserConfig }, { rateLimiter: noPacing(), retry: { maxRetries: 0 } });
     await expect(client.getUserInfo('U1')).rejects.toThrow('network down');
 
     const failure = records(file).find((r) => r.level === 'WARN')!;
@@ -1132,5 +1132,278 @@ describe('SlackClient identity getters', () => {
     });
     expect(browser.isBotToken).toBe(false);
     expect(browser.storedUserId).toBe('U_ME');
+  });
+});
+
+describe('SlackClient browser-auth retry', () => {
+  const browserConfig = {
+    workspace_id: 'T123',
+    workspace_name: 'Test Workspace',
+    auth_type: 'browser',
+    xoxd_token: 'xoxd-test',
+    xoxc_token: 'xoxc-test',
+    workspace_url: 'https://example.slack.com',
+  } as const;
+
+  type Step = Response | Error | (() => Promise<Response>);
+
+  // Replays `steps` one per fetch, recording the Slack method each hit.
+  function scriptFetch(steps: Step[]): string[] {
+    const methods: string[] = [];
+    globalThis.fetch = (async (input, _init) => {
+      methods.push(String(input).split('/api/')[1]!);
+      const step = steps.shift();
+      if (!step) throw new Error('fetch called more often than scripted');
+      if (step instanceof Error) throw step;
+      return typeof step === 'function' ? step() : step;
+    }) as typeof fetch;
+    return methods;
+  }
+
+  const tooMany = (retryAfter?: string) =>
+    new Response('slow down', { status: 429, headers: retryAfter === undefined ? {} : { 'Retry-After': retryAfter } });
+
+  // Records every wait instead of sleeping.
+  function client(options: { retry?: Record<string, number>; limiter?: RateLimiter } = {}) {
+    const waits: number[] = [];
+    const c = new SlackClient({ ...browserConfig }, {
+      rateLimiter: options.limiter ?? new RateLimiter({ maxConcurrent: 2, minIntervalMs: 0 }),
+      sleep: async (ms) => { waits.push(ms); },
+      retry: { random: () => 0.5, ...options.retry },
+    });
+    return { c, waits };
+  }
+
+  it('retries a read after a 429, waiting Retry-After seconds', async () => {
+    const methods = scriptFetch([tooMany('7'), Response.json({ ok: true, messages: [] })]);
+    const { c, waits } = client();
+
+    await expect(c.getConversationHistory('C123')).resolves.toMatchObject({ ok: true });
+    expect(methods).toEqual(['conversations.history', 'conversations.history']);
+    expect(waits).toEqual([7000]);
+  });
+
+  it('retries a write after a 429 — Slack rejected it, so it cannot post twice', async () => {
+    const methods = scriptFetch([tooMany('2'), Response.json({ ok: true, ts: '1.2' })]);
+    const { c, waits } = client();
+
+    await expect(c.postMessage('C123', 'hello')).resolves.toMatchObject({ ok: true });
+    expect(methods).toEqual(['chat.postMessage', 'chat.postMessage']);
+    expect(waits).toEqual([2000]);
+  });
+
+  it('still retries a 429 whose body stream errors mid-read', async () => {
+    const brokenBody = () => new Response(new ReadableStream({
+      start(controller) { controller.error(new Error('ECONNRESET mid-body')); },
+    }), { status: 429, headers: { 'Retry-After': '1' } });
+    const methods = scriptFetch([brokenBody(), brokenBody()]);
+    const { c, waits } = client({ retry: { maxRetries: 1 } });
+
+    const error = await c.testAuth().catch((e) => e);
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.message).toBe('Slack API error: HTTP error! status: 429');
+    expect(methods).toHaveLength(2);
+    expect(waits).toEqual([1000]);
+  });
+
+  it('backs off exponentially on a 429 with no or an unusable Retry-After, never 0', async () => {
+    scriptFetch([tooMany(), tooMany('0'), tooMany('Wed, 21 Oct 2015 07:28:00 GMT'), Response.json({ ok: true })]);
+    const { c, waits } = client();
+
+    await expect(c.testAuth()).resolves.toMatchObject({ ok: true });
+    // base 1000ms doubling, at 75% with random() = 0.5
+    expect(waits).toEqual([750, 1500, 3000]);
+  });
+
+  it('caps a single wait at maxWaitMs', async () => {
+    scriptFetch([tooMany('3600'), Response.json({ ok: true })]);
+    const { c, waits } = client();
+
+    await c.testAuth();
+    expect(waits).toEqual([60_000]);
+  });
+
+  it('gives up after maxRetries and throws the last error unchanged', async () => {
+    const methods = scriptFetch([tooMany('1'), tooMany('1'), tooMany('1'), tooMany('1'), tooMany('1')]);
+    const { c, waits } = client();
+
+    const error = await c.testAuth().catch((e) => e);
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.message).toBe('Slack API error: HTTP error! status: 429');
+    expect(error.httpStatus).toBe(429);
+    expect(methods).toHaveLength(4);
+    expect(waits).toEqual([1000, 1000, 1000]);
+  });
+
+  it('stops before a wait would overrun maxTotalWaitMs', async () => {
+    const methods = scriptFetch([tooMany('50'), tooMany('50'), tooMany('50'), Response.json({ ok: true })]);
+    const { c, waits } = client();
+
+    await expect(c.testAuth()).rejects.toThrow('status: 429');
+    // 50s + 50s fits in 120s; a third 50s would not.
+    expect(waits).toEqual([50_000, 50_000]);
+    expect(methods).toHaveLength(3);
+  });
+
+  it('retries a read on a 5xx with backoff', async () => {
+    const methods = scriptFetch([new Response('oops', { status: 503 }), Response.json({ ok: true, user: { id: 'U1' } })]);
+    const { c, waits } = client();
+
+    await expect(c.getUserInfo('U1')).resolves.toMatchObject({ ok: true });
+    expect(methods).toHaveLength(2);
+    expect(waits).toEqual([750]);
+  });
+
+  it('retries a read on a network error', async () => {
+    const methods = scriptFetch([new TypeError('network down'), Response.json({ ok: true, user: { id: 'U1' } })]);
+    const { c } = client();
+
+    await expect(c.getUserInfo('U1')).resolves.toMatchObject({ ok: true });
+    expect(methods).toHaveLength(2);
+  });
+
+  it('never retries a write on a 5xx — it may already have been applied', async () => {
+    const methods = scriptFetch([new Response('oops', { status: 502 }), Response.json({ ok: true })]);
+    const { c, waits } = client();
+
+    await expect(c.postMessage('C123', 'hello')).rejects.toThrow('status: 502');
+    expect(methods).toEqual(['chat.postMessage']);
+    expect(waits).toEqual([]);
+  });
+
+  it('never retries a write on a network error', async () => {
+    const methods = scriptFetch([new TypeError('network down'), Response.json({ ok: true })]);
+    const { c, waits } = client();
+
+    await expect(c.postMessage('C123', 'hello')).rejects.toThrow('Slack API error: network down');
+    expect(methods).toHaveLength(1);
+    expect(waits).toEqual([]);
+  });
+
+  it('never retries a Slack ok:false error, and keeps its slackData', async () => {
+    const methods = scriptFetch([Response.json({ ok: false, error: 'ratelimited' }), Response.json({ ok: true })]);
+    const { c, waits } = client();
+
+    const error = await c.getUserInfo('U1').catch((e) => e);
+    expect(error.message).toBe('Slack API error: ratelimited');
+    expect(error.slackData).toEqual({ ok: false, error: 'ratelimited' });
+    expect(methods).toHaveLength(1);
+    expect(waits).toEqual([]);
+  });
+
+  it('does not retry an unparseable 200 body', async () => {
+    const methods = scriptFetch([new Response('<html>', { status: 200 }), Response.json({ ok: true })]);
+    const { c } = client();
+
+    await expect(c.getUserInfo('U1')).rejects.toThrow('Slack API error:');
+    expect(methods).toHaveLength(1);
+  });
+
+  it('leaves standard-token calls to @slack/web-api', async () => {
+    const waits: number[] = [];
+    const c = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    }, {
+      rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }),
+      sleep: async (ms) => { waits.push(ms); },
+    });
+    let calls = 0;
+    (c as unknown as { webClient: { apiCall: () => Promise<unknown> } }).webClient = {
+      apiCall: async () => {
+        calls += 1;
+        throw Object.assign(new Error('An HTTP protocol error occurred: statusCode = 503'), { statusCode: 503 });
+      },
+    };
+
+    await expect(c.getUserInfo('U1')).rejects.toThrow('statusCode = 503');
+    expect(calls).toBe(1);
+    expect(waits).toEqual([]);
+  });
+
+  it('releases its limiter slot while waiting, so other calls keep flowing', async () => {
+    const order: string[] = [];
+    let fetchedU1 = 0;
+    globalThis.fetch = (async (_input, init) => {
+      const user = new URLSearchParams(String(init?.body)).get('user');
+      order.push(`fetch ${user}`);
+      if (user === 'U1' && ++fetchedU1 === 1) return tooMany('30');
+      return Response.json({ ok: true, user: { id: user } });
+    }) as typeof fetch;
+
+    let releaseWait!: () => void;
+    let waitStarted!: () => void;
+    const waiting = new Promise<void>((resolve) => { waitStarted = resolve; });
+    const c = new SlackClient({ ...browserConfig }, {
+      rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }),
+      sleep: () => new Promise<void>((resolve) => {
+        order.push('wait');
+        releaseWait = resolve;
+        waitStarted();
+      }),
+    });
+
+    const first = c.getUserInfo('U1');
+    await waiting;
+    // Issued only once U1 is sitting out its Retry-After. Had U1 kept the only
+    // slot through the wait, this call could not start until the wait ended.
+    const second = c.getUserInfo('U2');
+    const outcome = await Promise.race([
+      second.then(() => 'U2 done'),
+      new Promise((resolve) => setTimeout(() => resolve('U2 blocked'), 500)),
+    ]);
+    expect(outcome).toBe('U2 done');
+    releaseWait();
+    await expect(first).resolves.toMatchObject({ ok: true });
+    expect(order).toEqual(['fetch U1', 'wait', 'fetch U2', 'fetch U1']);
+  });
+});
+
+describe('SlackClient retry logging', () => {
+  let logDir: string;
+
+  afterEach(async () => {
+    resetSync();
+    await rm(logDir, { recursive: true, force: true });
+  });
+
+  it('logs each retry with method, attempt, wait and status, and no params', async () => {
+    logDir = await mkdtemp(join(tmpdir(), 'slackcli-retry-log-'));
+    const file = configureLogging({ level: 'trace', verbose: false, dir: logDir }).logFile!;
+    let call = 0;
+    globalThis.fetch = (async (_input, _init) => {
+      call += 1;
+      return call === 1
+        ? new Response('slow down', { status: 429, headers: { 'Retry-After': '3' } })
+        : Response.json({ ok: true, ts: '1.2' });
+    }) as typeof fetch;
+
+    const c = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    }, { rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }), sleep: async () => {} });
+    await c.postMessage('C123', 'confidential message text');
+
+    const text = readFileSync(file, 'utf-8');
+    expect(text).not.toContain('confidential message text');
+    const all = text.trim().split('\n').map((line) => JSON.parse(line));
+    const retry = all.find((r) => r.message.includes('retrying'))!;
+    expect(Object.keys(retry.properties)).not.toContain('text');
+    expect(retry.properties).toMatchObject({
+      method: 'chat.postMessage',
+      auth_type: 'browser',
+      attempt: 1,
+      wait_ms: 3000,
+      http_status: 429,
+    });
+    const ok = all.find((r) => r.level === 'INFO' && r.properties.ok === true)!;
+    expect(ok.properties.attempt).toBe(2);
   });
 });

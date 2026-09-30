@@ -38,10 +38,10 @@ important thing to understand about this codebase.
 
 ```ts
 async request(method: string, params = {}) {
-  return this.rateLimiter.run(() =>
-    this.config.auth_type === 'standard'
-      ? this.standardRequest(method, params)
-      : this.browserRequest(method, params));
+  if (this.config.auth_type === 'standard') {
+    return this.rateLimiter.run(() => this.attempt(method, params, 1));  // → standardRequest()
+  }
+  // browser: retry loop around rateLimiter.run(() => this.attempt(...)) → browserRequest()
 }
 ```
 
@@ -72,9 +72,34 @@ Two consequences worth knowing:
   measurably slower on large workspaces. That is the trade; keep the spinner
   running so it does not look hung.
 
-Retry/backoff on HTTP 429 is deliberately *not* here — it is a separate concern
-from pacing, and the raw `fetch()` calls used for file upload/download are
-single-shot per invocation, so they bypass the limiter.
+The raw `fetch()` calls used for file upload/download are single-shot per
+invocation, so they bypass the limiter.
+
+### Retry (browser auth)
+
+Pacing keeps traffic low; retry reacts when Slack pushes back anyway. The
+standard path gets it from `@slack/web-api`, which retries by itself. The browser
+path gets it from `request()`, driven by the pure policy in `src/lib/retry.ts`
+(`decideRetry()`):
+
+- **HTTP 429 → retried for every method**, reads and writes, after the
+  `Retry-After` seconds (exponential backoff with jitter when the header is
+  missing, `0` or not whole seconds). Slack rejected the request, so a retry
+  cannot apply it twice.
+- **5xx and network errors → retried for read methods only**, with exponential
+  backoff and jitter. A write that failed that way may still have been applied,
+  so retrying could double-post; the error is surfaced instead. Reads are an
+  explicit allowlist (`READ_METHODS`): a method not on it — including any new
+  one — is treated as a write. Add a new read method to it.
+- **`ok:false` Slack errors are never retried**, nor is an unparseable body.
+- Caps: 3 retries, 60 s per wait, 120 s of waiting per call. A wait that would
+  overrun the total ends the call with the last error, unchanged.
+
+Each attempt takes its own limiter slot, and the wait happens *between*
+`rateLimiter.run()` calls, so a call sitting out `Retry-After: 30` holds no slot
+and every other call keeps flowing. Retries are logged at `info` with the
+method, attempt, wait and HTTP status only. `SlackClientOptions` takes `sleep`
+and `retry` overrides for tests.
 
 ### Where the two genuinely diverge
 

@@ -146,6 +146,32 @@ while :; do
 done
 ```
 
+### Poll a channel or thread safely
+
+Keep the `next_oldest` cursor between calls, and drop your own messages so a
+reply you post does not wake you up again:
+
+```bash
+cursor=$(date +%s)   # start from now; or a saved cursor
+while :; do
+  out=$(slackcli conversations read C123 --thread-ts="$THREAD" \
+          --oldest="$cursor" --exclude-self --limit=200 --json)
+  jq -c '.messages[]' <<<"$out" | while read -r m; do handle "$m"; done
+  cursor=$(jq -r '.next_oldest' <<<"$out")
+  sleep 30
+done
+```
+
+- Use the returned cursor, not a message count: counting never changes on a
+  thread longer than `--limit`.
+- Messages at or before `--oldest` are never returned, so the thread parent
+  is not re-emitted on every poll.
+- `next_oldest` still advances when every new message was your own.
+- For channel history Slack returns the *newest* `--limit` messages in the
+  range. If `has_more` is `true`, more arrived than you asked for: advancing
+  the cursor would skip the older ones, so re-read with a larger `--limit`
+  (or page back with `--latest`) before moving on.
+
 ## Notes for unattended use
 
 - **Token freshness.** Browser tokens die with the browser session. Refresh them

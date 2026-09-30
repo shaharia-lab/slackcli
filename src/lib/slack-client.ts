@@ -864,6 +864,16 @@ export class SlackClient {
     return this.config.auth_type;
   }
 
+  // Authenticated user/bot id saved at login; absent on legacy records.
+  get storedUserId(): string | undefined {
+    return this.config.user_id;
+  }
+
+  // True for a standard-auth bot token (xoxb), whose bot_id is not stored.
+  get isBotToken(): boolean {
+    return this.config.auth_type === 'standard' && this.config.token_type === 'bot';
+  }
+
   // Workspace subdomain, used to spot links pasted from a different workspace.
   // Only browser auth stores a workspace URL; standard auth has no reliable
   // subdomain (its workspace_name is chosen by the user at login).

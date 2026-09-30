@@ -72,6 +72,7 @@ They hold no Slack API knowledge.
 | `tildify.ts` | Home directory as `~` in log records: `tildify()` for a path, `tildifyText()` for free text, `errorMessageForLog()` for an error's message. Its own module so libs can use it without importing `logger.ts`. |
 | `process-errors.ts` | Last-resort `unhandledRejection` / `uncaughtException` handlers: log the error with its stack, print the message, exit 1. Installed from `src/index.ts`. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
+| `poll.ts` | `conversations read`'s polling helpers: exact Slack `ts` comparison, the `ts > --oldest` and `--exclude-self` filters, the `next_oldest` cursor, and resolving the authenticated identity (stored `user_id`, or one `auth.test`). |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types. |
 | `formatter.ts` | Chalk-coloured renderers, status helpers, and `writeJson()`. |

@@ -47,6 +47,12 @@ describe('conversations command', () => {
     expect(longOptions('read')).toContain('--thread-ts');
   });
 
+  it('exposes --exclude-self on read, defaulting to off', () => {
+    const option = subcommand('read')?.options.find((o) => o.long === '--exclude-self');
+    expect(option).toBeDefined();
+    expect(option?.defaultValue).toBe(false);
+  });
+
   it('exposes --json on list, defaulting to off', () => {
     const jsonOption = subcommand('list')?.options.find((option) => option.long === '--json');
     expect(jsonOption).toBeDefined();

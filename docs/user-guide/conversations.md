@@ -51,6 +51,9 @@ slackcli conversations read C1234567890 --oldest=1735689600 --latest=1738368000
 
 # Machine-readable
 slackcli conversations read C1234567890 --json
+
+# Only what is new since the last poll, minus your own messages
+slackcli conversations read C1234567890 --oldest="$CURSOR" --exclude-self --json
 ```
 
 | Option | Default | Purpose |
@@ -58,13 +61,29 @@ slackcli conversations read C1234567890 --json
 | `--thread-ts <ts>` | — | Read a specific thread instead of the channel |
 | `--permalink <url>` | — | Replaces the channel argument and `--thread-ts` |
 | `--exclude-replies` | off | Drop threaded replies from channel history |
+| `--exclude-self` | off | Drop messages sent by the authenticated user (or, for a bot token, its bot) |
 | `--limit <number>` | `100` | How many messages |
-| `--oldest` / `--latest` | — | Time range bounds |
+| `--oldest` / `--latest` | — | Time range bounds; only messages strictly newer than `--oldest` are shown |
 | `--json` | off | JSON output, including `ts` and `thread_ts` |
 
 Channel history comes back newest-first from Slack and is reversed so you read
 top to bottom. Thread replies are already chronological. `--json` also includes
 reactions, blocks, attachments, file metadata, and a resolved `users` array.
+
+`--json` also carries a polling cursor:
+
+- `next_oldest` — the newest `ts` of the page Slack returned, taken before
+  `--exclude-self` / `--exclude-replies` filter it. Pass it back as `--oldest`
+  on the next call. On an empty page it is the `--oldest` you passed in (or
+  `null` without one), and it never moves backwards.
+- `has_more` — Slack has more messages in the range than `--limit` returned.
+
+Slack's thread API always returns the thread's parent message, whatever
+`--oldest` says, so `read` drops every message with `ts <= --oldest` itself: a
+thread poll does not see the parent again. `--exclude-self` uses the user ID
+saved at login; a workspace saved before that, or a bot token (whose `bot_id`
+is not stored), costs one `auth.test` call. See
+[Poll a channel or thread safely](scripting.md#poll-a-channel-or-thread-safely).
 
 ## `conversations get`
 

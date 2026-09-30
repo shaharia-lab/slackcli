@@ -5,6 +5,7 @@ import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
+import { processReadPage, resolveSelfIdentity } from '../lib/poll.ts';
 import { confirmWrite, parseUserIds } from './usergroups.ts';
 import {
   normalizeTimestamp,
@@ -145,6 +146,7 @@ export function createConversationsCommand(): Command {
     .option('--thread-ts <timestamp>', 'Thread timestamp to read specific thread')
     .option('--permalink <url>', 'Slack link; reads that channel, or that message\'s thread (replaces <channel-id> and --thread-ts)')
     .option('--exclude-replies', 'Exclude threaded replies (only top-level messages)', false)
+    .option('--exclude-self', 'Exclude messages sent by the authenticated user or bot', false)
     .option('--limit <number>', 'Number of messages to return', '100')
     .option('--oldest <timestamp>', 'Start of time range')
     .option('--latest <timestamp>', 'End of time range')
@@ -166,7 +168,6 @@ export function createConversationsCommand(): Command {
         warnOnWorkspaceMismatch(client, target.workspace);
 
         let response: any;
-        let messages: SlackMessage[];
 
         if (target.threadTs) {
           // Fetch thread replies
@@ -176,7 +177,6 @@ export function createConversationsCommand(): Command {
             oldest,
             latest,
           });
-          messages = response.messages || [];
         } else {
           // Fetch conversation history
           spinner.text = 'Fetching conversation history...';
@@ -185,13 +185,18 @@ export function createConversationsCommand(): Command {
             oldest,
             latest,
           });
-          messages = response.messages || [];
-
-          // Filter out replies if requested
-          if (options.excludeReplies) {
-            messages = messages.filter(msg => !msg.thread_ts || msg.thread_ts === msg.ts);
-          }
         }
+
+        // --exclude-self needs the authenticated identity (one auth.test call at
+        // most, only when the flag is passed).
+        const self = options.excludeSelf ? await resolveSelfIdentity(client) : undefined;
+        const page = processReadPage(response, {
+          oldest,
+          excludeReplies: options.excludeReplies,
+          isThread: Boolean(target.threadTs),
+          self,
+        });
+        const messages: SlackMessage[] = page.messages;
 
         // Channel history returns newest first, so reverse to show oldest first.
         // Thread replies already come in chronological order.
@@ -223,6 +228,8 @@ export function createConversationsCommand(): Command {
           writeJson({
             channel_id: channelId,
             message_count: messages.length,
+            next_oldest: page.nextOldest,
+            has_more: page.hasMore,
             messages: messages.map(msg => ({
               ts: msg.ts,
               thread_ts: msg.thread_ts,

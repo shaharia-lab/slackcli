@@ -1101,3 +1101,36 @@ describe('SlackClient request logging', () => {
     expect(retry.properties.text).toContain('rate limiting');
   });
 });
+
+describe('SlackClient identity getters', () => {
+  const standard = (token_type: 'bot' | 'user', user_id?: string) =>
+    new SlackClient({
+      workspace_id: 'T1',
+      workspace_name: 'w',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type,
+      ...(user_id ? { user_id } : {}),
+    });
+
+  it('exposes the stored user_id, or undefined on a legacy record', () => {
+    expect(standard('user', 'U_ME').storedUserId).toBe('U_ME');
+    expect(standard('user').storedUserId).toBeUndefined();
+  });
+
+  it('reports a bot token only for standard auth with token_type bot', () => {
+    expect(standard('bot').isBotToken).toBe(true);
+    expect(standard('user').isBotToken).toBe(false);
+    const browser = new SlackClient({
+      workspace_id: 'T1',
+      workspace_name: 'w',
+      workspace_url: 'https://w.slack.com',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      user_id: 'U_ME',
+    });
+    expect(browser.isBotToken).toBe(false);
+    expect(browser.storedUserId).toBe('U_ME');
+  });
+});

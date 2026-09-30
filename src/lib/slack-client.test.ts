@@ -1192,6 +1192,20 @@ describe('SlackClient browser-auth retry', () => {
     expect(waits).toEqual([2000]);
   });
 
+  it('still retries a 429 whose body stream errors mid-read', async () => {
+    const brokenBody = () => new Response(new ReadableStream({
+      start(controller) { controller.error(new Error('ECONNRESET mid-body')); },
+    }), { status: 429, headers: { 'Retry-After': '1' } });
+    const methods = scriptFetch([brokenBody(), brokenBody()]);
+    const { c, waits } = client({ retry: { maxRetries: 1 } });
+
+    const error = await c.testAuth().catch((e) => e);
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.message).toBe('Slack API error: HTTP error! status: 429');
+    expect(methods).toHaveLength(2);
+    expect(waits).toEqual([1000]);
+  });
+
   it('backs off exponentially on a 429 with no or an unusable Retry-After, never 0', async () => {
     scriptFetch([tooMany(), tooMany('0'), tooMany('Wed, 21 Oct 2015 07:28:00 GMT'), Response.json({ ok: true })]);
     const { c, waits } = client();

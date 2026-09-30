@@ -319,7 +319,9 @@ export class SlackClient {
     meta.httpStatus = response.status;
 
     if (!response.ok) {
-      await response.body?.cancel();
+      // Best effort: a body that already errored rejects its cancel(), and that
+      // must not replace the transport error the retry policy acts on.
+      await response.body?.cancel().catch(() => {});
       throw new SlackTransportError(
         `Slack API error: HTTP error! status: ${response.status}`,
         response.status,

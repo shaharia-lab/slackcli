@@ -64,7 +64,8 @@ export class RateLimiter {
    * SDK defaults (`timeout: 0`, `tenRetriesInAboutThirtyMinutes`), so a retrying
    * standard call can hold a slot for ~30 minutes. The bound belongs on the
    * request — an `AbortSignal`, or `timeout`/`retryConfig` on the `WebClient` —
-   * not here.
+   * not here. Browser-auth retries do not hold a slot: `SlackClient.request()`
+   * runs each attempt as its own task and waits between them, outside `run()`.
    */
   async run<T>(task: () => Promise<T>): Promise<T> {
     await this.acquire();

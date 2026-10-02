@@ -25,6 +25,7 @@ import { resolveCurlInput, type CurlInputResult } from '../lib/curl-input.ts';
 import { clearBrowserProfile } from '../lib/browser-launcher.ts';
 import { isSlackWorkspaceUrl } from '../lib/browser-auth.ts';
 import { confirmWrite } from './usergroups.ts';
+import { describeCommand } from '../lib/help.ts';
 import type { IdentityResult, SecretBackend } from '../types/index.ts';
 
 // Validates the `--secret-backend` flag shared by every login path. Exits the
@@ -114,13 +115,33 @@ function printLoginHint(parsed: ParsedCurlResult): void {
 }
 
 export function createAuthCommand(): Command {
-  const auth = new Command('auth')
-    .description('Manage workspace authentication');
+  const auth = describeCommand(new Command('auth'), {
+    summary: 'Log in, list, verify and remove workspaces',
+    description:
+      'Store, select, verify and remove Slack credentials. Log in with an app token (login), ' +
+      'browser session tokens (login-browser, parse-curl) or by signing in to a browser (login-auto). ' +
+      'Each login is stored as a profile; the first one becomes the default workspace.',
+  });
 
   // Login with standard token
-  auth
-    .command('login')
-    .description('Login with standard Slack app token (xoxb-* or xoxp-*)')
+  describeCommand(auth.command('login'), {
+    summary: 'Log in with a Slack app token (xoxb/xoxp)',
+    description:
+      'Log in with a Slack app token: a bot token (xoxb-...) or a user token (xoxp-...). ' +
+      'The token is verified with auth.test, then stored. Use login-browser or login-auto ' +
+      'instead when you have no Slack app.',
+    examples: [
+      'slackcli auth login --token "$SLACK_TOKEN" --workspace-name acme',
+      'slackcli auth login --token "$SLACK_BOT_TOKEN" --workspace-name acme --profile acme-bot',
+      'slackcli auth login --token "$SLACK_TOKEN" --workspace-name acme --secret-backend keychain',
+    ],
+    notes: [
+      'Pass the token from an environment variable, not as a literal: a literal lands in shell history.',
+      '--profile names the stored profile. Without it, logging in again as the same identity refreshes ' +
+        'it in place; a different identity for the same workspace is stored as <workspace-id>-2, -3, ...',
+      '--secret-backend applies only when the profile is new; use "auth migrate-secrets" to move an existing one.',
+    ],
+  })
     .requiredOption('--token <token>', 'Slack bot or user token')
     .requiredOption('--workspace-name <name>', 'Workspace name for identification')
     .option('--profile <name>', 'Store under a named profile (keeps multiple identities for one workspace)')
@@ -152,9 +173,22 @@ export function createAuthCommand(): Command {
     });
 
   // Login with browser tokens
-  auth
-    .command('login-browser')
-    .description('Login with browser session tokens (xoxd-* and xoxc-*)')
+  describeCommand(auth.command('login-browser'), {
+    summary: 'Log in with browser session tokens (xoxd/xoxc)',
+    description:
+      'Log in with the browser session tokens of a signed-in Slack web client: the d cookie (xoxd-...) ' +
+      'and the API token (xoxc-...). The tokens are verified, then stored. To skip copying them by hand, ' +
+      'use parse-curl (paste a DevTools cURL) or login-auto (sign in to a browser).',
+    examples: [
+      'slackcli auth login-browser --xoxd "$SLACK_XOXD" --xoxc "$SLACK_XOXC" --workspace-url https://acme.slack.com',
+      'slackcli auth login-browser --xoxd "$SLACK_XOXD" --xoxc "$SLACK_XOXC" --workspace-url https://acme.slack.com --profile acme-me',
+    ],
+    notes: [
+      'Pass tokens from environment variables, not as literals: a literal lands in shell history.',
+      'Browser session tokens unlock browser-only commands (drafts, thread replies); "auth extract-tokens" shows where to find them.',
+      '--profile and --secret-backend work as for "auth login".',
+    ],
+  })
     .requiredOption('--xoxd <token>', 'Browser session token (xoxd-*)')
     .requiredOption('--xoxc <token>', 'Browser API token (xoxc-*)')
     .requiredOption('--workspace-url <url>', 'Workspace URL (e.g., https://myteam.slack.com)')
@@ -190,9 +224,25 @@ export function createAuthCommand(): Command {
     });
 
   // Login by capturing tokens from a browser session
-  auth
-    .command('login-auto')
-    .description('Login by signing into Slack in a browser (captures tokens automatically)')
+  describeCommand(auth.command('login-auto'), {
+    summary: 'Log in by signing in to Slack in a browser',
+    description:
+      'Launch a Chromium-family browser (Chrome, Chromium, Edge, Brave) with a dedicated slackcli profile, ' +
+      'wait for you to sign in, and capture the browser session tokens of every workspace you are signed in to. ' +
+      'The easiest way to get browser session tokens.',
+    examples: [
+      'slackcli auth login-auto',
+      'slackcli auth login-auto --workspace-url https://acme.slack.com --timeout 600',
+      'slackcli auth login-auto --headless',
+    ],
+    notes: [
+      '--workspace-url must be an https URL on a slack.com host.',
+      '--headless only works when the dedicated profile is already signed in (from an earlier login-auto).',
+      'The browser profile stays signed in, so a later login-auto needs no interaction; "auth logout" deletes it.',
+      'SLACKCLI_BROWSER picks the browser executable, SLACKCLI_BROWSER_PROFILE the profile directory.',
+      'Partial success exits 0: workspaces that could not be saved are reported as warnings.',
+    ],
+  })
     .option('--workspace-url <url>', 'Open a specific workspace (e.g., https://myteam.slack.com)')
     .option('--headless', 'Run without a visible window (only works if already signed in)')
     .option('--timeout <seconds>', 'How long to wait for sign-in', '300')
@@ -264,9 +314,25 @@ export function createAuthCommand(): Command {
     });
 
   // List all workspaces
-  auth
-    .command('list')
-    .description('List all authenticated workspaces')
+  describeCommand(auth.command('list'), {
+    summary: 'List stored workspaces and profiles',
+    description:
+      'List every stored profile with its workspace, auth type and which one is the default. ' +
+      'Reads local config only; add --check to verify each profile against Slack. ' +
+      'Use whoami instead to check just the workspace a command would use.',
+    examples: [
+      'slackcli auth list',
+      'slackcli auth list --check',
+      'slackcli auth list --check --json',
+    ],
+    json:
+      '{ default, workspaces: [{ profile, workspace_id, workspace_name, auth_type, is_default, ' +
+      'secret_backend, check? }] }. default is null when none is set; check ({ status, ... }) is present only with --check.',
+    notes: [
+      '--check makes one auth.test call per profile and exits 1 unless every profile is ok.',
+      'Never prints a token.',
+    ],
+  })
     .option('--check', 'Verify every profile with one auth.test call each (exits 1 unless all are ok)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
@@ -319,10 +385,25 @@ export function createAuthCommand(): Command {
     });
 
   // Show the active identity and verify its credentials
-  auth
-    .command('whoami')
-    .description('Show which workspace and user the CLI is acting as, and verify the credentials')
-    .option('--workspace <id|name>', 'Workspace to use')
+  describeCommand(auth.command('whoami'), {
+    summary: 'Show and verify the active identity',
+    description:
+      'Show which workspace, profile and user a command would act as, and verify the credentials with one auth.test call. ' +
+      'Use list --check instead to verify every stored profile.',
+    examples: [
+      'slackcli auth whoami',
+      'slackcli auth whoami --workspace T0123456789',
+      'slackcli auth whoami --json',
+    ],
+    json:
+      '{ status, profile, workspace_id, workspace_name, auth_type, source, ... }. status is ok (adds user, ' +
+      'user_id, bot_id?), auth_failed (adds error: { code, meaning, fix }) or unreachable (adds error: { message, http_status? }).',
+    notes: [
+      'source says where the selection came from: flag (--workspace), env (SLACKCLI_WORKSPACE) or default.',
+      'Exits 1 when Slack refuses the credentials or cannot be reached; the output is still printed.',
+    ],
+  })
+    .option('--workspace <id|name>', 'Workspace to use: profile name, workspace ID or workspace name')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
       const spinner = ora('Checking identity...').start();
@@ -363,9 +444,21 @@ export function createAuthCommand(): Command {
     });
 
   // Set default workspace
-  auth
-    .command('set-default')
-    .description('Set default workspace')
+  describeCommand(auth.command('set-default'), {
+    summary: 'Set the default workspace',
+    description:
+      'Make a stored profile the default workspace, used by every command that is not given ' +
+      '--workspace or SLACKCLI_WORKSPACE.',
+    examples: [
+      'slackcli auth set-default T0123456789',
+      'slackcli auth set-default acme-bot',
+    ],
+    notes: [
+      '<workspace> is matched as a profile name, then a workspace ID, then a workspace name; ' +
+        'an ID or name shared by several profiles is rejected as ambiguous (use the profile name).',
+      'Changes local config only, immediately, with no confirmation prompt.',
+    ],
+  })
     .argument('<workspace>', 'Profile name, workspace ID, or workspace name')
     .action(async (identifier) => {
       try {
@@ -378,9 +471,20 @@ export function createAuthCommand(): Command {
     });
 
   // Remove workspace
-  auth
-    .command('remove')
-    .description('Remove a workspace')
+  describeCommand(auth.command('remove'), {
+    summary: 'Remove one stored workspace profile',
+    description:
+      'Delete one stored profile and its credentials. Use logout instead to remove every profile. ' +
+      'Removing the default makes the next remaining profile the default.',
+    examples: [
+      'slackcli auth remove T0123456789',
+      'slackcli auth remove acme-bot',
+    ],
+    notes: [
+      '<workspace> is matched as for set-default: profile name, workspace ID or workspace name.',
+      'Acts immediately, with no confirmation prompt. The token is not revoked on Slack\'s side.',
+    ],
+  })
     .argument('<workspace>', 'Profile name, workspace ID, or workspace name')
     .action(async (identifier) => {
       try {
@@ -393,10 +497,21 @@ export function createAuthCommand(): Command {
     });
 
   // Logout (clear all workspaces)
-  auth
-    .command('logout')
-    .description('Logout from all workspaces')
-    .option('--keep-browser-session', 'Leave the login-auto browser profile signed in')
+  describeCommand(auth.command('logout'), {
+    summary: 'Remove every stored workspace',
+    description:
+      'Delete every stored profile and its credentials, and the login-auto browser profile ' +
+      '(which would otherwise sign in again without prompting). Use remove instead for one profile.',
+    examples: [
+      'slackcli auth logout',
+      'slackcli auth logout --keep-browser-session',
+    ],
+    notes: [
+      'Acts immediately, with no confirmation prompt. Tokens are not revoked on Slack\'s side.',
+      'A browser profile directory slackcli did not create is left alone, with a warning.',
+    ],
+  })
+    .option('--keep-browser-session', 'Leave the login-auto browser profile signed in (login-auto can still sign in without prompting)')
     .action(async (options) => {
       try {
         await clearAllWorkspaces();
@@ -426,9 +541,14 @@ export function createAuthCommand(): Command {
     });
 
   // Extract tokens guide
-  auth
-    .command('extract-tokens')
-    .description('Show guide for extracting browser tokens')
+  describeCommand(auth.command('extract-tokens'), {
+    summary: 'Show how to find browser session tokens',
+    description:
+      'Print a step-by-step guide for finding the xoxd and xoxc browser session tokens in browser DevTools. ' +
+      'Prints text only: it reads and stores nothing.',
+    examples: ['slackcli auth extract-tokens'],
+    notes: ['login-auto captures the tokens for you; parse-curl extracts them from a copied cURL command.'],
+  })
     .action(() => {
       console.log(chalk.bold('\n✨ Easiest: let slackcli do it\n'));
       console.log(chalk.cyan('   slackcli auth login-auto'));
@@ -457,10 +577,24 @@ export function createAuthCommand(): Command {
     });
 
   // Parse cURL command to extract tokens
-  auth
-    .command('parse-curl')
-    .description('Extract xoxd and xoxc tokens from a cURL command')
-    .argument('[curl-command]', 'cURL command (or use --from-clipboard / interactive mode)')
+  describeCommand(auth.command('parse-curl'), {
+    summary: 'Extract browser tokens from a cURL command',
+    description:
+      'Extract the xoxd and xoxc browser session tokens and the workspace URL from a Slack API request ' +
+      'copied from browser DevTools (Copy as cURL). With --login, also log in with them.',
+    examples: [
+      'slackcli auth parse-curl --login',
+      'slackcli auth parse-curl --from-clipboard --login',
+      'slackcli auth parse-curl --login < request.curl',
+    ],
+    notes: [
+      'The cURL command is read from the argument, --from-clipboard, piped stdin, or pasted interactively ' +
+        '(end with an empty line), in that order.',
+      'Prefer --from-clipboard or stdin over the argument: an argument lands in shell history.',
+      'Without --login it only prints the workspace and a token prefix, and stores nothing.',
+    ],
+  })
+    .argument('[curl-command]', 'cURL command copied from DevTools (or use --from-clipboard, stdin, or interactive paste)')
     .option('--login', 'Automatically login with extracted tokens')
     .option('--from-clipboard', 'Read cURL command from system clipboard')
     .option('--secret-backend <backend>', 'With --login: where to store credentials for a NEW profile: file (default) or keychain (macOS only)', 'file')
@@ -512,9 +646,21 @@ export function createAuthCommand(): Command {
     });
 
   // Move stored credentials to a different SecretStore backend
-  auth
-    .command('migrate-secrets')
-    .description('Move stored credentials to a different backend (e.g. file -> macOS Keychain)')
+  describeCommand(auth.command('migrate-secrets'), {
+    summary: 'Move stored credentials to another backend',
+    description:
+      'Move stored credentials between the config file and the macOS Keychain, for every profile or one. ' +
+      'Each copy is verified on the new backend before the old one is removed.',
+    examples: [
+      'slackcli auth migrate-secrets --to keychain',
+      'slackcli auth migrate-secrets --to file --profile acme-bot --yes',
+    ],
+    confirms: true,
+    notes: [
+      '--to keychain is macOS only.',
+      'Profiles already on the target are skipped. If an old copy could not be removed, re-run to retry.',
+    ],
+  })
     .requiredOption('--to <backend>', 'Target backend: file or keychain (macOS only)')
     .option('--profile <name>', 'Migrate only this profile (default: every configured profile)')
     .option('--yes', 'Skip the confirmation prompt', false)

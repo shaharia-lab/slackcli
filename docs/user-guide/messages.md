@@ -1,6 +1,7 @@
 # Send, reply, edit and react to Slack messages
 
-`slackcli messages` sends, edits, reacts to, creates, and lists draft messages.
+`slackcli messages` sends, edits, and reacts to messages, and creates, lists,
+sends, and deletes drafts.
 
 Every subcommand accepts `--workspace <id|name>`.
 
@@ -205,7 +206,8 @@ specified draft without posting; with `--json` it returns
 `{draft_id, deleted: true}`.
 
 Both actions ask for confirmation in a terminal. In a script or other non-TTY
-session, pass `--yes` explicitly. If posting succeeds but draft deletion fails,
+session, pass `--yes` explicitly. `send-draft` reads the draft (`drafts.list`) before
+it asks, so a refused send still makes that one read call; it posts nothing. If posting succeeds but draft deletion fails,
 `send-draft --json` emits the posted
 message identity plus `cleanup_error`, exits nonzero, and leaves the draft. Check
 the posted message before retrying; another send could duplicate it.

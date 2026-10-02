@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`--help` is now enough to use any command**: every command's help shows examples and notes after its options, covering accepted value formats (IDs, timestamps, Slack URLs), flags that replace each other, the `--json` output shape, browser-only commands and the `--yes` confirmation rule. `slackcli --help` lists every command under its group, plus how the workspace is chosen, the `SLACKCLI_*` variables and `--json`. A usage error such as an unknown option now ends with `(run "slackcli <command> --help" for usage and examples)` on stderr. No command's behaviour, flags or output changed (#324)
+
 ### Fixed
 - **Browser-session workspaces no longer fail on the first rate limit**: a `HTTP error! status: 429` from Slack is now retried after the `Retry-After` delay, as it already was for app tokens, instead of failing the command (#315)
   - Every call is retried on a 429, including sends: Slack rejected the request, so it cannot be applied twice

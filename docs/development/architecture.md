@@ -5,7 +5,8 @@ parse and print, libraries do the work, and exactly one class knows how to talk
 to Slack.
 
 ```
-src/index.ts                 Commander program; registers the command groups
+src/index.ts                 Entry point: builds the program, parses argv
+src/program.ts               createProgram(): registers the groups, hooks, help
         │
         ▼
 src/commands/*.ts            Parse flags, call lib, format output, set exit code
@@ -21,6 +22,30 @@ src/types/index.ts           Shared interfaces
 and no business logic beyond argument handling. Anything testable lives in
 `src/lib/`, which is why the lib modules have thorough unit tests and the
 command files have very few.
+
+## Help
+
+`--help` is written for an agent that has nothing else to go on (#324).
+Every command calls `describeCommand(cmd, help)` from `src/lib/help.ts`
+instead of a bare `.description()`. It sets `.summary()` (the one-liner in the
+parent's list), `.description()`, and appends `Examples` and `Notes` after the
+options. Standard notes come from fields, so the wording stays the same
+everywhere: `json` (the `--json` output shape), `browserOnly` and `confirms`
+(the `--yes` / TTY / non-TTY rule).
+
+The root help replaces Commander's list of groups with a tree of every
+command, rendered from `program.commands` (`renderCommandTree()`), and a
+footer on workspace selection, `SLACKCLI_*` variables and `--json`.
+`installUsageErrorHint()` makes every command print
+`(run "slackcli <command> --help" for usage and examples)` after a usage
+error. Like the usage-error logging below, it walks the tree after the last
+`addCommand()`, because `addCommand()` does not pass settings down.
+
+`src/program.test.ts` builds the real tree with `createProgram()` and fails
+for any command that lacks a description, an example, an option or argument
+description, a `--json` example and shape, the confirmation note on a `--yes`
+command, or the browser-only note. Examples must start with the command's own
+path and use only flags it defines.
 
 ## Dual authentication
 
@@ -320,7 +345,7 @@ Every run writes a JSON Lines log through [LogTape](https://logtape.org). The
 pieces:
 
 - **`src/lib/logger.ts`** is configuration only. `startLogging()` runs once, in
-  the root command's `preAction` hook in `src/index.ts` (or, for a rejected
+  the root command's `preAction` hook in `src/program.ts` (or, for a rejected
   command line, from the exit override described below), so `--help` and
   `--version` stay side-effect free. It resolves the level and directory,
   configures LogTape, and writes a `session_start` record.

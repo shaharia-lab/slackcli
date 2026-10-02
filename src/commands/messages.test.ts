@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { helpOf } from '../lib/help.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -120,7 +121,7 @@ describe('messages command', () => {
   it('exposes list-drafts as a browser-only read command with limit, workspace, and JSON options', () => {
     const command = subcommand('list-drafts');
     expect(command).toBeDefined();
-    expect(command?.description()).toContain('Browser Session Tokens');
+    expect(helpOf(command!)?.browserOnly).toBe(true);
     expect(longOptions('list-drafts')).toEqual([
       '--limit',
       '--workspace',
@@ -138,7 +139,7 @@ describe('messages command', () => {
     for (const name of ['send-draft', 'delete-draft']) {
       const command = subcommand(name);
       expect(command).toBeDefined();
-      expect(command?.description()).toContain('Browser Session Tokens');
+      expect(helpOf(command!)?.browserOnly).toBe(true);
       expect(command?.registeredArguments[0]?.required).toBe(true);
       expect(longOptions(name)).toEqual(['--yes', '--workspace', '--json']);
     }

@@ -27,7 +27,11 @@ work: `in:`, `from:`, `before:`, `after:`, `on:`, `during:`, `has:`, `is:`,
 `with:`. `--in` and `--from` are just conveniences appended to the query.
 
 When more pages exist, the next-page command is printed. In `--json` mode the
-`page` and `pages` fields carry the same information.
+`page` and `pages` fields carry the same information. The JSON `query` field is
+the query as you typed it, without the `--in`/`--from` additions.
+
+In all three subcommands, a search with no results prints nothing on stdout,
+even with `--json`, and exits 0.
 
 Standard bot tokens (`xoxb-*`) cannot call `search.messages` at all — Slack
 restricts it to user tokens. Use a `xoxp-*` token or browser auth.
@@ -39,12 +43,13 @@ slackcli search channels platform
 slackcli search channels incident --limit=50 --json
 ```
 
-Matches on channel name, topic, and purpose.
-
-With **browser auth** this hits Slack's own search backend and is fast. With a
-**standard token** there is no equivalent API, so SlackCLI lists up to 1000
-non-archived channels and filters them locally — correct, but slower on large
-workspaces, and capped at that 1000.
+With **browser auth** this calls Slack's own search backend (`search.modules`),
+which ranks the results; `total` is Slack's match count and can exceed the
+channels returned. With a **standard token** there is no equivalent API, so
+SlackCLI lists up to 1000 non-archived channels the token can see (one
+`conversations.list` call) and keeps those whose name, topic, or purpose
+contains the query (case-insensitive) — correct, but slower on large
+workspaces, capped at that 1000, and `total` is just the number returned.
 
 ## `search people`
 
@@ -54,11 +59,10 @@ slackcli search people "@example.com" --limit=50
 slackcli search people rafael --resolve-fields --json
 ```
 
-Matches on username, real name, display name, and email.
-
-The same auth-type split applies: browser auth uses Slack's search backend;
-standard auth lists up to 1000 users and filters locally, skipping deactivated
-accounts and bots.
+The same auth-type split applies: browser auth uses Slack's search backend
+(`search.modules`); standard auth lists the first 1000 users (one `users.list`
+call) and keeps those whose username, real name, display name, or email
+contains the query (case-insensitive), skipping deactivated accounts and bots.
 
 `--resolve-fields` labels each result's custom profile fields (`Xf…` ID →
 human label) via one cached `team.profile.get` call — the same shared resolver

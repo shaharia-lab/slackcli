@@ -86,9 +86,16 @@ export function formatChannelMembers(members: ChannelMember[]): string { /* … 
 `src/commands/conversations.ts`:
 
 ```ts
-conversations
-  .command('members')
-  .description('List the members of a channel')
+describeCommand(conversations.command('members'), {
+  summary: 'List the members of a channel',
+  description: 'List the members of a channel, private channel or DM, with their names.',
+  examples: [
+    'slackcli conversations members C0123456789',
+    'slackcli conversations members https://acme.slack.com/archives/C0123456789 --json',
+  ],
+  json: '{ channel_id, member_count, members[] }.',
+  notes: ['<channel-id> accepts a channel ID (C…) or a Slack URL.'],
+})
   .argument('[channel-id]', 'Channel ID or Slack URL')
   .option('--limit <number>', 'Number of members to return', '100')
   .option('--workspace <id|name>', 'Workspace to use')
@@ -121,8 +128,32 @@ conversations
 ```
 
 A new **group** (rather than a subcommand) also needs a
-`create<Group>Command()` factory and a `program.addCommand()` line in
-`src/index.ts`.
+`create<Group>Command()` factory, a `describeCommand()` call on the group, and
+a `program.addCommand()` line in `createProgram()` (`src/program.ts`), above
+the help and usage-error walks.
+
+### Help
+
+`--help` is often the only documentation an AI agent reads, so every command
+uses `describeCommand()` from `src/lib/help.ts`, never a bare `.description()`:
+
+- `summary`: one line, at most 48 characters, no trailing period. It is what
+  the parent's list and the root command tree show.
+- `description`: one to three sentences, including when to use this command
+  instead of a sibling.
+- `examples`: two or three complete command lines starting with
+  `slackcli <command path>`, using only flags the command defines. At least one
+  uses `--json` when the command has it. Placeholder data only: `C0123456789`,
+  `U0123456789`, `acme.slack.com`, and never a token value.
+- `json`: the top-level shape of the `--json` output, including paging fields.
+  Required exactly when the command has `--json`.
+- `confirms: true` on a command with `--yes` (adds the standard confirmation
+  note); `browserOnly: true` on a command that needs browser session tokens.
+- `notes`: accepted value formats, flags that replace or require each other,
+  and auth-type differences. Keep the whole help to about one screen; depth
+  belongs in `docs/user-guide/`.
+
+`src/program.test.ts` enforces these rules for every command in the tree.
 
 ## 6. Tests
 
@@ -140,6 +171,9 @@ belongs in the overview. A command that ships undocumented is not finished.
 Conventions this codebase holds to — deviating from any of them will come up in
 review:
 
+- [ ] Help through `describeCommand()`: summary, description, examples, the
+      `--json` shape, and the confirmation / browser-only notes where they
+      apply (`bun test src/program.test.ts`).
 - [ ] Accept a Slack URL wherever an ID is accepted (`normalizeIdentifier`), and
       warn on workspace mismatch.
 - [ ] Support `--workspace <id|name>`.

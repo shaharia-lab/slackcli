@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
+import { describeCommand } from '../lib/help.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
 import { processReadPage, resolveSelfIdentity } from '../lib/poll.ts';
@@ -44,13 +45,34 @@ function isEnterpriseRestricted(err: any): boolean {
 }
 
 export function createConversationsCommand(): Command {
-  const conversations = new Command('conversations')
-    .description('Manage Slack conversations (channels, DMs, groups)');
+  const conversations = describeCommand(new Command('conversations'), {
+    summary: 'Read and manage channels, DMs and group DMs',
+    description:
+      'Read and manage Slack conversations: channels, DMs and group DMs. List them, read history ' +
+      'or one thread, fetch a single message, see what is unread, and manage membership.',
+  });
 
   // List conversations
-  conversations
-    .command('list')
-    .description('List all conversations')
+  describeCommand(conversations.command('list'), {
+    summary: 'List the conversations you can see',
+    description:
+      'List channels, private channels, DMs and group DMs, one page at a time. Use it to find a ' +
+      'channel ID; use "conversations unread" for only the ones with unread messages.',
+    examples: [
+      'slackcli conversations list',
+      'slackcli conversations list --types im --exclude-archived',
+      'slackcli conversations list --limit 200 --json',
+      'slackcli conversations list --cursor "dXNlcjpVMDYxTkZUVDI=" --json',
+    ],
+    json:
+      '{ conversation_count, conversations: [{ id, name, user, is_channel, is_group, is_im, is_mpim, ' +
+      'is_private, is_archived, is_member, num_members, topic, purpose }], users: [{ id, name, real_name, ' +
+      'email }], next_cursor } — users resolves the other person of each DM; next_cursor is null on the last page.',
+    notes: [
+      'One page per call. Pass next_cursor back as --cursor for the next page (the human output prints that command).',
+      '--types values: public_channel, private_channel, mpim (group DM), im (DM).',
+    ],
+  })
     .option('--types <types>', 'Conversation types (comma-separated: public_channel,private_channel,mpim,im)', 'public_channel,private_channel,mpim,im')
     .option('--limit <number>', 'Number of conversations to return', '100')
     .option('--exclude-archived', 'Exclude archived conversations', false)
@@ -139,17 +161,39 @@ export function createConversationsCommand(): Command {
     });
 
   // Read conversation history
-  conversations
-    .command('read')
-    .description('Read conversation history or specific thread')
+  describeCommand(conversations.command('read'), {
+    summary: 'Read channel history or one thread',
+    description:
+      'Read the recent messages of a channel, DM or group DM, oldest first, or every reply in one ' +
+      'thread. Use "conversations get" for a single message. Safe to poll: pass next_oldest back as --oldest.',
+    examples: [
+      'slackcli conversations read C0123456789 --limit 20',
+      'slackcli conversations read C0123456789 --thread-ts 1712345678.123456',
+      'slackcli conversations read --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --json',
+      'slackcli conversations read C0123456789 --oldest 1712345678.123456 --exclude-self --json',
+    ],
+    json:
+      '{ channel_id, message_count, next_oldest, has_more, messages: [{ ts, thread_ts, user, text, type, ' +
+      'reply_count, reactions, bot_id, blocks, attachments, files? }], users: [{ id, name, real_name, email }] }.',
+    notes: [
+      'Give either <channel-id> (a channel ID or Slack URL), optionally with --thread-ts, or --permalink alone; ' +
+        'combining --permalink with either is an error.',
+      '--permalink with a channel link reads the channel; with a message link it reads that message\'s thread ' +
+        '(the parent thread when the link points at a reply).',
+      'Timestamps (--thread-ts, --oldest, --latest): 1712345678.123456, p1712345678123456, 1712345678123456, ' +
+        'or epoch seconds for --oldest/--latest.',
+      'Only messages strictly newer than --oldest are shown. next_oldest is the newest ts Slack returned ' +
+        '(before --exclude-* filters); has_more means more messages exist in the range than --limit returned.',
+    ],
+  })
     .argument('[channel-id]', 'Channel ID or Slack URL to read from')
-    .option('--thread-ts <timestamp>', 'Thread timestamp to read specific thread')
+    .option('--thread-ts <timestamp>', 'Read this thread (parent message timestamp) instead of the channel')
     .option('--permalink <url>', 'Slack link; reads that channel, or that message\'s thread (replaces <channel-id> and --thread-ts)')
     .option('--exclude-replies', 'Exclude threaded replies (only top-level messages)', false)
     .option('--exclude-self', 'Exclude messages sent by the authenticated user or bot', false)
     .option('--limit <number>', 'Number of messages to return', '100')
-    .option('--oldest <timestamp>', 'Start of time range')
-    .option('--latest <timestamp>', 'End of time range')
+    .option('--oldest <timestamp>', 'Start of time range, exclusive (Slack timestamp or epoch seconds)')
+    .option('--latest <timestamp>', 'End of time range (Slack timestamp or epoch seconds)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format (includes timestamps for replies)', false)
     .action(async (channelIdArg, options) => {
@@ -271,9 +315,27 @@ export function createConversationsCommand(): Command {
     });
 
   // Get a single message by channel + timestamp
-  conversations
-    .command('get')
-    .description('Get a specific message by channel ID and timestamp')
+  describeCommand(conversations.command('get'), {
+    summary: 'Fetch one message by channel and timestamp',
+    description:
+      'Fetch a single message by its channel and timestamp, or from its Slack link. Use ' +
+      '"conversations read" for a channel\'s history or a whole thread.',
+    examples: [
+      'slackcli conversations get C0123456789 1712345678.123456',
+      'slackcli conversations get C0123456789 p1712345678123456 --json',
+      'slackcli conversations get --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --json',
+    ],
+    json:
+      '{ channel_id, message: { ts, thread_ts, user, text, type, reply_count, reactions, bot_id, blocks, files? }, ' +
+      'users: [{ id, name, real_name, email }] }.',
+    notes: [
+      'Give <channel-id> and <timestamp>, or --permalink alone; combining them is an error. ' +
+        '<channel-id> accepts a channel ID or a Slack URL.',
+      'Browser auth finds top-level messages and thread replies. An app token (xoxb/xoxp) finds only top-level ' +
+        'messages; for a reply, use "conversations read <channel> --thread-ts <parent>".',
+      'Exits 1 with "Message not found" when nothing matches.',
+    ],
+  })
     .argument('[channel-id]', 'Channel ID or Slack URL')
     .argument('[timestamp]', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces <channel-id> and <timestamp>)')
@@ -358,9 +420,28 @@ export function createConversationsCommand(): Command {
     });
 
   // List unread conversations
-  conversations
-    .command('unread')
-    .description('List conversations with unread messages')
+  describeCommand(conversations.command('unread'), {
+    summary: 'List conversations with unread messages',
+    description:
+      'List the conversations that have unread messages or mentions, mentions first, then by name. ' +
+      'Use "conversations read" to read one of them.',
+    examples: [
+      'slackcli conversations unread',
+      'slackcli conversations unread --types dms,groups',
+      'slackcli conversations unread --json',
+    ],
+    json:
+      '{ unread_channels: [{ id, name, mention_count, has_unreads, unread_count?, is_im, is_mpim, is_private }] } ' +
+      '— unread_count only with an app token.',
+    notes: [
+      'Browser auth reads Slack\'s own unread state (client.counts), then looks up each channel\'s name: ' +
+        'one call per unread channel, so many unreads can hit rate limits.',
+      'An app token (xoxb/xoxp) reads the first 1000 conversations from conversations.list and keeps the ones ' +
+        'you are a member of that Slack reports unread counts for; Slack often omits those counts, so results can be incomplete.',
+      'When nothing is unread it prints "All caught up!" on stderr and writes nothing to stdout, even with --json.',
+      '--types values: channels (public and private), dms, groups (group DMs).',
+    ],
+  })
     .option('--types <types>', 'Filter by type (comma-separated: channels,dms,groups)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
@@ -409,14 +490,31 @@ export function createConversationsCommand(): Command {
   // are the write operations, and `join`/`leave` (below, on the group) are the
   // self operations. Naming mirrors the Slack UI ("Members" / "Add people or
   // agents" / "Remove from channel") and the CLI's own `usergroups add/remove`.
-  const members = conversations
-    .command('members')
-    .description('Inspect and manage channel membership');
+  const members = describeCommand(conversations.command('members'), {
+    summary: 'List, add and remove channel members',
+    description:
+      'Inspect and manage who is in a channel. "list" is read-only; "add" and "remove" change other ' +
+      'people\'s membership. To change your own, use "conversations join" or "conversations leave".',
+  });
 
   // List the members of a channel/conversation
-  members
-    .command('list')
-    .description('List the members of a channel or conversation')
+  describeCommand(members.command('list'), {
+    summary: 'List the member IDs of a channel',
+    description:
+      'List the user IDs of the members of a channel or conversation. Use "users info" to turn an ID into a name.',
+    examples: [
+      'slackcli conversations members list C0123456789',
+      'slackcli conversations members list https://acme.slack.com/archives/C0123456789 --limit 50 --json',
+      'slackcli conversations members list C0123456789 --cursor "dXNlcjpVMDYxTkZUVDI=" --json',
+    ],
+    json:
+      '{ channel_id, member_count, members: [user IDs], next_cursor? } — next_cursor is present only when more members remain.',
+    notes: [
+      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).',
+      '--limit counts members returned: it pages until it has that many or runs out. Pass next_cursor back as --cursor for more.',
+      'On an Enterprise Grid org, Slack may block this with enterprise_is_restricted; the command exits 1.',
+    ],
+  })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
     .option('--limit <number>', 'Maximum number of members to return', '100')
     .option('--cursor <cursor>', 'Pagination cursor for next page of results')
@@ -503,9 +601,24 @@ export function createConversationsCommand(): Command {
   // and we never falsely report a partial add. (Slack's `force=true` option would
   // invite the valid ids and skip invalid ones; not exposed here to keep the
   // write PR minimal — a follow-up can add it if users want best-effort invite.)
-  members
-    .command('add')
-    .description('Add one or more users (or agents/apps) to a channel')
+  describeCommand(members.command('add'), {
+    summary: 'Add users or apps to a channel',
+    description:
+      'Add one or more users (or agents/apps) to a channel. All or nothing: if Slack cannot add any one ' +
+      'of them, none are added and the command exits 1.',
+    examples: [
+      'slackcli conversations members add C0123456789 U0123456789',
+      'slackcli conversations members add C0123456789 U0123456789,U0123456780 --yes',
+      'slackcli conversations members add https://acme.slack.com/archives/C0123456789 U0123456789 --yes --json',
+    ],
+    json: '{ channel_id, added: [user IDs] }.',
+    confirms: true,
+    notes: [
+      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>). <users...> are user IDs, ' +
+        'comma- or space-separated; a leading @ is ignored.',
+      '--team <workspace-id> (T0123456789) scopes the call to one workspace of an Enterprise Grid org.',
+    ],
+  })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
     .argument('<users...>', 'One or more user IDs (comma- or space-separated); agent/app IDs work too')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
@@ -546,9 +659,24 @@ export function createConversationsCommand(): Command {
   // removes exactly ONE user per call, so we loop per id and report which
   // succeeded and which failed rather than aborting the whole batch on the
   // first error (a best-effort remove, since a later id may still be removable).
-  members
-    .command('remove')
-    .description('Remove one or more users from a channel')
+  describeCommand(members.command('remove'), {
+    summary: 'Remove users from a channel',
+    description:
+      'Remove one or more users from a channel. Best effort: each ID is tried in turn, and the result ' +
+      'lists which were removed and which failed. Exits 1 if any removal failed.',
+    examples: [
+      'slackcli conversations members remove C0123456789 U0123456789',
+      'slackcli conversations members remove C0123456789 U0123456789 U0123456780 --yes',
+      'slackcli conversations members remove C0123456789 U0123456789 --yes --json',
+    ],
+    json: '{ channel_id, removed: [user IDs], failed: [{ user, error }] }.',
+    confirms: true,
+    notes: [
+      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>). <users...> are user IDs, ' +
+        'comma- or space-separated; a leading @ is ignored.',
+      '--team <workspace-id> (T0123456789) scopes the call to one workspace of an Enterprise Grid org.',
+    ],
+  })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
     .argument('<users...>', 'One or more user IDs (comma- or space-separated)')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
@@ -616,9 +744,20 @@ export function createConversationsCommand(): Command {
   // is a self-op — no target user, no confirmation gate (you are only changing
   // your own membership, and it is idempotent: joining a channel you are in
   // returns the channel with no error).
-  conversations
-    .command('join')
-    .description('Join a public channel as yourself')
+  describeCommand(conversations.command('join'), {
+    summary: 'Join a public channel as yourself',
+    description:
+      'Join a public channel as the authenticated user (or bot). Use "conversations members add" to add someone else.',
+    examples: [
+      'slackcli conversations join C0123456789',
+      'slackcli conversations join https://acme.slack.com/archives/C0123456789 --json',
+    ],
+    json: '{ channel_id, channel } — channel is Slack\'s channel object, or null.',
+    notes: [
+      'Acts immediately, with no confirmation prompt. Joining a channel you are already in is a no-op.',
+      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).',
+    ],
+  })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--json', 'Output in JSON format', false)
@@ -646,9 +785,22 @@ export function createConversationsCommand(): Command {
   // Leave a conversation as the authenticated user (conversations.leave). Also
   // a self-op. Slack returns { not_in_channel: true } when you were already
   // out; that is a no-op success, not an error.
-  conversations
-    .command('leave')
-    .description('Leave a channel or conversation as yourself')
+  describeCommand(conversations.command('leave'), {
+    summary: 'Leave a channel or conversation as yourself',
+    description:
+      'Leave a channel or conversation as the authenticated user (or bot). Use "conversations members remove" ' +
+      'to remove someone else.',
+    examples: [
+      'slackcli conversations leave C0123456789',
+      'slackcli conversations leave https://acme.slack.com/archives/C0123456789 --yes --json',
+    ],
+    json: '{ channel_id, left, not_in_channel } — not_in_channel is true (and left false) when you were not a member.',
+    confirms: true,
+    notes: [
+      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).',
+      'Leaving a channel you are not in is reported as a no-op, not an error.',
+    ],
+  })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)

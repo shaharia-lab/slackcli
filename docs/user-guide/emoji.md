@@ -14,7 +14,9 @@ slackcli emoji get :party-parrot: --json
 
 ## `emoji list`
 
-Lists every custom emoji in the workspace, sorted by name.
+Lists every custom emoji in the workspace, sorted by name. `--no-aliases` and
+`--limit` are applied locally to the full list. A workspace with no custom emoji
+prints nothing on stdout, even with `--json`.
 
 | Option | Purpose |
 |---|---|

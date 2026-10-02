@@ -1,10 +1,25 @@
 import { Command } from 'commander';
 import { checkForUpdates, getUpdateHint, performUpdate, quoteCommand } from '../lib/updater.ts';
 import { success, error, info } from '../lib/formatter.ts';
+import { describeCommand } from '../lib/help.ts';
 
 export function createUpdateCommand(): Command {
-  const update = new Command('update')
-    .description('Check for and install updates')
+  const update = describeCommand(new Command('update'), {
+    summary: 'Install the latest slackcli release',
+    description:
+      'Download the latest release binary for this platform from GitHub, verify its SHA-256 digest, and ' +
+      'replace the running binary in place. Use "update check" to only report whether a newer version exists.',
+    examples: [
+      'slackcli update check',
+      'slackcli update',
+    ],
+    notes: [
+      'Acts immediately, with no confirmation prompt. Restart slackcli afterwards to use the new version.',
+      'Does nothing when installed via Homebrew (prints "brew upgrade slackcli") or run from source with bun (prints "git pull").',
+      'Stops before downloading when the install folder is not writable: re-run as "sudo slackcli update", ' +
+        'or from an Administrator terminal on Windows.',
+    ],
+  })
     .action(async () => {
       try {
         await performUpdate();
@@ -15,9 +30,17 @@ export function createUpdateCommand(): Command {
     });
 
   // Check for updates
-  update
-    .command('check')
-    .description('Check for available updates')
+  describeCommand(update.command('check'), {
+    summary: 'Check whether a newer release exists',
+    description:
+      'Ask GitHub for the latest release and print the current and latest versions. ' +
+      'Changes nothing; run "slackcli update" to install.',
+    examples: ['slackcli update check'],
+    notes: [
+      'Always queries GitHub, ignoring the update-notice cache and SLACKCLI_NO_UPDATE_NOTIFIER.',
+      'When GitHub cannot be reached it prints "Unable to check for updates", then the up-to-date message, and exits 0.',
+    ],
+  })
     .action(async () => {
       try {
         const result = await checkForUpdates(false);

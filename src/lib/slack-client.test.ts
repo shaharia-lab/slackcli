@@ -1612,6 +1612,18 @@ describe('SlackClient standard-path transport failures', () => {
     expect(error.httpStatus).toBe(503);
   });
 
+  it('reports a rate-limited call as a transport error with status 429 and the wait', async () => {
+    const sdkError = Object.assign(new Error('A rate-limit has been reached, you may retry this request in 30 seconds'), {
+      code: 'slack_webapi_rate_limited_error',
+      retryAfter: 30,
+    });
+    const error = await failingWith(sdkError).testAuth().catch((err) => err);
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.httpStatus).toBe(429);
+    expect(error.retryAfterMs).toBe(30_000);
+    expect(error.networkError).toBe(false);
+  });
+
   it('leaves a Slack ok:false answer as a plain error carrying the payload', async () => {
     const payload = { ok: false, error: 'missing_scope' };
     const sdkError = Object.assign(new Error('An API error occurred: missing_scope'), {
@@ -1631,8 +1643,15 @@ describe('SlackClient standard-path transport failures', () => {
     await expect(failingWith(sdkError).testAuth()).rejects.toBeInstanceOf(SlackAuthError);
   });
 
-  const sdkRetryConfig = (client: SlackClient) =>
-    (client as unknown as { webClient: { retryConfig: { retries?: number } } }).webClient.retryConfig;
+  type SdkInternals = { retryConfig: { retries?: number }; rejectRateLimitedCalls: boolean };
+  const sdk = (client: SlackClient) => (client as unknown as { webClient: SdkInternals }).webClient;
+  const sdkRetryConfig = (client: SlackClient) => sdk(client).retryConfig;
+
+  it('fails a 429 at once only when the SDK retries are capped', () => {
+    expect(sdk(new SlackClient(config, { sdkRetries: 3 })).rejectRateLimitedCalls).toBe(true);
+    // Every other command keeps the SDK's wait-and-retry on a 429.
+    expect(sdk(new SlackClient(config)).rejectRateLimitedCalls).toBe(false);
+  });
 
   it('caps the SDK retries only when asked to', () => {
     expect(sdkRetryConfig(new SlackClient(config, { sdkRetries: 3 }))).toEqual({ retries: 3 });

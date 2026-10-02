@@ -28,9 +28,11 @@ export interface SlackClientOptions {
   /** Overrides the browser-auth retry policy's limits. Intended for tests. */
   retry?: Partial<RetryOptions>;
   /**
-   * Caps `@slack/web-api`'s own retries on the standard path. Its default keeps
-   * retrying a dead connection for about thirty minutes, which a quick check
-   * such as `auth whoami` cannot sit through.
+   * Caps `@slack/web-api`'s own retries on the standard path, and makes a 429
+   * fail at once instead of sleeping out its `Retry-After`. The SDK's defaults
+   * keep retrying a dead connection for about thirty minutes and wait any
+   * length a 429 asks for, which a quick check such as `auth whoami` cannot sit
+   * through.
    */
   sdkRetries?: number;
 }
@@ -94,7 +96,7 @@ function slackErrorCode(error: any): string | undefined {
 }
 
 // `@slack/web-api` failures that never produced a Slack answer: no response at
-// all, or a non-2xx one. Typed like the browser path's, so a caller can tell
+// all, a non-2xx one, or a 429 the SDK was told not to wait out. Typed like the browser path's, so a caller can tell
 // "Slack could not be reached" from "Slack refused" on either auth type. The
 // standard path is never retried here (the SDK does that), so `retryAfterMs`
 // stays unset.
@@ -106,6 +108,10 @@ function sdkTransportError(error: any): SlackTransportError | undefined {
   if (error?.code === ErrorCode.HTTPError) {
     const status = typeof error.statusCode === 'number' ? error.statusCode : undefined;
     return new SlackTransportError(message, status, undefined, false);
+  }
+  if (error?.code === ErrorCode.RateLimitedError) {
+    const retryAfterMs = typeof error.retryAfter === 'number' ? error.retryAfter * 1000 : undefined;
+    return new SlackTransportError(message, 429, retryAfterMs, false);
   }
   return undefined;
 }
@@ -187,7 +193,9 @@ export class SlackClient {
     if (config.auth_type === 'standard') {
       this.webClient = new WebClient(config.token, {
         logger: createSdkLogger(),
-        ...(options.sdkRetries === undefined ? {} : { retryConfig: { retries: options.sdkRetries } }),
+        ...(options.sdkRetries === undefined
+          ? {}
+          : { retryConfig: { retries: options.sdkRetries }, rejectRateLimitedCalls: true }),
       });
     }
   }

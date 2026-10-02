@@ -174,7 +174,7 @@ There are three outcomes, and the exit code tells them apart from success:
 |---|---|---|---|
 | `verified` | `ok` | `0` | Slack accepted the credentials |
 | `authentication failed (<code>)` | `auth_failed` | `1` | Slack refused them. The meaning and the `To fix:` command follow — the same ones as in [troubleshooting](troubleshooting.md#authentication-failed-for-profile--invalid_auth-not_authed-token_expired-token_revoked-account_inactive) |
-| `unreachable` | `unreachable` | `1` | Slack did not answer (no connection, or an HTTP error), so the credentials were **not** checked |
+| `unreachable` | `unreachable` | `1` | Slack did not answer (no connection, an HTTP error, or a rate limit), so the credentials were **not** checked |
 
 When the check fails, the stored profile details are still printed, with the
 user ID saved at login if there is one. No workspace configured, an unknown
@@ -183,7 +183,8 @@ selector and an ambiguous one are errors as for any other command (exit code
 
 There is no offline mode: the call to Slack is the point. When Slack cannot be
 reached, the check gives up after three retries instead of retrying for
-minutes as other commands with an app token do.
+minutes as other commands with an app token do, and with an app token a rate
+limit (HTTP 429) is reported at once instead of being waited out.
 
 With `--json`, stdout carries one object in all three outcomes:
 

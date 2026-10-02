@@ -51,7 +51,7 @@ They hold no Slack API knowledge.
 
 | Module | Responsibility |
 |---|---|
-| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, retries browser-auth calls per `retry.ts`, and logs each attempt's method, auth type, duration and outcome. |
+| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, retries browser-auth calls per `retry.ts`, logs each attempt's method, auth type, duration and outcome, and rethrows an authentication failure as a `SlackAuthError` (`auth-errors.ts`). |
 | `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, stored default) is resolved. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
@@ -66,6 +66,7 @@ They hold no Slack API knowledge.
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
 | `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
 | `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. Logs waits at `debug`. |
+| `auth-errors.ts` | Pure classifier for Slack's five authentication codes (`invalid_auth`, `token_expired`, `token_revoked`, `not_authed`, `account_inactive`): the meaning and fix for a profile, the three-line message, the `SlackAuthError` that `SlackClient.request()` throws for them on both auth paths, and the separate wording for a token rejected during login. |
 | `retry.ts` | Pure retry policy for browser-auth calls: which failures are retried (429 always, 5xx/network errors for the `READ_METHODS` allowlist only), `Retry-After` parsing, backoff with jitter, and the attempt/wait caps. |
 | `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header, and the exit override that logs Commander usage errors. Called once from `src/index.ts`; libs log via LogTape's `getLogger` directly. |
 | `log-redaction.ts` | The token/cookie/JWT redaction patterns applied to every log line. |

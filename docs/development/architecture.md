@@ -101,6 +101,23 @@ and every other call keeps flowing. Retries are logged at `info` with the
 method, attempt, wait and HTTP status only. `SlackClientOptions` takes `sleep`
 and `retry` overrides for tests.
 
+### Authentication failures
+
+Both transports report Slack's refusal of the credentials as an `ok:false`
+payload, and `request()` reads its code the same way for each. When the code is
+one of `invalid_auth`, `token_expired`, `token_revoked`, `not_authed` or
+`account_inactive`, the attempt rethrows it as a `SlackAuthError`
+(`src/lib/auth-errors.ts`) whose `message` already holds the three lines a user
+needs: the profile and the verbatim code, what the code means, and a `To fix:`
+line that depends on the profile's auth type. Commands print `err.message` as
+they do for any failure, so no command handles it specially, and the original
+payload stays on `slackData`. Every other code passes through unchanged.
+
+The classifier is pure and takes profile metadata only (key, name, auth type,
+workspace URL), never a credential. `auth.ts` catches the same error on the
+login paths, where the refused token is the one just supplied, and reports a
+rejected token rather than advice to log in again.
+
 ### Where the two genuinely diverge
 
 A handful of methods branch on `authType` because Slack itself offers different

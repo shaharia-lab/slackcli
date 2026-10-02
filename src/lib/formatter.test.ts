@@ -18,7 +18,9 @@ import {
   formatUsergroupList,
   formatEmojiList,
   formatUsergroup,
+  error,
 } from './formatter.ts';
+import { SlackAuthError } from './auth-errors.ts';
 import type {
   SavedItem,
   SearchMatch,
@@ -485,6 +487,60 @@ describe('warning', () => {
     expect(out).toHaveLength(0);
     expect(err).toHaveLength(1);
     expect(err[0]!.join(' ')).toContain('workspace mismatch');
+  });
+});
+
+describe('error', () => {
+  function capture(run: () => void): { out: unknown[][]; err: string[] } {
+    const out: unknown[][] = [];
+    const err: string[] = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args: unknown[]) => { out.push(args); };
+    console.error = (...args: unknown[]) => { err.push(args.join(' ')); };
+    try {
+      run();
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    return { out, err };
+  }
+
+  // An authentication failure is a three-line message. It must come out whole
+  // on stderr, so `--json | jq` on stdout never sees any of it.
+  it('prints a multi-line authentication error on stderr, leaving stdout empty', () => {
+    const authError = new SlackAuthError('invalid_auth', {
+      profileKey: 'acme',
+      workspaceName: 'Acme Corp',
+      authType: 'browser',
+      workspaceUrl: 'https://acme.slack.com',
+    });
+
+    const { out, err } = capture(() => error(authError.message));
+
+    expect(out).toHaveLength(0);
+    expect(err.join('\n').split('\n')).toEqual([
+      '❌ Error: Authentication failed for profile "acme" (Acme Corp, browser auth): invalid_auth',
+      '   The stored browser session is no longer valid. Browser sessions expire when you sign out or Slack rotates the session.',
+      '   To fix: slackcli auth login-auto --workspace-url https://acme.slack.com',
+    ]);
+  });
+
+  it('keeps a command hint after the authentication error', () => {
+    const authError = new SlackAuthError('account_inactive', {
+      profileKey: 'T1',
+      workspaceName: 'Acme Corp',
+      authType: 'standard',
+    });
+
+    const { out, err } = capture(() => error(authError.message, 'Run "slackcli auth list" to check your authentication.'));
+
+    expect(out).toHaveLength(0);
+    const lines = err.join('\n').split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines[2]).toBe('   To fix: logging in again will not help; contact a workspace admin.');
+    expect(lines[3]).toBe('   Run "slackcli auth list" to check your authentication.');
   });
 });
 

@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import {
   authenticateAuto,
+  authenticateBrowser,
+  authenticateStandard,
   AutoLoginError,
   effectiveWorkspaceSelector,
   selectWorkspace,
@@ -13,6 +15,9 @@ import {
 import { AmbiguousWorkspaceError, resolveWorkspace } from './workspaces';
 import type { WorkspaceConfig, WorkspacesData } from '../types/index';
 import { configureLogging } from './logger';
+import { AUTH_ERROR_CODES, SlackAuthError } from './auth-errors';
+import { SlackClient } from './slack-client';
+import * as browserAuth from './browser-auth';
 
 // A failed `login-auto` must leave enough in the log to answer "which browser,
 // which step, why" without a reproduction session. Driven end to end through a
@@ -76,6 +81,125 @@ describe.skipIf(process.platform === 'win32')('authenticateAuto logging', () => 
     expect(error).toBeInstanceOf(AutoLoginError);
     const failure = records.find((r) => r.category.join('.') === 'slackcli.auth' && r.level === 'error');
     expect(failure?.properties.reason).toBe('browser_not_found');
+  });
+});
+
+// A token Slack refuses at login was never stored, so the "log in again" advice
+// a stale profile gets would send the user round in a circle. Both login paths
+// fail before `addWorkspace()`, so nothing here touches the config file.
+describe('login with rejected credentials', () => {
+  const originalFetch = globalThis.fetch;
+  let records: LogRecord[];
+
+  beforeEach(() => {
+    records = [];
+    configureLogging({ level: 'info', verbose: false, sinks: { capture: (r) => records.push(r) } });
+  });
+
+  afterEach(() => {
+    resetSync();
+    globalThis.fetch = originalFetch;
+  });
+
+  function slackReplies(payload: Record<string, unknown>): void {
+    globalThis.fetch = (async () => new Response(JSON.stringify(payload), { status: 200 })) as unknown as typeof fetch;
+  }
+
+  const loginBrowser = () =>
+    authenticateBrowser('xoxd-secretcookie', 'xoxc-secrettoken', 'https://acme.slack.com', 'Acme Corp')
+      .catch((err) => err);
+
+  // The standard path goes through `@slack/web-api`, which has no fetch seam;
+  // `testAuth()` is stubbed to fail the way `SlackClient.request()` does.
+  async function loginStandard(failure: Error): Promise<any> {
+    const testAuth = spyOn(SlackClient.prototype, 'testAuth').mockRejectedValue(failure);
+    try {
+      return await authenticateStandard('xoxb-1234567890-secrettoken', 'Acme Corp').catch((err) => err);
+    } finally {
+      testAuth.mockRestore();
+    }
+  }
+
+  const rejectedAs = (code: (typeof AUTH_ERROR_CODES)[number]) =>
+    new SlackAuthError(code, { profileKey: 'temp', workspaceName: 'Acme Corp', authType: 'standard' });
+
+  it.each([...AUTH_ERROR_CODES])('reports browser tokens rejected with %s without re-login advice', async (code) => {
+    slackReplies({ ok: false, error: code });
+
+    const error = await loginBrowser();
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(SlackAuthError);
+    expect(error.message).toStartWith(
+      `Authentication failed: the browser session tokens were rejected by Slack (${code}).`,
+    );
+    expect(error.message).not.toContain('\n');
+    expect(error.message).not.toContain('To fix');
+    expect(error.message).not.toContain('slackcli auth');
+    expect(error.message).not.toContain('profile "temp"');
+    expect(error.message).not.toContain('secret');
+  });
+
+  it.each([...AUTH_ERROR_CODES])('reports a standard token rejected with %s without re-login advice', async (code) => {
+    const error = await loginStandard(rejectedAs(code));
+
+    expect(error).not.toBeInstanceOf(SlackAuthError);
+    expect(error.message).toStartWith(`Authentication failed: the supplied token was rejected by Slack (${code}).`);
+    expect(error.message).not.toContain('\n');
+    expect(error.message).not.toContain('To fix');
+    expect(error.message).not.toContain('slackcli auth');
+    expect(error.message).not.toContain('profile "temp"');
+    expect(error.message).not.toContain('secret');
+  });
+
+  // `login-auto` captures the tokens itself and verifies them through
+  // `authenticateBrowser()`. The browser is stubbed out; the capture result and
+  // Slack's refusal are real inputs to the code under test.
+  it('reports a token captured by login-auto and refused by Slack without re-login or copy advice', async () => {
+    let stopped = 0;
+    const open = spyOn(browserAuth, 'openBrowserSession').mockResolvedValue({
+      ok: true,
+      session: {} as never,
+      stop: async () => { stopped += 1; },
+    } as never);
+    const capture = spyOn(browserAuth, 'captureSlackTokens').mockResolvedValue({
+      ok: true,
+      xoxd: 'xoxd-secretcookie',
+      workspaces: [{ workspaceUrl: 'https://acme.slack.com', xoxc: 'xoxc-secrettoken', teamId: 'T1', teamName: 'Acme Corp' }],
+    });
+    slackReplies({ ok: false, error: 'invalid_auth' });
+
+    try {
+      const result = await authenticateAuto({ headless: true });
+
+      expect(stopped).toBe(1);
+      expect(result.saved).toEqual([]);
+      expect(result.failed).toEqual([{
+        workspaceUrl: 'https://acme.slack.com',
+        error: 'Authentication failed: the browser session tokens were rejected by Slack (invalid_auth). '
+          + 'They must come from a browser that is signed in to this workspace: sign in there, then try again.',
+      }]);
+    } finally {
+      open.mockRestore();
+      capture.mockRestore();
+    }
+  });
+
+  it('logs only the Slack code of a rejected login', async () => {
+    slackReplies({ ok: false, error: 'invalid_auth' });
+    await loginBrowser();
+
+    const failure = records.find((r) => r.category.join('.') === 'slackcli.auth' && r.level === 'warning');
+    expect(failure?.properties).toMatchObject({ auth_type: 'browser', error: 'invalid_auth' });
+    expect(JSON.stringify(failure)).not.toContain('Acme Corp');
+  });
+
+  it('keeps the message of a login that failed for another reason', async () => {
+    slackReplies({ ok: false, error: 'team_access_not_granted' });
+    expect((await loginBrowser()).message).toBe('Authentication failed: Slack API error: team_access_not_granted');
+
+    const error = await loginStandard(new Error('Slack API error: An API error occurred: ratelimited'));
+    expect(error.message).toBe('Authentication failed: Slack API error: An API error occurred: ratelimited');
   });
 });
 

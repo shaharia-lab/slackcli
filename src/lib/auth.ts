@@ -1,5 +1,6 @@
 import { getLogger } from '@logtape/logtape';
 import { SlackClient } from './slack-client.ts';
+import { SlackAuthError, describeRejectedLogin } from './auth-errors.ts';
 import { errorMessageForLog } from './tildify.ts';
 import { addWorkspace, getWorkspace } from './workspaces.ts';
 import type {
@@ -31,8 +32,19 @@ function logAuthenticated(authType: WorkspaceConfig['auth_type'], workspaceId: s
 function logAuthFailed(authType: WorkspaceConfig['auth_type'], error: unknown): void {
   logger.warn('{auth_type} authentication failed: {error}', {
     auth_type: authType,
-    error: errorMessageForLog(error),
+    // A SlackAuthError's message names the workspace; its code says enough.
+    error: error instanceof SlackAuthError ? error.code : errorMessageForLog(error),
   });
+}
+
+// The message for a login that failed. A token Slack refused at login is not a
+// stored profile gone stale, so it gets its own wording instead of the
+// "log in again" advice `SlackAuthError` carries.
+function loginFailureMessage(authType: WorkspaceConfig['auth_type'], error: any): string {
+  const reason = error instanceof SlackAuthError
+    ? describeRejectedLogin(error.code, authType)
+    : error.message;
+  return `Authentication failed: ${reason}`;
 }
 
 // Result of a successful login: the stored config plus the profile key it was
@@ -78,7 +90,7 @@ export async function authenticateStandard(
     return { config, profileKey };
   } catch (error: any) {
     logAuthFailed(tempConfig.auth_type, error);
-    throw new Error(`Authentication failed: ${error.message}`);
+    throw new Error(loginFailureMessage(tempConfig.auth_type, error));
   }
 }
 
@@ -124,7 +136,7 @@ export async function authenticateBrowser(
     return { config, profileKey };
   } catch (error: any) {
     logAuthFailed(tempConfig.auth_type, error);
-    throw new Error(`Authentication failed: ${error.message}`);
+    throw new Error(loginFailureMessage(tempConfig.auth_type, error));
   }
 }
 

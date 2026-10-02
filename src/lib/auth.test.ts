@@ -8,13 +8,17 @@ import {
   authenticateBrowser,
   authenticateStandard,
   AutoLoginError,
+  buildProfileList,
+  checkAllProfiles,
   checkIdentity,
+  type ProfileCheckProgress,
   effectiveWorkspaceSelector,
   selectWorkspace,
   selectWorkspaceEntry,
   WORKSPACE_ENV_VAR,
 } from './auth';
-import { AmbiguousWorkspaceError, resolveWorkspace } from './workspaces';
+import { AmbiguousWorkspaceError, resolveWorkspace, type ResolvedWorkspace } from './workspaces';
+import { MissingCredentialError } from './secret-store';
 import type { SlackAuthTestResponse, WorkspaceConfig, WorkspacesData } from '../types/index';
 import { configureLogging } from './logger';
 import { AUTH_ERROR_CODES, SlackAuthError, authErrorProfile } from './auth-errors';
@@ -688,6 +692,256 @@ describe('checkIdentity', () => {
   });
 });
 
+describe('checkAllProfiles', () => {
+  const browser: WorkspaceConfig = {
+    workspace_id: 'T1',
+    workspace_name: 'example',
+    workspace_url: 'https://example.slack.com',
+    auth_type: 'browser',
+    xoxd_token: 'xoxd-secretcookie',
+    xoxc_token: 'xoxc-secrettoken',
+    profile: 'acme',
+    user_id: 'U_STORED',
+  };
+  const bot: WorkspaceConfig = {
+    workspace_id: 'T1',
+    workspace_name: 'example',
+    auth_type: 'standard',
+    token: 'xoxb-secrettoken',
+    token_type: 'bot',
+    profile: 'T1-2',
+  };
+  const user: WorkspaceConfig = {
+    workspace_id: 'T2',
+    workspace_name: 'other',
+    auth_type: 'standard',
+    token: 'xoxp-secrettoken',
+    token_type: 'user',
+  };
+  const stored: ResolvedWorkspace[] = [
+    { key: 'acme', config: browser },
+    { key: 'T1-2', config: bot },
+    { key: 'T2', config: user },
+  ];
+  const listEntries = async () => stored;
+  const lookup = async (key: string) => stored.find((entry) => entry.key === key) ?? null;
+
+  const answerFor = (config: WorkspaceConfig): SlackAuthTestResponse => ({
+    ok: true,
+    url: 'https://example.slack.com/',
+    team: config.workspace_name,
+    user: `user-of-${config.workspace_id}`,
+    team_id: config.workspace_id,
+    user_id: `U_${config.auth_type}`,
+  });
+
+  // Each profile's `auth.test` is counted, and may be made to fail by key.
+  function clients(failures: Record<string, unknown> = {}) {
+    const calls: string[] = [];
+    const createClient = (config: WorkspaceConfig) => ({
+      testAuth: async () => {
+        const key = stored.find((entry) => entry.config === config)?.key ?? '?';
+        calls.push(key);
+        if (key in failures) throw failures[key];
+        return answerFor(config);
+      },
+    });
+    return { createClient, calls };
+  }
+  const refusal = (config: WorkspaceConfig) => new SlackAuthError('invalid_auth', authErrorProfile(config));
+  const dropped = new SlackTransportError('Slack API error: fetch failed', undefined, undefined, true);
+
+  it('reports every profile ok, in stored order, with one auth.test call each', async () => {
+    const { createClient, calls } = clients();
+    const results = await checkAllProfiles(undefined, { listEntries, lookup, createClient });
+    expect(results).toEqual([
+      { profile: 'acme', check: { status: 'ok', user: 'user-of-T1', user_id: 'U_browser' } },
+      { profile: 'T1-2', check: { status: 'ok', user: 'user-of-T1', user_id: 'U_standard' } },
+      { profile: 'T2', check: { status: 'ok', user: 'user-of-T2', user_id: 'U_standard' } },
+    ]);
+    expect(calls).toEqual(['acme', 'T1-2', 'T2']);
+  });
+
+  it('keeps the bot id of a bot token', async () => {
+    const createClient = (config: WorkspaceConfig) => ({
+      testAuth: async () => ({ ...answerFor(config), bot_id: 'B1' }),
+    });
+    const [first] = await checkAllProfiles(undefined, { listEntries, lookup, createClient });
+    expect(first.check).toEqual({ status: 'ok', user: 'user-of-T1', user_id: 'U_browser', bot_id: 'B1' });
+  });
+
+  it('reports refused credentials as auth_failed and still checks the profiles after it', async () => {
+    const { createClient, calls } = clients({ acme: refusal(browser) });
+    const results = await checkAllProfiles(undefined, { listEntries, lookup, createClient });
+    const failure = results[0].check;
+    expect(failure.status).toBe('auth_failed');
+    if (failure.status !== 'auth_failed' || !('code' in failure.error)) throw new Error('expected a Slack refusal');
+    expect(failure.error.code).toBe('invalid_auth');
+    expect(failure.error.meaning).toContain('browser session');
+    expect(failure.error.fix).toContain('slackcli auth login-auto');
+    expect(results.slice(1).map((r) => r.check.status)).toEqual(['ok', 'ok']);
+    expect(calls).toEqual(['acme', 'T1-2', 'T2']);
+  });
+
+  it('reports a transport failure as unreachable, never as auth_failed', async () => {
+    const down = new SlackTransportError('Slack API error: HTTP error! status: 503', 503, undefined, false);
+    const { createClient } = clients({ acme: dropped, 'T1-2': down });
+    const results = await checkAllProfiles(undefined, { listEntries, lookup, createClient });
+    expect(results.map((r) => r.check)).toEqual([
+      { status: 'unreachable', error: { message: 'Slack API error: fetch failed' } },
+      { status: 'unreachable', error: { message: 'Slack API error: HTTP error! status: 503', http_status: 503 } },
+      { status: 'ok', user: 'user-of-T2', user_id: 'U_standard' },
+    ]);
+  });
+
+  it('reports a mix of outcomes, one per profile', async () => {
+    const { createClient, calls } = clients({ 'T1-2': refusal(bot), T2: dropped });
+    const results = await checkAllProfiles(undefined, { listEntries, lookup, createClient });
+    expect(results.map((r) => [r.profile, r.check.status])).toEqual([
+      ['acme', 'ok'],
+      ['T1-2', 'auth_failed'],
+      ['T2', 'unreachable'],
+    ]);
+    expect(calls).toEqual(['acme', 'T1-2', 'T2']);
+  });
+
+  it('reports credentials that cannot be read as auth_failed with the store message, without calling Slack for that profile', async () => {
+    const { createClient, calls } = clients();
+    const unreadable = async (key: string) => {
+      if (key === 'acme') throw new MissingCredentialError('acme', 'xoxc');
+      return lookup(key);
+    };
+    const results = await checkAllProfiles(undefined, { listEntries, lookup: unreadable, createClient });
+    expect(results[0]).toEqual({
+      profile: 'acme',
+      check: { status: 'auth_failed', error: { message: new MissingCredentialError('acme', 'xoxc').message } },
+    });
+    expect(results.slice(1).map((r) => r.check.status)).toEqual(['ok', 'ok']);
+    expect(calls).toEqual(['T1-2', 'T2']);
+  });
+
+  it('reports a profile removed since it was listed as auth_failed', async () => {
+    const { createClient, calls } = clients();
+    const gone = async (key: string) => (key === 'T1-2' ? null : lookup(key));
+    const results = await checkAllProfiles(undefined, { listEntries, lookup: gone, createClient });
+    expect(results[1]).toEqual({
+      profile: 'T1-2',
+      check: { status: 'auth_failed', error: { message: 'Profile "T1-2" is no longer stored.' } },
+    });
+    expect(calls).toEqual(['acme', 'T2']);
+  });
+
+  it('turns any other failure of the call into unreachable instead of aborting the run', async () => {
+    const { createClient, calls } = clients({ acme: new Error('Slack API error: fatal_error'), 'T1-2': 'not an Error' });
+    const results = await checkAllProfiles(undefined, { listEntries, lookup, createClient });
+    expect(results.map((r) => r.check)).toEqual([
+      { status: 'unreachable', error: { message: 'Slack API error: fatal_error' } },
+      { status: 'unreachable', error: { message: 'not an Error' } },
+      { status: 'ok', user: 'user-of-T2', user_id: 'U_standard' },
+    ]);
+    expect(calls).toEqual(['acme', 'T1-2', 'T2']);
+  });
+
+  it('checks each profile by its own key, whatever SLACKCLI_WORKSPACE says', async () => {
+    const saved = process.env[WORKSPACE_ENV_VAR];
+    process.env[WORKSPACE_ENV_VAR] = 'T2';
+    try {
+      const { createClient, calls } = clients();
+      const looked: string[] = [];
+      const results = await checkAllProfiles(undefined, {
+        listEntries,
+        lookup: async (key) => { looked.push(key); return lookup(key); },
+        createClient,
+      });
+      expect(looked).toEqual(['acme', 'T1-2', 'T2']);
+      expect(calls).toEqual(['acme', 'T1-2', 'T2']);
+      expect(results.map((r) => r.profile)).toEqual(['acme', 'T1-2', 'T2']);
+    } finally {
+      if (saved === undefined) delete process.env[WORKSPACE_ENV_VAR];
+      else process.env[WORKSPACE_ENV_VAR] = saved;
+    }
+  });
+
+  it('reports progress before each profile is checked', async () => {
+    const { createClient, calls } = clients();
+    const seen: Array<ProfileCheckProgress & { callsSoFar: number }> = [];
+    await checkAllProfiles((progress) => seen.push({ ...progress, callsSoFar: calls.length }), {
+      listEntries,
+      lookup,
+      createClient,
+    });
+    expect(seen).toEqual([
+      { profile: 'acme', index: 1, total: 3, callsSoFar: 0 },
+      { profile: 'T1-2', index: 2, total: 3, callsSoFar: 1 },
+      { profile: 'T2', index: 3, total: 3, callsSoFar: 2 },
+    ]);
+  });
+
+  it('returns nothing, calls nothing and reports no progress when no profile is stored', async () => {
+    const { createClient, calls } = clients();
+    const seen: ProfileCheckProgress[] = [];
+    const results = await checkAllProfiles((p) => seen.push(p), { listEntries: async () => [], lookup, createClient });
+    expect(results).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(seen).toEqual([]);
+  });
+
+  it('never holds a token in any result', async () => {
+    const { createClient } = clients({ acme: refusal(browser), T2: dropped });
+    const serialised = JSON.stringify(await checkAllProfiles(undefined, { listEntries, lookup, createClient }));
+    expect(serialised).not.toContain('secret');
+    expect(serialised).not.toMatch(/xox[a-z]-/);
+  });
+});
+
+describe('buildProfileList', () => {
+  // As `getAllWorkspaceEntries()` returns them: metadata, no credentials.
+  const entries = [
+    { key: 'T1', config: { workspace_id: 'T1', workspace_name: 'example', auth_type: 'browser', workspace_url: 'https://example.slack.com' } },
+    { key: 'bot', config: { workspace_id: 'T1', workspace_name: 'example', auth_type: 'standard', token_type: 'bot', profile: 'bot', secret_backend: 'keychain' } },
+  ] as unknown as ResolvedWorkspace[];
+
+  it('lists every profile with the default marked and no check', () => {
+    expect(buildProfileList(entries, 'bot')).toEqual({
+      default: 'bot',
+      workspaces: [
+        { profile: 'T1', workspace_id: 'T1', workspace_name: 'example', auth_type: 'browser', is_default: false, secret_backend: 'file' },
+        { profile: 'bot', workspace_id: 'T1', workspace_name: 'example', auth_type: 'standard', is_default: true, secret_backend: 'keychain' },
+      ],
+    });
+  });
+
+  it('attaches each check to the profile it names', () => {
+    const list = buildProfileList(entries, 'T1', [
+      { profile: 'bot', check: { status: 'unreachable', error: { message: 'Slack API error: fetch failed' } } },
+      { profile: 'T1', check: { status: 'ok', user: 'alice', user_id: 'U1' } },
+    ]);
+    expect(list.workspaces.map((w) => [w.profile, w.is_default, w.check])).toEqual([
+      ['T1', true, { status: 'ok', user: 'alice', user_id: 'U1' }],
+      ['bot', false, { status: 'unreachable', error: { message: 'Slack API error: fetch failed' } }],
+    ]);
+  });
+
+  it('reports a null default when the stored default names no listed profile', () => {
+    const list = buildProfileList(entries, 'removed');
+    expect(list.default).toBeNull();
+    expect(list.workspaces.every((w) => !w.is_default)).toBe(true);
+  });
+
+  it('reports a null default and no workspaces when nothing is stored', () => {
+    expect(buildProfileList([], undefined)).toEqual({ default: null, workspaces: [] });
+    expect(buildProfileList([], 'T1')).toEqual({ default: null, workspaces: [] });
+    expect(buildProfileList([], undefined, [])).toEqual({ default: null, workspaces: [] });
+  });
+
+  it('never includes a credential, even when handed full configs', () => {
+    const full: ResolvedWorkspace[] = [
+      { key: 'T2', config: { workspace_id: 'T2', workspace_name: 'other', auth_type: 'standard', token: 'xoxp-secrettoken', token_type: 'user' } },
+    ];
+    expect(JSON.stringify(buildProfileList(full, 'T2'))).not.toContain('secrettoken');
+  });
+});
+
 // The real wiring: config file -> profile key -> SlackClient -> one auth.test
 // -> command output and exit code. A local server stands in for Slack as the
 // stored workspace URL, so nothing leaves the machine. POSIX-only: Windows does
@@ -842,5 +1096,173 @@ describe.skipIf(process.platform === 'win32')('auth whoami through the CLI', () 
     expect(code).toBe(1);
     expect(stderr).toContain('No workspace configured. Run "slackcli auth login" first.');
     expect(stdout).toBe('');
+  }, 30_000);
+});
+
+// `auth list` end to end against a local stand-in for Slack that refuses one
+// profile's token. POSIX-only for the same reason as the suite above.
+describe.skipIf(process.platform === 'win32')('auth list through the CLI', () => {
+  const root = resolve(import.meta.dir, '../..');
+  let home: string;
+  let server: ReturnType<typeof Bun.serve>;
+  let requests: Array<{ path: string; body: string }>;
+  let refused: string;
+
+  const writeConfig = (data: unknown) =>
+    writeFile(join(home, '.config', 'slackcli', 'workspaces.json'), JSON.stringify(data), { mode: 0o600 });
+
+  beforeEach(async () => {
+    requests = [];
+    refused = 'nothing';
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: async (request) => {
+        const body = await request.text();
+        requests.push({ path: new URL(request.url).pathname, body });
+        return Response.json(
+          body.includes(refused)
+            ? { ok: false, error: 'invalid_auth' }
+            : { ok: true, url: 'https://example.slack.com/', team: 'Example', user: 'alice', team_id: 'T1', user_id: 'U_LIVE' },
+        );
+      },
+    });
+
+    home = await mkdtemp(join(tmpdir(), 'slackcli-list-'));
+    await mkdir(join(home, '.config', 'slackcli'), { recursive: true, mode: 0o700 });
+    const record = (xoxc: string) => ({
+      workspace_id: 'T1',
+      workspace_name: 'example',
+      workspace_url: `http://127.0.0.1:${server.port}`,
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-secretcookie',
+      xoxc_token: xoxc,
+    });
+    await writeConfig({
+      default_workspace: 'T1',
+      workspaces: { T1: record('xoxc-secretfirst'), second: { ...record('xoxc-secretsecond'), profile: 'second' } },
+    });
+  });
+
+  afterEach(async () => {
+    await server.stop(true);
+    await rm(home, { recursive: true, force: true });
+  });
+
+  // Asynchronous spawn: the stand-in server runs on this process's event loop.
+  async function run(args: string[]) {
+    const child = Bun.spawn([process.execPath, 'run', join(root, 'src/index.ts'), 'auth', 'list', ...args], {
+      cwd: root,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        HOME: home,
+        SLACKCLI_LOG_LEVEL: 'off',
+        SLACKCLI_NO_UPDATE_NOTIFIER: '1',
+        // Must not redirect any check: every profile is checked by its key.
+        SLACKCLI_WORKSPACE: 'second',
+      },
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { code, stdout, stderr };
+  }
+
+  const listed = (profile: string, isDefault: boolean) => ({
+    profile,
+    workspace_id: 'T1',
+    workspace_name: 'example',
+    auth_type: 'browser',
+    is_default: isDefault,
+    secret_backend: 'file',
+  });
+
+  it('lists the stored profiles without calling Slack, as text and as JSON', async () => {
+    const human = await run([]);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('Authenticated Workspaces (2)');
+    expect(human.stdout).toContain('Profile: second');
+    expect(human.stdout).not.toContain('Status:');
+
+    const json = await run(['--json']);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({ default: 'T1', workspaces: [listed('T1', true), listed('second', false)] });
+    expect(requests).toEqual([]);
+  }, 30_000);
+
+  it('verifies every profile with exactly one auth.test call each and exits 0', async () => {
+    const { code, stdout } = await run(['--check', '--json']);
+    expect(code).toBe(0);
+    const ok = { status: 'ok', user: 'alice', user_id: 'U_LIVE' };
+    expect(JSON.parse(stdout)).toEqual({
+      default: 'T1',
+      workspaces: [{ ...listed('T1', true), check: ok }, { ...listed('second', false), check: ok }],
+    });
+    expect(requests.map((r) => r.path)).toEqual(['/api/auth.test', '/api/auth.test']);
+    expect(requests[0].body).toContain('xoxc-secretfirst');
+    expect(requests[1].body).toContain('xoxc-secretsecond');
+  }, 30_000);
+
+  it('exits 1 when one profile is refused, and still checks the one after it', async () => {
+    refused = 'xoxc-secretfirst';
+    const json = await run(['--check', '--json']);
+    expect(json.code).toBe(1);
+    const { workspaces } = JSON.parse(json.stdout);
+    expect(workspaces[0].check).toMatchObject({ status: 'auth_failed', error: { code: 'invalid_auth' } });
+    expect(workspaces[1].check).toEqual({ status: 'ok', user: 'alice', user_id: 'U_LIVE' });
+    expect(requests).toHaveLength(2);
+
+    const human = await run(['--check']);
+    expect(human.code).toBe(1);
+    expect(human.stdout).toContain('Status: auth failed (invalid_auth: ');
+    expect(human.stdout).toContain('To fix: slackcli auth login-auto');
+    expect(human.stdout).toContain('Status: ok (alice, U_LIVE)');
+  }, 30_000);
+
+  it('reports a profile whose credentials are missing as auth_failed without aborting', async () => {
+    const complete = { workspace_id: 'T1', workspace_name: 'example', workspace_url: `http://127.0.0.1:${server.port}`, auth_type: 'browser' };
+    await writeConfig({
+      default_workspace: 'T1',
+      workspaces: {
+        broken: { ...complete, profile: 'broken', xoxd_token: 'xoxd-secretcookie' },
+        T1: { ...complete, xoxd_token: 'xoxd-secretcookie', xoxc_token: 'xoxc-secretfirst' },
+      },
+    });
+    const { code, stdout } = await run(['--check', '--json']);
+    expect(code).toBe(1);
+    const { workspaces } = JSON.parse(stdout);
+    expect(workspaces[0]).toMatchObject({ profile: 'broken', check: { status: 'auth_failed' } });
+    expect(workspaces[0].check.error.message).toContain('profile "broken"');
+    expect(workspaces[1].check.status).toBe('ok');
+    expect(requests).toHaveLength(1);
+  }, 30_000);
+
+  it('never prints a token, on stdout or stderr', async () => {
+    refused = 'xoxc-secretsecond';
+    for (const args of [[], ['--json'], ['--check'], ['--check', '--json']]) {
+      const { stdout, stderr } = await run(args);
+      // `secret_backend` is a field name; every stored token holds "secret".
+      expect(stdout + stderr).not.toMatch(/secret(?!_backend)/);
+      expect(stdout + stderr).not.toMatch(/xox[a-z]-/);
+    }
+  }, 30_000);
+
+  it('exits 0 with the guidance, or an empty JSON list, when no profile is stored', async () => {
+    await writeConfig({ workspaces: {} });
+    for (const check of [[], ['--check']]) {
+      const human = await run(check);
+      expect(human.code).toBe(0);
+      expect(human.stdout).toContain('No authenticated workspaces found.');
+
+      const json = await run([...check, '--json']);
+      expect(json.code).toBe(0);
+      expect(JSON.parse(json.stdout)).toEqual({ default: null, workspaces: [] });
+    }
+    expect(requests).toEqual([]);
   }, 30_000);
 });

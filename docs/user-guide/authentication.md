@@ -216,11 +216,84 @@ With `--json`, stdout carries one object in all three outcomes:
 No token value is ever printed. See
 [scripting](scripting.md#patterns) for using it as a gate in a script.
 
+## Check every stored profile
+
+`auth whoami` checks one profile. `auth list --check` checks all of them, with
+one `auth.test` call per profile, one after the other, and adds a status under
+each:
+
+```bash
+slackcli auth list --check
+slackcli auth list --check --json
+```
+
+```text
+📋 Authenticated Workspaces (2):
+
+1. Acme Corp (default)
+  ID: T1234567
+  Profile: acme
+  Auth: 🌐 Browser
+  Status: ok (alice, U0123ABCD)
+
+2. Other Team
+  ID: T7654321
+  Auth: 🔑 Standard
+  Status: auth failed (token_revoked: The stored token was revoked by the user or a workspace admin.)
+  To fix: slackcli auth login --token <token> --workspace-name <name> (with a new token; the revoked one cannot be reused)
+```
+
+| `Status` | `--json` `check.status` | Meaning |
+|---|---|---|
+| `ok (<user>, <user ID>)` | `ok` | Slack accepted the credentials |
+| `auth failed (<code>: <meaning>)`, then `To fix:` | `auth_failed` | Slack refused them; the code, meaning and fix are the ones `auth whoami` shows |
+| `auth failed (<message>)` | `auth_failed` | The stored credentials could not be read (for example a missing Keychain item); the message is the store's own |
+| `unreachable (<message>)` | `unreachable` | The check did not complete (no connection, an HTTP error, a rate limit), so nothing is known about the credentials |
+
+A failing profile never stops the others from being checked. The exit code is
+`1` when any profile is not `ok`, and `0` when all are. Without `--check`,
+`auth list` reads only the local config, makes no network call, and exits `0`.
+
+`--check` reads every profile's credentials, which plain `auth list` never does:
+with the [macOS Keychain backend](#where-credentials-are-stored) that can mean one
+Keychain prompt per profile.
+
+`auth list --json` (with or without `--check`) writes one object:
+
+```json
+{
+  "default": "acme",
+  "workspaces": [
+    {
+      "profile": "acme",
+      "workspace_id": "T1234567",
+      "workspace_name": "Acme Corp",
+      "auth_type": "browser",
+      "is_default": true,
+      "secret_backend": "file",
+      "check": { "status": "ok", "user": "alice", "user_id": "U0123ABCD" }
+    }
+  ]
+}
+```
+
+| Field | Present | Value |
+|---|---|---|
+| `default` | always | The stored default's profile key, or `null` |
+| `profile`, `workspace_id`, `workspace_name`, `auth_type` | always | As stored at login |
+| `is_default` | always | Whether this profile is the stored default |
+| `secret_backend` | always | `file` or `keychain` |
+| `check` | `--check` only | `{status: "ok", user, user_id, bot_id?}`, `{status: "auth_failed", error: {code, meaning, fix}}` (or `error: {message}` when the credentials could not be read), or `{status: "unreachable", error: {message, http_status?}}` |
+
+With nothing stored, `--json` writes `{"default": null, "workspaces": []}` and
+exits `0`. No token value is ever printed.
+
 ## Managing sessions
 
 ```bash
 slackcli auth whoami                      # the active profile and user, verified
 slackcli auth list                        # every stored workspace, default marked
+slackcli auth list --check                # ...and whether each one still works
 slackcli auth set-default T1234567        # by profile, workspace ID, or name
 slackcli auth remove T1234567
 slackcli auth logout                      # clear all workspaces + browser profile

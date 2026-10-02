@@ -7,6 +7,7 @@ becomes the default; every command uses the default unless you pass
 
 ```bash
 slackcli auth list                              # what is stored, and which is default
+slackcli auth list --check                      # ...and which logins still work
 slackcli conversations list --workspace=T1234567
 slackcli conversations list --workspace="My Team"
 ```
@@ -60,6 +61,24 @@ It also prints the profile key and the authenticated user, so two profiles for
 the same workspace can be told apart, and it verifies the credentials with
 Slack — see
 [check who you are signed in as](authentication.md#check-who-you-are-signed-in-as).
+
+## Check which logins still work
+
+`auth list` reads only the local config, so a profile whose session expired
+weeks ago looks the same as a healthy one. `auth list --check` asks Slack about
+every stored profile, one `auth.test` call each, and shows `ok`, `auth failed`
+or `unreachable` under each one. It exits `1` if any profile is not `ok`, so a
+script or agent can check all of them before picking one to work in:
+
+```bash
+slackcli auth list --check
+slackcli auth list --check --json | jq -r '.workspaces[] | select(.check.status == "ok") | .profile'
+```
+
+`unreachable` means the check did not complete, not that the login is bad: try
+again before logging in again. Like plain `auth list`, it ignores
+`SLACKCLI_WORKSPACE` — every stored profile is checked. Details in
+[check every stored profile](authentication.md#check-every-stored-profile).
 
 ## Several identities in one workspace
 

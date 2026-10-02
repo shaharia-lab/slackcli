@@ -10,7 +10,8 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 `search messages`, `search channels`,
 `search people`, `saved list`, `canvas list`, `canvas read`, `team info`,
 `usergroups list`, `usergroups read`, `emoji list`, `emoji get`, `files info`,
-`files read`, `users info`, `users list`, `messages list-drafts`, `auth whoami`.
+`files read`, `users info`, `users list`, `messages list-drafts`, `auth whoami`,
+`auth list`.
 
 The writing commands support it too — `messages send`, `messages edit`,
 `messages draft`, `messages send-draft`, `messages delete-draft`, the `usergroups` write verbs (`create`, `update`, `add`,
@@ -166,6 +167,17 @@ me=$(slackcli auth whoami --json) || {
 `status` is `auth_failed` when logging in again is needed (`.error.fix` holds the
 command) and `unreachable` when Slack did not answer, which is worth a retry.
 See [authentication](authentication.md#check-who-you-are-signed-in-as).
+
+**Check every stored profile** at the start of a session with
+`auth list --check --json`. It exits `1` unless every profile is `ok`, and each
+entry's `check.status` says which ones to use and which need a new login:
+
+```bash
+slackcli auth list --check --json > profiles.json || true
+jq -r '.workspaces[] | "\(.profile)\t\(.check.status)"' profiles.json
+```
+
+See [authentication](authentication.md#check-every-stored-profile).
 
 **Paginate a search**:
 

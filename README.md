@@ -276,7 +276,7 @@ for the version you have installed.
 | `auth parse-curl` | Extract tokens from a cURL command copied out of DevTools |
 | `auth extract-tokens` | Print the manual token-extraction guide |
 | `auth whoami` | Show the active workspace, profile and user, and verify the credentials (`--json`) |
-| `auth list` | List authenticated workspaces |
+| `auth list` | List authenticated workspaces; `--check` verifies each one with Slack (`--json`) |
 | `auth set-default <workspace>` | Choose the default workspace |
 | `auth remove <workspace>` | Remove one workspace |
 | `auth logout` | Remove all workspaces and the stored browser profile |

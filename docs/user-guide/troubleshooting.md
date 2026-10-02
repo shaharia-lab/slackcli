@@ -21,6 +21,10 @@ You have more than one identity for that workspace. Pass the profile name
 instead of the bare ID or name — see
 [workspaces and profiles](workspaces.md#how-a-selector-is-resolved).
 
+If you passed no `--workspace`, the selector came from the `SLACKCLI_WORKSPACE`
+environment variable: set it to a profile name, or override it with
+`--workspace`.
+
 ## Authentication fails
 
 **Standard tokens**

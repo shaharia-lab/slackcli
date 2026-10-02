@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import {
   authenticateAuto,
@@ -211,4 +211,78 @@ describe('selectWorkspace', () => {
     expect(record.properties).toMatchObject({ source: 'env' });
     expect(JSON.stringify(record.properties)).not.toContain('nope');
   });
+});
+
+// getAuthenticatedClient() is where the variable is actually read, so the
+// wiring is exercised as a subprocess under a temporary HOME. Every case fails
+// before any Slack call. POSIX-only: Windows does not take its home from HOME.
+describe.skipIf(process.platform === 'win32')('SLACKCLI_WORKSPACE through the CLI', () => {
+  const root = resolve(import.meta.dir, '../..');
+  const record = (id: string, name: string) => ({
+    workspace_id: id,
+    workspace_name: name,
+    auth_type: 'standard',
+    token: 'xoxb-test',
+    token_type: 'bot',
+  });
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'slackcli-auth-env-'));
+    const configDir = join(home, '.config', 'slackcli');
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    await writeFile(
+      join(configDir, 'workspaces.json'),
+      JSON.stringify({
+        default_workspace: 'T2',
+        workspaces: { acme: record('T1', 'example'), 'T1-2': record('T1', 'example'), T2: record('T2', 'other') },
+      }),
+      { mode: 0o600 },
+    );
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  function run(args: string[], workspaceEnv: string) {
+    const result = Bun.spawnSync([process.execPath, 'run', join(root, 'src/index.ts'), ...args], {
+      cwd: root,
+      stdin: 'ignore',
+      env: {
+        ...process.env,
+        HOME: home,
+        SLACKCLI_LOG_LEVEL: 'off',
+        SLACKCLI_NO_UPDATE_NOTIFIER: '1',
+        SLACKCLI_WORKSPACE: workspaceEnv,
+      },
+    });
+    return { code: result.exitCode, output: result.stdout.toString() + result.stderr.toString() };
+  }
+
+  it('fails, naming the variable, when its value matches no profile', () => {
+    const { code, output } = run(['team', 'info'], 'nope');
+    expect(code).toBe(1);
+    expect(output).toContain('Workspace not found: nope (from SLACKCLI_WORKSPACE)');
+  }, 30_000);
+
+  it('lets --workspace override the variable', () => {
+    const { code, output } = run(['team', 'info', '--workspace', 'zzz'], 'acme');
+    expect(code).toBe(1);
+    expect(output).toContain('Workspace not found: zzz');
+    expect(output).not.toContain('SLACKCLI_WORKSPACE');
+  }, 30_000);
+
+  it('raises the ambiguity error for a value matching several profiles', () => {
+    const { code, output } = run(['team', 'info'], 'example');
+    expect(code).toBe(1);
+    expect(output).toContain('"example" matches multiple profiles: acme, T1-2');
+  }, 30_000);
+
+  it('leaves auth list working and marking the stored default', () => {
+    const { code, output } = run(['auth', 'list'], 'nope');
+    expect(code).toBe(0);
+    expect(output).not.toContain('Workspace not found');
+    expect(output).toMatch(/other.*\(default\)/);
+  }, 30_000);
 });

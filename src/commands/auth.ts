@@ -1,6 +1,12 @@
 import { Command } from 'commander';
 import ora, { type Ora } from 'ora';
-import { authenticateStandard, authenticateBrowser, authenticateAuto, AutoLoginError } from '../lib/auth.ts';
+import {
+  authenticateStandard,
+  authenticateBrowser,
+  authenticateAuto,
+  AutoLoginError,
+  checkIdentity,
+} from '../lib/auth.ts';
 import {
   getAllWorkspaceEntries,
   setDefaultWorkspace,
@@ -9,14 +15,14 @@ import {
   getDefaultWorkspaceId,
   migrateSecrets,
 } from '../lib/workspaces.ts';
-import { success, error, info, warning, formatWorkspace } from '../lib/formatter.ts';
+import { success, error, info, warning, formatWorkspace, formatIdentity, writeJson } from '../lib/formatter.ts';
 import chalk from 'chalk';
 import { parseCurlCommand, type ParsedCurlResult } from '../lib/curl-parser.ts';
 import { resolveCurlInput, type CurlInputResult } from '../lib/curl-input.ts';
 import { clearBrowserProfile } from '../lib/browser-launcher.ts';
 import { isSlackWorkspaceUrl } from '../lib/browser-auth.ts';
 import { confirmWrite } from './usergroups.ts';
-import type { SecretBackend } from '../types/index.ts';
+import type { IdentityResult, SecretBackend } from '../types/index.ts';
 
 // Validates the `--secret-backend` flag shared by every login path. Exits the
 // process on an invalid value or on `keychain` requested off macOS — both are
@@ -278,6 +284,50 @@ export function createAuthCommand(): Command {
       } catch (err: any) {
         error('Failed to list workspaces', err.message);
         process.exit(1);
+      }
+    });
+
+  // Show the active identity and verify its credentials
+  auth
+    .command('whoami')
+    .description('Show which workspace and user the CLI is acting as, and verify the credentials')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .action(async (options) => {
+      const spinner = ora('Checking identity...').start();
+
+      let identity: IdentityResult;
+      try {
+        identity = await checkIdentity(options.workspace);
+      } catch (err: any) {
+        spinner.fail('Could not check identity');
+        error(err.message);
+        process.exit(1);
+      }
+
+      if (identity.status === 'ok') {
+        spinner.succeed('Credentials verified');
+      } else {
+        spinner.fail(
+          identity.status === 'auth_failed' ? 'Slack refused the credentials' : 'Slack could not be reached'
+        );
+        // Not process.exit(): the output below must drain first (see writeJson).
+        process.exitCode = 1;
+      }
+
+      if (options.json) {
+        writeJson(identity);
+        return;
+      }
+
+      console.log(`\n${formatIdentity(identity)}\n`);
+      if (identity.status === 'auth_failed') {
+        error(`${identity.error.code}: ${identity.error.meaning}`, `To fix: ${identity.error.fix}`);
+      } else if (identity.status === 'unreachable') {
+        error(
+          identity.error.message,
+          'Slack could not be reached, so the credentials were not checked. Check the connection and try again.'
+        );
       }
     });
 

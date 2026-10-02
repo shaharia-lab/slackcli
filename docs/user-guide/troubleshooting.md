@@ -25,6 +25,30 @@ If you passed no `--workspace`, the selector came from the `SLACKCLI_WORKSPACE`
 environment variable: set it to a profile name, or override it with
 `--workspace`.
 
+## Check whether a session still works
+
+`slackcli auth whoami` makes one call to Slack with the active profile's
+credentials and reports the workspace, profile, user and whether Slack accepted
+them. Run it before a long job, or first thing when a command fails:
+
+```bash
+slackcli auth whoami                    # the profile commands use by default
+slackcli auth whoami --workspace=acme   # one specific profile
+```
+
+- `Status: verified` (exit code `0`): the credentials are fine; the problem is
+  elsewhere (scopes, channel membership, the request itself).
+- `Status: authentication failed (<code>)` (exit code `1`): Slack refused them.
+  The lines that follow say what the code means and which command fixes it — see
+  [the table below](#authentication-failed-for-profile--invalid_auth-not_authed-token_expired-token_revoked-account_inactive).
+- `Status: unreachable` (exit code `1`): Slack did not answer, so nothing was
+  learned about the credentials. Check the network, proxy or VPN and try again.
+
+It also shows which profile was selected and by what (`--workspace`,
+`SLACKCLI_WORKSPACE`, or the stored default), which settles "am I pointed at the
+workspace I think I am?". Details in
+[authentication](authentication.md#check-who-you-are-signed-in-as).
+
 ## Authentication fails
 
 **Standard tokens**

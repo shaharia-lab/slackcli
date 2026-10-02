@@ -25,6 +25,7 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 | `auth login --token=xox[bp]-… --workspace-name=N [--profile=P]` | App token, validated before saving. |
 | `auth login-browser --xoxd=… --xoxc=… --workspace-url=https://t.slack.com [--profile=P]` | Browser tokens by hand. |
 | `auth parse-curl [--login] [--from-clipboard] [cmd]` | Tokens from DevTools "Copy as cURL"; accepts a pipe. |
+| `auth whoami [--workspace W] [--json]` | Active profile + user, verified with one `auth.test`. Exit 1 on `status` `auth_failed` / `unreachable`. |
 | `auth list` | Stored profiles, default marked. Exit 0 even when empty. |
 | `auth set-default <ws>` / `auth remove <ws>` / `auth logout [--keep-browser-session]` | |
 

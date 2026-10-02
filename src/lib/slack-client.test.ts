@@ -1568,3 +1568,95 @@ describe('SlackClient authentication failures', () => {
     expect(await browserClient().leaveConversation('C1')).toEqual({ ok: false, not_in_channel: true });
   });
 });
+
+// `auth whoami` has to tell "Slack could not be reached" from "Slack refused"
+// on both auth types, so the SDK's transport failures carry the same type the
+// browser path throws.
+describe('SlackClient standard-path transport failures', () => {
+  const noPacing = () => new RateLimiter({ minIntervalMs: 0, maxConcurrent: 8 });
+  const config = {
+    workspace_id: 'T123',
+    workspace_name: 'Acme Corp',
+    auth_type: 'standard',
+    token: 'xoxb-test',
+    token_type: 'bot',
+  } as const;
+
+  function failingWith(sdkError: Error): SlackClient {
+    const client = new SlackClient(config, { rateLimiter: noPacing() });
+    (client as unknown as { webClient: { apiCall: () => Promise<unknown> } }).webClient = {
+      apiCall: async () => { throw sdkError; },
+    };
+    return client;
+  }
+
+  it('reports a request that got no response as a network transport error', async () => {
+    const sdkError = Object.assign(new Error('A request error occurred: ECONNREFUSED'), {
+      code: 'slack_webapi_request_error',
+    });
+    const error = await failingWith(sdkError).testAuth().catch((err) => err);
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.networkError).toBe(true);
+    expect(error.httpStatus).toBeUndefined();
+    expect(error.message).toBe('Slack API error: A request error occurred: ECONNREFUSED');
+  });
+
+  it('reports a non-2xx response as a transport error with its status', async () => {
+    const sdkError = Object.assign(new Error('An HTTP protocol error occurred: statusCode = 503'), {
+      code: 'slack_webapi_http_error',
+      statusCode: 503,
+    });
+    const error = await failingWith(sdkError).testAuth().catch((err) => err);
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.networkError).toBe(false);
+    expect(error.httpStatus).toBe(503);
+  });
+
+  it('reports a rate-limited call as a transport error with status 429 and the wait', async () => {
+    const sdkError = Object.assign(new Error('A rate-limit has been reached, you may retry this request in 30 seconds'), {
+      code: 'slack_webapi_rate_limited_error',
+      retryAfter: 30,
+    });
+    const error = await failingWith(sdkError).testAuth().catch((err) => err);
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.httpStatus).toBe(429);
+    expect(error.retryAfterMs).toBe(30_000);
+    expect(error.networkError).toBe(false);
+  });
+
+  it('leaves a Slack ok:false answer as a plain error carrying the payload', async () => {
+    const payload = { ok: false, error: 'missing_scope' };
+    const sdkError = Object.assign(new Error('An API error occurred: missing_scope'), {
+      code: 'slack_webapi_platform_error',
+      data: payload,
+    });
+    const error = await failingWith(sdkError).testAuth().catch((err) => err);
+    expect(error).not.toBeInstanceOf(SlackTransportError);
+    expect(error.slackData).toEqual(payload);
+  });
+
+  it('still reports refused credentials as a SlackAuthError', async () => {
+    const sdkError = Object.assign(new Error('An API error occurred: invalid_auth'), {
+      code: 'slack_webapi_platform_error',
+      data: { ok: false, error: 'invalid_auth' },
+    });
+    await expect(failingWith(sdkError).testAuth()).rejects.toBeInstanceOf(SlackAuthError);
+  });
+
+  type SdkInternals = { retryConfig: { retries?: number }; rejectRateLimitedCalls: boolean };
+  const sdk = (client: SlackClient) => (client as unknown as { webClient: SdkInternals }).webClient;
+  const sdkRetryConfig = (client: SlackClient) => sdk(client).retryConfig;
+
+  it('fails a 429 at once only when the SDK retries are capped', () => {
+    expect(sdk(new SlackClient(config, { sdkRetries: 3 })).rejectRateLimitedCalls).toBe(true);
+    // Every other command keeps the SDK's wait-and-retry on a 429.
+    expect(sdk(new SlackClient(config)).rejectRateLimitedCalls).toBe(false);
+  });
+
+  it('caps the SDK retries only when asked to', () => {
+    expect(sdkRetryConfig(new SlackClient(config, { sdkRetries: 3 }))).toEqual({ retries: 3 });
+    expect(sdkRetryConfig(new SlackClient(config, { sdkRetries: 0 }))).toEqual({ retries: 0 });
+    // The SDK default (ten retries) stays in place for every other command.
+    expect(sdkRetryConfig(new SlackClient(config)).retries).toBe(10);
+  });
+});

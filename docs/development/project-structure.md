@@ -37,7 +37,7 @@ They hold no Slack API knowledge.
 
 | File | Subcommands |
 |---|---|
-| `auth.ts` | `login`, `login-browser`, `login-auto`, `list`, `set-default`, `remove`, `logout`, `extract-tokens`, `parse-curl` |
+| `auth.ts` | `login`, `login-browser`, `login-auto`, `whoami`, `list`, `set-default`, `remove`, `logout`, `extract-tokens`, `parse-curl` |
 | `canvas.ts` | `list`, `read` |
 | `conversations.ts` | `list`, `read`, `get`, `unread` |
 | `files.ts` | `info`, `read`, `download` |
@@ -51,8 +51,8 @@ They hold no Slack API knowledge.
 
 | Module | Responsibility |
 |---|---|
-| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, retries browser-auth calls per `retry.ts`, logs each attempt's method, auth type, duration and outcome, and rethrows an authentication failure as a `SlackAuthError` (`auth-errors.ts`). |
-| `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, stored default) is resolved. |
+| `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, retries browser-auth calls per `retry.ts`, logs each attempt's method, auth type, duration and outcome, and rethrows an authentication failure as a `SlackAuthError` (`auth-errors.ts`). A call that got no usable HTTP response throws `SlackTransportError` on both auth types. |
+| `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, stored default) is resolved. `checkIdentity()` is the `auth whoami` lookup: one `auth.test` for the selected profile, returned as a typed `ok` / `auth_failed` / `unreachable` result that keeps the profile key. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
 | `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. |

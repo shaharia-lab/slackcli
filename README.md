@@ -170,7 +170,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Review active drafts | `slackcli messages list-drafts` | [messages](docs/user-guide/messages.md) |
 | Script it / feed an AI agent | `… --json \| jq` | [scripting & JSON](docs/user-guide/scripting.md) |
 | Juggle several workspaces | `slackcli conversations list --workspace=automation-bot` | [workspaces](docs/user-guide/workspaces.md) |
-| Fix something that broke | `slackcli auth list` | [troubleshooting](docs/user-guide/troubleshooting.md) |
+| Fix something that broke | `slackcli auth whoami` | [troubleshooting](docs/user-guide/troubleshooting.md) |
 
 ---
 
@@ -275,6 +275,7 @@ for the version you have installed.
 | `auth login-browser` | Sign in with browser session tokens (`xoxd-*` + `xoxc-*`) |
 | `auth parse-curl` | Extract tokens from a cURL command copied out of DevTools |
 | `auth extract-tokens` | Print the manual token-extraction guide |
+| `auth whoami` | Show the active workspace, profile and user, and verify the credentials (`--json`) |
 | `auth list` | List authenticated workspaces |
 | `auth set-default <workspace>` | Choose the default workspace |
 | `auth remove <workspace>` | Remove one workspace |

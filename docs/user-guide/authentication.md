@@ -141,9 +141,85 @@ Where the values come from: open your workspace in a browser, open DevTools
 read `d=xoxd-…` from the `Cookie` header and `"token":"xoxc-…"` from the request
 payload.
 
+## Check who you are signed in as
+
+`auth whoami` answers "which workspace and which user is the CLI acting as, and
+do the credentials still work?". It picks the profile the same way every other
+command does (`--workspace`, then `SLACKCLI_WORKSPACE`, then the stored
+default), makes one `auth.test` call to Slack, and prints the result:
+
+```bash
+slackcli auth whoami
+slackcli auth whoami --workspace=acme
+slackcli auth whoami --json
+```
+
+```text
+Acme Corp
+  ID: T1234567
+  Profile: acme
+  User: alice (U0123ABCD)
+  Auth: 🌐 Browser
+  Selected by: stored default
+  Status: verified
+```
+
+`Selected by` is `--workspace flag`, `SLACKCLI_WORKSPACE`, or `stored default`.
+The user is the one Slack reports for the credentials; for a bot token that is
+the bot user, shown with its bot ID.
+
+There are three outcomes, and the exit code tells them apart from success:
+
+| `Status` | `--json` `status` | Exit code | Meaning |
+|---|---|---|---|
+| `verified` | `ok` | `0` | Slack accepted the credentials |
+| `authentication failed (<code>)` | `auth_failed` | `1` | Slack refused them. The meaning and the `To fix:` command follow — the same ones as in [troubleshooting](troubleshooting.md#authentication-failed-for-profile--invalid_auth-not_authed-token_expired-token_revoked-account_inactive) |
+| `unreachable` | `unreachable` | `1` | Slack did not answer (no connection, an HTTP error, or a rate limit), so the credentials were **not** checked |
+
+When the check fails, the stored profile details are still printed, with the
+user ID saved at login if there is one. No workspace configured, an unknown
+selector and an ambiguous one are errors as for any other command (exit code
+`1`, nothing on stdout).
+
+There is no offline mode: the call to Slack is the point. When Slack cannot be
+reached, the check gives up after three retries instead of retrying for
+minutes as other commands with an app token do, and with an app token a rate
+limit (HTTP 429) is reported at once instead of being waited out.
+
+With `--json`, stdout carries one object in all three outcomes:
+
+```json
+{
+  "profile": "acme",
+  "workspace_id": "T1234567",
+  "workspace_name": "Acme Corp",
+  "auth_type": "browser",
+  "source": "default",
+  "status": "ok",
+  "user": "alice",
+  "user_id": "U0123ABCD"
+}
+```
+
+| Field | Present | Value |
+|---|---|---|
+| `profile` | always | The profile key the workspace is stored under |
+| `workspace_id`, `workspace_name` | always | As stored at login |
+| `auth_type` | always | `browser` or `standard` |
+| `source` | always | `flag`, `env`, or `default` |
+| `status` | always | `ok`, `auth_failed`, or `unreachable` |
+| `user` | `ok` | The user (or bot user) name from Slack |
+| `user_id` | `ok`; otherwise only if stored at login | From Slack when `ok`, else the stored ID |
+| `bot_id` | `ok`, bot tokens only | The bot ID from Slack |
+| `error` | not `ok` | `{code, meaning, fix}` for `auth_failed`; `{message, http_status?}` for `unreachable` |
+
+No token value is ever printed. See
+[scripting](scripting.md#patterns) for using it as a gate in a script.
+
 ## Managing sessions
 
 ```bash
+slackcli auth whoami                      # the active profile and user, verified
 slackcli auth list                        # every stored workspace, default marked
 slackcli auth set-default T1234567        # by profile, workspace ID, or name
 slackcli auth remove T1234567

@@ -8,15 +8,17 @@ import {
   authenticateBrowser,
   authenticateStandard,
   AutoLoginError,
+  checkIdentity,
   effectiveWorkspaceSelector,
   selectWorkspace,
+  selectWorkspaceEntry,
   WORKSPACE_ENV_VAR,
 } from './auth';
 import { AmbiguousWorkspaceError, resolveWorkspace } from './workspaces';
-import type { WorkspaceConfig, WorkspacesData } from '../types/index';
+import type { SlackAuthTestResponse, WorkspaceConfig, WorkspacesData } from '../types/index';
 import { configureLogging } from './logger';
-import { AUTH_ERROR_CODES, SlackAuthError } from './auth-errors';
-import { SlackClient } from './slack-client';
+import { AUTH_ERROR_CODES, SlackAuthError, authErrorProfile } from './auth-errors';
+import { SlackClient, SlackTransportError } from './slack-client';
 import * as browserAuth from './browser-auth';
 
 // A failed `login-auto` must leave enough in the log to answer "which browser,
@@ -408,5 +410,437 @@ describe.skipIf(process.platform === 'win32')('SLACKCLI_WORKSPACE through the CL
     expect(code).toBe(0);
     expect(output).not.toContain('Workspace not found');
     expect(output).toMatch(/other.*\(default\)/);
+  }, 30_000);
+});
+
+describe('selectWorkspaceEntry', () => {
+  const config: WorkspaceConfig = {
+    workspace_id: 'T1',
+    workspace_name: 'example',
+    auth_type: 'standard',
+    token: 'xoxb-test',
+    token_type: 'bot',
+  };
+  const data: WorkspacesData = { default_workspace: 'acme', workspaces: { acme: config } };
+  const lookup = async (identifier?: string) => resolveWorkspace(data, identifier);
+
+  it('returns the profile key along with the config', async () => {
+    expect(await selectWorkspaceEntry({ source: 'default' }, lookup)).toEqual({ key: 'acme', config });
+    expect(await selectWorkspaceEntry({ identifier: 'T1', source: 'flag' }, lookup)).toEqual({ key: 'acme', config });
+  });
+
+  it('fails like selectWorkspace when nothing matches', async () => {
+    await expect(selectWorkspaceEntry({ identifier: 'nope', source: 'env' }, lookup)).rejects.toThrow(
+      'Workspace not found: nope (from SLACKCLI_WORKSPACE)',
+    );
+    await expect(selectWorkspaceEntry({ source: 'default' }, async () => null)).rejects.toThrow(
+      'No workspace configured. Run "slackcli auth login" first.',
+    );
+  });
+});
+
+describe('checkIdentity', () => {
+  const browser: WorkspaceConfig = {
+    workspace_id: 'T1',
+    workspace_name: 'example',
+    workspace_url: 'https://example.slack.com',
+    auth_type: 'browser',
+    xoxd_token: 'xoxd-secretcookie',
+    xoxc_token: 'xoxc-secrettoken',
+    profile: 'acme',
+    user_id: 'U_STORED',
+  };
+  const bot: WorkspaceConfig = {
+    workspace_id: 'T1',
+    workspace_name: 'example',
+    auth_type: 'standard',
+    token: 'xoxb-secrettoken',
+    token_type: 'bot',
+    profile: 'T1-2',
+    user_id: 'U_BOT',
+  };
+  // A record written before `user_id` and `profile` existed, keyed by team id.
+  const legacy: WorkspaceConfig = {
+    workspace_id: 'T2',
+    workspace_name: 'other',
+    auth_type: 'standard',
+    token: 'xoxp-secrettoken',
+    token_type: 'user',
+  };
+  const data: WorkspacesData = {
+    default_workspace: 'T2',
+    workspaces: { acme: browser, 'T1-2': bot, T2: legacy },
+  };
+  const lookup = async (identifier?: string) => resolveWorkspace(data, identifier);
+
+  const answer: SlackAuthTestResponse = {
+    ok: true,
+    url: 'https://example.slack.com/',
+    team: 'Example Inc',
+    user: 'alice',
+    team_id: 'T1',
+    user_id: 'U_LIVE',
+  };
+
+  // A client whose only call is counted, so "exactly one auth.test" is checked.
+  function clientThat(outcome: () => Promise<SlackAuthTestResponse>) {
+    const seen: WorkspaceConfig[] = [];
+    let calls = 0;
+    const createClient = (config: WorkspaceConfig) => {
+      seen.push(config);
+      return { testAuth: async () => { calls += 1; return outcome(); } };
+    };
+    return { createClient, seen, calls: () => calls };
+  }
+  const answering = (response: SlackAuthTestResponse = answer) => clientThat(async () => response);
+  const failing = (error: unknown) => clientThat(async () => { throw error; });
+
+  it('reports the default profile, verified by one auth.test call', async () => {
+    const client = answering({ ...answer, team_id: 'T2', user: 'carol', user_id: 'U_CAROL' });
+    const identity = await checkIdentity(undefined, { env: '', lookup, createClient: client.createClient });
+    expect(identity).toEqual({
+      profile: 'T2',
+      workspace_id: 'T2',
+      workspace_name: 'other',
+      auth_type: 'standard',
+      source: 'default',
+      status: 'ok',
+      user: 'carol',
+      user_id: 'U_CAROL',
+    });
+    expect(client.calls()).toBe(1);
+    expect(client.seen).toEqual([legacy]);
+  });
+
+  it('selects the profile named by --workspace and reports the flag as the source', async () => {
+    const client = answering();
+    const identity = await checkIdentity('acme', { env: 'T2', lookup, createClient: client.createClient });
+    expect(identity).toMatchObject({ profile: 'acme', workspace_id: 'T1', auth_type: 'browser', source: 'flag' });
+    expect(client.seen).toEqual([browser]);
+  });
+
+  it('selects the profile named by SLACKCLI_WORKSPACE and reports env as the source', async () => {
+    const identity = await checkIdentity(undefined, { env: 'T1-2', lookup, createClient: answering().createClient });
+    expect(identity).toMatchObject({ profile: 'T1-2', auth_type: 'standard', source: 'env' });
+  });
+
+  it('reports the user Slack returns, not the one stored at login', async () => {
+    const identity = await checkIdentity('acme', { env: '', lookup, createClient: answering().createClient });
+    expect(identity).toMatchObject({ status: 'ok', user: 'alice', user_id: 'U_LIVE' });
+  });
+
+  it('includes bot_id only when Slack returns one', async () => {
+    const asBot = await checkIdentity('T1-2', {
+      env: '',
+      lookup,
+      createClient: answering({ ...answer, user: 'deploybot', user_id: 'U_BOT', bot_id: 'B42' }).createClient,
+    });
+    expect(asBot).toMatchObject({ status: 'ok', user: 'deploybot', bot_id: 'B42' });
+
+    const asUser = await checkIdentity('acme', { env: '', lookup, createClient: answering().createClient });
+    expect(asUser).not.toHaveProperty('bot_id');
+  });
+
+  it.each(AUTH_ERROR_CODES.map((code) => [code]))(
+    'returns auth_failed with the stored details, meaning and fix for %s',
+    async (code) => {
+      const refusal = new SlackAuthError(code, authErrorProfile(browser), { ok: false, error: code });
+      const client = failing(refusal);
+      const identity = await checkIdentity('acme', { env: '', lookup, createClient: client.createClient });
+      expect(identity).toEqual({
+        profile: 'acme',
+        workspace_id: 'T1',
+        workspace_name: 'example',
+        auth_type: 'browser',
+        source: 'flag',
+        user_id: 'U_STORED',
+        status: 'auth_failed',
+        error: { code, meaning: refusal.meaning, fix: refusal.fix },
+      });
+      expect(client.calls()).toBe(1);
+    },
+  );
+
+  it('omits user_id for a failing legacy record that never stored one', async () => {
+    const refusal = new SlackAuthError('invalid_auth', authErrorProfile(legacy));
+    const identity = await checkIdentity(undefined, { env: '', lookup, createClient: failing(refusal).createClient });
+    expect(identity).toMatchObject({ profile: 'T2', status: 'auth_failed' });
+    expect(identity).not.toHaveProperty('user_id');
+  });
+
+  it('returns unreachable, not auth_failed, when no response was received', async () => {
+    const dropped = new SlackTransportError('Slack API error: fetch failed', undefined, undefined, true);
+    const identity = await checkIdentity('acme', { env: '', lookup, createClient: failing(dropped).createClient });
+    expect(identity).toEqual({
+      profile: 'acme',
+      workspace_id: 'T1',
+      workspace_name: 'example',
+      auth_type: 'browser',
+      source: 'flag',
+      user_id: 'U_STORED',
+      status: 'unreachable',
+      error: { message: 'Slack API error: fetch failed' },
+    });
+  });
+
+  it('returns unreachable with the HTTP status when Slack answered with a non-2xx', async () => {
+    const down = new SlackTransportError('Slack API error: HTTP error! status: 503', 503, undefined, false);
+    const identity = await checkIdentity('T1-2', { env: '', lookup, createClient: failing(down).createClient });
+    expect(identity).toMatchObject({
+      status: 'unreachable',
+      error: { message: 'Slack API error: HTTP error! status: 503', http_status: 503 },
+    });
+  });
+
+  it('rethrows a failure that is neither refused credentials nor a transport error', async () => {
+    const other = new Error('Slack API error: ratelimited');
+    await expect(
+      checkIdentity('acme', { env: '', lookup, createClient: failing(other).createClient }),
+    ).rejects.toBe(other);
+  });
+
+  it('never puts a credential in the result, whatever the outcome', async () => {
+    const outcomes = [
+      answering(),
+      failing(new SlackAuthError('invalid_auth', authErrorProfile(browser))),
+      failing(new SlackTransportError('Slack API error: fetch failed', undefined, undefined, true)),
+    ];
+    for (const selector of ['acme', 'T1-2', 'T2']) {
+      for (const client of outcomes) {
+        const identity = await checkIdentity(selector, { env: '', lookup, createClient: client.createClient });
+        const serialised = JSON.stringify(identity);
+        expect(serialised).not.toContain('secret');
+        expect(serialised).not.toMatch(/xox[a-z]-/);
+      }
+    }
+  });
+
+  describe('when no profile can be resolved', () => {
+    it('fails with the login hint when nothing is configured, without calling Slack', async () => {
+      const client = answering();
+      await expect(
+        checkIdentity(undefined, { env: '', lookup: async () => null, createClient: client.createClient }),
+      ).rejects.toThrow('No workspace configured. Run "slackcli auth login" first.');
+      expect(client.calls()).toBe(0);
+    });
+
+    it('fails for an unknown --workspace, without calling Slack', async () => {
+      const client = answering();
+      await expect(
+        checkIdentity('nope', { env: '', lookup, createClient: client.createClient }),
+      ).rejects.toThrow('Workspace not found: nope');
+      expect(client.calls()).toBe(0);
+    });
+
+    it('names the variable for an unknown SLACKCLI_WORKSPACE value', async () => {
+      await expect(
+        checkIdentity(undefined, { env: 'nope', lookup, createClient: answering().createClient }),
+      ).rejects.toThrow(`Workspace not found: nope (from ${WORKSPACE_ENV_VAR})`);
+    });
+
+    it.each(['T1', 'example'])('raises the ambiguity error for the selector %p', async (selector) => {
+      const client = answering();
+      const failure = await checkIdentity(selector, { env: '', lookup, createClient: client.createClient })
+        .catch((err) => err);
+      expect(failure).toBeInstanceOf(AmbiguousWorkspaceError);
+      expect(failure.keys).toEqual(['acme', 'T1-2']);
+      expect(client.calls()).toBe(0);
+    });
+  });
+
+  describe('logging', () => {
+    let records: LogRecord[];
+
+    beforeEach(() => {
+      records = [];
+      configureLogging({ level: 'debug', verbose: false, sinks: { capture: (r) => records.push(r) } });
+    });
+
+    afterEach(() => {
+      resetSync();
+    });
+
+    const outcomeRecord = () => records.find((r) => r.properties.status !== undefined)!;
+
+    it('logs the outcome with IDs only', async () => {
+      await checkIdentity('acme', { env: '', lookup, createClient: answering().createClient });
+      expect(outcomeRecord().properties).toMatchObject({
+        profile_key: 'acme',
+        workspace_id: 'T1',
+        auth_type: 'browser',
+        source: 'flag',
+        status: 'ok',
+      });
+      expect(JSON.stringify(records.map((r) => r.properties))).not.toContain('secret');
+    });
+
+    it('logs the Slack code of refused credentials, not the message', async () => {
+      const refusal = new SlackAuthError('token_revoked', authErrorProfile(browser));
+      await checkIdentity('acme', { env: '', lookup, createClient: failing(refusal).createClient });
+      expect(outcomeRecord().properties).toMatchObject({ status: 'auth_failed', slack_error: 'token_revoked' });
+    });
+
+    it('logs the HTTP status of an unreachable Slack', async () => {
+      const down = new SlackTransportError('Slack API error: HTTP error! status: 502', 502, undefined, false);
+      await checkIdentity('acme', { env: '', lookup, createClient: failing(down).createClient });
+      expect(outcomeRecord().properties).toMatchObject({ status: 'unreachable', http_status: 502 });
+    });
+  });
+});
+
+// The real wiring: config file -> profile key -> SlackClient -> one auth.test
+// -> command output and exit code. A local server stands in for Slack as the
+// stored workspace URL, so nothing leaves the machine. POSIX-only: Windows does
+// not take its home from HOME.
+describe.skipIf(process.platform === 'win32')('auth whoami through the CLI', () => {
+  const root = resolve(import.meta.dir, '../..');
+  let home: string;
+  let server: ReturnType<typeof Bun.serve>;
+  let reply: Record<string, unknown>;
+  let requests: Array<{ path: string; body: string }>;
+
+  beforeEach(async () => {
+    requests = [];
+    reply = { ok: true, url: 'https://example.slack.com/', team: 'Example', user: 'alice', team_id: 'T1', user_id: 'U_LIVE' };
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: async (request) => {
+        requests.push({ path: new URL(request.url).pathname, body: await request.text() });
+        return Response.json(reply);
+      },
+    });
+
+    home = await mkdtemp(join(tmpdir(), 'slackcli-whoami-'));
+    const configDir = join(home, '.config', 'slackcli');
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    const record = (name: string) => ({
+      workspace_id: 'T1',
+      workspace_name: name,
+      workspace_url: `http://127.0.0.1:${server.port}`,
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-secretcookie',
+      xoxc_token: 'xoxc-secrettoken',
+      user_id: 'U_STORED',
+    });
+    await writeFile(
+      join(configDir, 'workspaces.json'),
+      JSON.stringify({
+        default_workspace: 'T1',
+        workspaces: { T1: record('example'), second: { ...record('example'), profile: 'second' } },
+      }),
+      { mode: 0o600 },
+    );
+  });
+
+  afterEach(async () => {
+    await server.stop(true);
+    await rm(home, { recursive: true, force: true });
+  });
+
+  // Asynchronous spawn: the stand-in server runs on this process's event loop.
+  async function run(args: string[], workspaceEnv = '') {
+    const child = Bun.spawn([process.execPath, 'run', join(root, 'src/index.ts'), 'auth', 'whoami', ...args], {
+      cwd: root,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        HOME: home,
+        SLACKCLI_LOG_LEVEL: 'off',
+        SLACKCLI_NO_UPDATE_NOTIFIER: '1',
+        SLACKCLI_WORKSPACE: workspaceEnv,
+      },
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { code, stdout, stderr };
+  }
+
+  it('prints one JSON object for a verified identity and exits 0 after one auth.test call', async () => {
+    const { code, stdout } = await run(['--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({
+      profile: 'T1',
+      workspace_id: 'T1',
+      workspace_name: 'example',
+      auth_type: 'browser',
+      source: 'default',
+      status: 'ok',
+      user: 'alice',
+      user_id: 'U_LIVE',
+    });
+    expect(requests.map((r) => r.path)).toEqual(['/api/auth.test']);
+  }, 30_000);
+
+  it('reports the profile key and the env source for a SLACKCLI_WORKSPACE selection', async () => {
+    const { code, stdout } = await run(['--json'], 'second');
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({ profile: 'second', source: 'env', status: 'ok' });
+  }, 30_000);
+
+  it('prints the human-readable identity and exits 0', async () => {
+    const { code, stdout } = await run(['--workspace', 'second']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('Profile: second');
+    expect(stdout).toContain('User: alice (U_LIVE)');
+    expect(stdout).toContain('Selected by: --workspace flag');
+    expect(stdout).toContain('Status: verified');
+  }, 30_000);
+
+  it('exits 1 with the stored details and the fix when Slack refuses the credentials', async () => {
+    reply = { ok: false, error: 'invalid_auth' };
+    const json = await run(['--json']);
+    expect(json.code).toBe(1);
+    const identity = JSON.parse(json.stdout);
+    expect(identity).toMatchObject({
+      profile: 'T1',
+      workspace_name: 'example',
+      user_id: 'U_STORED',
+      status: 'auth_failed',
+      error: { code: 'invalid_auth' },
+    });
+    expect(identity.error.meaning).toContain('browser session');
+    expect(identity.error.fix).toContain('slackcli auth login-auto');
+
+    const human = await run([]);
+    expect(human.code).toBe(1);
+    expect(human.stdout).toContain('Profile: T1');
+    expect(human.stdout).toContain('User: U_STORED (stored at login)');
+    expect(human.stdout).toContain('Status: authentication failed (invalid_auth)');
+    expect(human.stderr).toContain('invalid_auth: The stored browser session is no longer valid.');
+    expect(human.stderr).toContain('To fix: slackcli auth login-auto');
+  }, 30_000);
+
+  it('never prints a token, on stdout or stderr', async () => {
+    for (const args of [['--json'], []]) {
+      const { stdout, stderr } = await run(args);
+      expect(stdout + stderr).not.toContain('secret');
+      expect(stdout + stderr).not.toMatch(/xox[a-z]-/);
+    }
+  }, 30_000);
+
+  it.each([
+    [['--workspace', 'nope'], '', 'Workspace not found: nope'],
+    [[], 'nope', 'Workspace not found: nope (from SLACKCLI_WORKSPACE)'],
+    [['--workspace', 'example'], '', '"example" matches multiple profiles: T1, second'],
+  ] as const)('exits 1 with a clear error and no Slack call for %j (env %p)', async (args, env, message) => {
+    const { code, stdout, stderr } = await run([...args, '--json'], env);
+    expect(code).toBe(1);
+    expect(stderr).toContain(message);
+    expect(stdout).toBe('');
+    expect(requests).toEqual([]);
+  }, 30_000);
+
+  it('exits 1 with the login hint when no workspace is configured', async () => {
+    await writeFile(join(home, '.config', 'slackcli', 'workspaces.json'), JSON.stringify({ workspaces: {} }), { mode: 0o600 });
+    const { code, stdout, stderr } = await run(['--json']);
+    expect(code).toBe(1);
+    expect(stderr).toContain('No workspace configured. Run "slackcli auth login" first.');
+    expect(stdout).toBe('');
   }, 30_000);
 });

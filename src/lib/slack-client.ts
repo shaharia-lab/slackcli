@@ -1,4 +1,4 @@
-import { LogLevel as SlackLogLevel, WebClient } from '@slack/web-api';
+import { ErrorCode, LogLevel as SlackLogLevel, WebClient } from '@slack/web-api';
 import type { Logger as SlackLogger } from '@slack/web-api';
 import { getLogger } from '@logtape/logtape';
 import { basename } from 'node:path';
@@ -27,6 +27,14 @@ export interface SlackClientOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Overrides the browser-auth retry policy's limits. Intended for tests. */
   retry?: Partial<RetryOptions>;
+  /**
+   * Caps `@slack/web-api`'s own retries on the standard path, and makes a 429
+   * fail at once instead of sleeping out its `Retry-After`. The SDK's defaults
+   * keep retrying a dead connection for about thirty minutes and wait any
+   * length a 429 asks for, which a quick check such as `auth whoami` cannot sit
+   * through.
+   */
+  sdkRetries?: number;
 }
 
 /**
@@ -85,6 +93,28 @@ function createSdkLogger(): SlackLogger {
 function slackErrorCode(error: any): string | undefined {
   const code = error?.slackData?.error;
   return typeof code === 'string' && code ? code : undefined;
+}
+
+// `@slack/web-api` failures that never produced a Slack answer: no response at
+// all, a non-2xx one, or a 429 the SDK was told not to wait out. Typed like the
+// browser path's, so a caller can tell "Slack could not be reached" from "Slack
+// refused" on either auth type. The standard path is never retried here (the
+// SDK does that), so `retryAfterMs` is informational only: it is set for a 429
+// and left unset otherwise.
+function sdkTransportError(error: any): SlackTransportError | undefined {
+  const message = `Slack API error: ${error?.message}`;
+  if (error?.code === ErrorCode.RequestError) {
+    return new SlackTransportError(message, undefined, undefined, true);
+  }
+  if (error?.code === ErrorCode.HTTPError) {
+    const status = typeof error.statusCode === 'number' ? error.statusCode : undefined;
+    return new SlackTransportError(message, status, undefined, false);
+  }
+  if (error?.code === ErrorCode.RateLimitedError) {
+    const retryAfterMs = typeof error.retryAfter === 'number' ? error.retryAfter * 1000 : undefined;
+    return new SlackTransportError(message, 429, retryAfterMs, false);
+  }
+  return undefined;
 }
 
 // A short label for the failure log line: the Slack error code when there is
@@ -162,7 +192,12 @@ export class SlackClient {
 
     // Only use WebClient for standard auth
     if (config.auth_type === 'standard') {
-      this.webClient = new WebClient(config.token, { logger: createSdkLogger() });
+      this.webClient = new WebClient(config.token, {
+        logger: createSdkLogger(),
+        ...(options.sdkRetries === undefined
+          ? {}
+          : { retryConfig: { retries: options.sdkRetries }, rejectRateLimitedCalls: true }),
+      });
     }
   }
 
@@ -277,7 +312,7 @@ export class SlackClient {
       const response = await this.webClient.apiCall(method, params);
       return response;
     } catch (error: any) {
-      const wrapped = new Error(`Slack API error: ${error.message}`);
+      const wrapped = sdkTransportError(error) ?? new Error(`Slack API error: ${error.message}`);
       // @slack/web-api attaches the full Slack response payload to error.data
       // on an ok:false result. Preserve it so callers can inspect structured
       // fields (e.g. conversations.leave's `not_in_channel`) that are not part

@@ -508,10 +508,10 @@ async function checkProfile(key: string, deps: Required<Omit<ProfileCheckDeps, '
 
   const found = entry;
   try {
-    // `env: ''` and the fixed lookup pin the check to this profile: neither
-    // SLACKCLI_WORKSPACE nor the stored default can redirect it.
+    // The entry already read is the only one the lookup can return, so
+    // neither SLACKCLI_WORKSPACE nor the stored default can redirect the check.
     return toProfileCheck(
-      await checkIdentity(key, { env: '', lookup: async () => found, createClient: deps.createClient }),
+      await checkIdentity(key, { lookup: async () => found, createClient: deps.createClient }),
     );
   } catch (error: unknown) {
     // Neither refused credentials nor a transport failure: Slack did not say

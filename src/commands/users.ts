@@ -39,7 +39,7 @@ export function createUsersCommand(): Command {
       'tz_offset, profile, ... }, plus resolved_fields { <label>: <value> } with --resolve-fields.',
     notes: [
       '<user> must be a user ID (U... or W...); handles, emails and Slack URLs are not accepted.',
-      'A deactivated user (deleted: true) comes back without tz and is_admin; they show as n/a.',
+      'A deactivated user (deleted: true) comes back without tz and is_admin: the text shows Admin: false and TZ: (none); with --json the keys are absent.',
       'email needs the users:read.email scope on an app token; --resolve-fields needs users.profile:read.',
     ],
   })

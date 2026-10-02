@@ -81,7 +81,7 @@ Choose another path or remove the existing file before you retry.
 `--output` writes wherever you point it, and SlackCLI is built to be driven by
 AI agents, so the value can come from content an agent read out of Slack. A
 path that stays inside the current working directory downloads exactly as
-before, with no prompt. A path that escapes it — `../…`, an absolute path, or a
+before, with no prompt. A path that escapes it — `../…`, an absolute path outside it, or a
 directory symlinked out of the working tree — is confirmed first:
 
 - `--yes` proceeds.

@@ -114,8 +114,8 @@ Conversations with mentions sort first, then alphabetically. `--json` gives
 "All caught up!" on stderr and writes nothing to stdout, even with `--json`.
 
 **Auth-type caveat.** With browser auth this reads Slack's own unread state
-(`client.counts`), then makes one API call per unread channel to resolve its
-name, so a workspace with many unread channels may hit Slack rate limits. With a
+(`client.counts`), then makes one or two API calls per unread conversation to
+resolve its name (a DM also looks up the user), so a workspace with many unread channels may hit Slack rate limits. With a
 standard token it reads the first 1000 conversations from `conversations.list`
 and keeps those you are a member of that carry an unread count; Slack often
 omits those counts for app tokens, so the result can be incomplete.

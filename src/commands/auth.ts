@@ -185,7 +185,7 @@ export function createAuthCommand(): Command {
     ],
     notes: [
       'Pass tokens from environment variables, not as literals: a literal lands in shell history.',
-      'Browser session tokens unlock browser-only commands (drafts, thread replies); "auth extract-tokens" shows where to find them.',
+      'Browser session tokens unlock browser-only commands (drafts) and let "conversations get" find a thread reply; "auth extract-tokens" shows where to find them.',
       '--profile and --secret-backend work as for "auth login".',
     ],
   })
@@ -591,7 +591,8 @@ export function createAuthCommand(): Command {
       'The cURL command is read from the argument, --from-clipboard, piped stdin, or pasted interactively ' +
         '(end with an empty line), in that order.',
       'Prefer --from-clipboard or stdin over the argument: an argument lands in shell history.',
-      'Without --login it only prints the workspace and a token prefix, and stores nothing.',
+      'Without --login it stores nothing, but prints the full xoxd/xoxc tokens on stdout as a ready-to-run ' +
+        '"auth login-browser" command: do not capture or log that output. --login avoids printing them.',
     ],
   })
     .argument('[curl-command]', 'cURL command copied from DevTools (or use --from-clipboard, stdin, or interactive paste)')

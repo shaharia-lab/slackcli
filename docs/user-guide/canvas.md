@@ -51,9 +51,9 @@ slackcli canvas read F1234567890 --json
 JSON.
 
 Canvas IDs are file IDs: `F` followed by alphanumerics. Either give one or use
-`--channel` (the canvas ID wins when both are given). A channel with no canvas,
-or a canvas that is not found, is reported on stderr with exit code 0 and
-nothing on stdout.
+`--channel` (the canvas ID wins when both are given). A channel with no canvas
+is reported on stderr with exit code 0 and nothing on stdout. An unknown canvas
+ID exits 1 with Slack's error.
 
 ### What the conversion handles
 

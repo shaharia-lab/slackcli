@@ -164,8 +164,8 @@ export function createConversationsCommand(): Command {
   describeCommand(conversations.command('read'), {
     summary: 'Read channel history or one thread',
     description:
-      'Read the recent messages of a channel, DM or group DM, oldest first, or every reply in one ' +
-      'thread. Use "conversations get" for a single message. Safe to poll: pass next_oldest back as --oldest.',
+      'Read the recent messages of a channel, DM or group DM, oldest first, or up to --limit messages ' +
+      'of one thread (one page, parent included; has_more says when it was cut off). Use "conversations get" for a single message. Safe to poll: pass next_oldest back as --oldest.',
     examples: [
       'slackcli conversations read C0123456789 --limit 20',
       'slackcli conversations read C0123456789 --thread-ts 1712345678.123456',
@@ -435,7 +435,7 @@ export function createConversationsCommand(): Command {
       '— unread_count only with an app token.',
     notes: [
       'Browser auth reads Slack\'s own unread state (client.counts), then looks up each channel\'s name: ' +
-        'one call per unread channel, so many unreads can hit rate limits.',
+        'one or two calls per unread conversation (a DM also looks up the user), so many unreads can hit rate limits.',
       'An app token (xoxb/xoxp) reads the first 1000 conversations from conversations.list and keeps the ones ' +
         'you are a member of that Slack reports unread counts for; Slack often omits those counts, so results can be incomplete.',
       'When nothing is unread it prints "All caught up!" on stderr and writes nothing to stdout, even with --json.',
@@ -662,8 +662,8 @@ export function createConversationsCommand(): Command {
   describeCommand(members.command('remove'), {
     summary: 'Remove users from a channel',
     description:
-      'Remove one or more users from a channel. Best effort: each ID is tried in turn, and the result ' +
-      'lists which were removed and which failed. Exits 1 if any removal failed.',
+      'Remove one or more users from a channel. Best effort: each ID is tried in turn; failures are listed, ' +
+      'and --json lists the removed IDs too. Exits 1 if any removal failed.',
     examples: [
       'slackcli conversations members remove C0123456789 U0123456789',
       'slackcli conversations members remove C0123456789 U0123456789 U0123456780 --yes',

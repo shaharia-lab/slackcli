@@ -141,7 +141,7 @@ export function createCanvasCommand(): Command {
       '[canvas-id] takes a canvas file ID (F...) or a Slack URL; --channel takes a channel ID or a Slack URL.',
       'Give [canvas-id] or --channel; when both are given the canvas ID wins.',
       '--raw prints the source HTML and takes precedence over --json (stdout is then HTML, not JSON).',
-      'A channel without a canvas, or a canvas that is not found, is reported on stderr with exit 0 and no stdout.',
+      'A channel without a canvas is reported on stderr with exit 0 and no stdout. An unknown canvas ID exits 1 with Slack\'s error.',
     ],
   })
     .argument('[canvas-id]', 'Canvas file ID or URL (e.g., F1234567890)')

@@ -148,7 +148,7 @@ export function createUsergroupsCommand(): Command {
     ],
     json:
       '{ id, name, handle, description, user_count, ..., member_ids: [...], members: [{ id, name, ' +
-      'real_name, display_name, is_bot, deleted }] } — the group plus its members.',
+      'real_name, display_name, is_bot, deleted }] } — the group plus its members (only id and name for an S... ID the list does not return).',
     notes: [
       '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.',
       'No group matches: exits 1. An S... ID is used as given, even when the list does not show it.',

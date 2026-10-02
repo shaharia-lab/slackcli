@@ -292,7 +292,7 @@ export function createFilesCommand(): Command {
     confirms: true,
     notes: [
       'The confirmation applies only when --output resolves outside the current directory ' +
-        '(../, an absolute path, or a symlink out); a path inside it downloads with no prompt.',
+        '(../, an absolute path outside it, or a symlink out); a path inside it downloads with no prompt.',
       '<file-id-or-url> takes a file ID (F...) or a Slack file URL.',
     ],
   })

@@ -19,6 +19,12 @@ import {
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 
+// Help text shared by several commands below.
+const CHANNEL_ARG_NOTE =
+  '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).';
+const TEAM_NOTE =
+  '--team <workspace-id> (T0123456789) scopes the call to one workspace of an Enterprise Grid org.';
+
 // Warn when a pasted link points at a different workspace than the one we will call,
 // rather than letting Slack answer with a misleading message_not_found.
 function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | undefined): void {
@@ -510,7 +516,7 @@ export function createConversationsCommand(): Command {
     json:
       '{ channel_id, member_count, members: [user IDs], next_cursor? } — next_cursor is present only when more members remain.',
     notes: [
-      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).',
+      CHANNEL_ARG_NOTE,
       '--limit counts members returned: it pages until it has that many or runs out. Pass next_cursor back as --cursor for more.',
       'On an Enterprise Grid org, Slack may block this with enterprise_is_restricted; the command exits 1.',
     ],
@@ -616,7 +622,7 @@ export function createConversationsCommand(): Command {
     notes: [
       '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>). <users...> are user IDs, ' +
         'comma- or space-separated; a leading @ is ignored.',
-      '--team <workspace-id> (T0123456789) scopes the call to one workspace of an Enterprise Grid org.',
+      TEAM_NOTE,
     ],
   })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
@@ -674,7 +680,7 @@ export function createConversationsCommand(): Command {
     notes: [
       '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>). <users...> are user IDs, ' +
         'comma- or space-separated; a leading @ is ignored.',
-      '--team <workspace-id> (T0123456789) scopes the call to one workspace of an Enterprise Grid org.',
+      TEAM_NOTE,
     ],
   })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
@@ -755,7 +761,7 @@ export function createConversationsCommand(): Command {
     json: '{ channel_id, channel } — channel is Slack\'s channel object, or null.',
     notes: [
       'Acts immediately, with no confirmation prompt. Joining a channel you are already in is a no-op.',
-      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).',
+      CHANNEL_ARG_NOTE,
     ],
   })
     .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
@@ -797,7 +803,7 @@ export function createConversationsCommand(): Command {
     json: '{ channel_id, left, not_in_channel } — not_in_channel is true (and left false) when you were not a member.',
     confirms: true,
     notes: [
-      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).',
+      CHANNEL_ARG_NOTE,
       'Leaving a channel you are not in is reported as a no-op, not an error.',
     ],
   })

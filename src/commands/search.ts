@@ -13,6 +13,10 @@ import { describeCommand } from '../lib/help.ts';
 import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 
+// Help text shared by several commands below.
+const EMPTY_RESULT_NOTE =
+  'No match prints nothing on stdout, even with --json (exit 0).';
+
 export function createSearchCommand(): Command {
   const search = describeCommand(new Command('search'), {
     summary: 'Search messages, channels and people',
@@ -126,7 +130,7 @@ export function createSearchCommand(): Command {
       'App token (xoxb/xoxp): no search API, so it lists up to 1000 non-archived channels the ' +
         'token can see in one call and keeps those whose name, topic or purpose contains the ' +
         'query (case-insensitive); total is the number returned.',
-      'No match prints nothing on stdout, even with --json (exit 0).',
+      EMPTY_RESULT_NOTE,
     ],
   })
     .argument('<query>', 'Channel name or keyword to search')
@@ -202,7 +206,7 @@ export function createSearchCommand(): Command {
       'App token (xoxb/xoxp): no search API, so it lists the first 1000 users in one call, skips ' +
         'deactivated users and bots, and keeps those whose username, real name, display name or ' +
         'email contains the query (case-insensitive); total is the number returned.',
-      'No match prints nothing on stdout, even with --json (exit 0).',
+      EMPTY_RESULT_NOTE,
     ],
   })
     .argument('<query>', 'Name, username, or email to search')

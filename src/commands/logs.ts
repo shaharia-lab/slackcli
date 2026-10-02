@@ -46,7 +46,7 @@ export function createLogsCommand(): Command {
     json: '{ log_path, log_dir, exists }.',
     notes: [
       'SLACKCLI_LOG_DIR overrides the directory. Defaults: ~/Library/Logs/slackcli (macOS), ' +
-        '$XDG_STATE_HOME/slackcli/logs or ~/.local/state/slackcli/logs (Linux), %LOCALAPPDATA%\\slackcli\\logs (Windows).',
+        String.raw`$XDG_STATE_HOME/slackcli/logs or ~/.local/state/slackcli/logs (Linux), %LOCALAPPDATA%\slackcli\logs (Windows).`,
     ],
   })
     .option('--json', 'Output as JSON', false)

@@ -20,6 +20,18 @@ import {
 } from '../lib/usergroups.ts';
 import type { SlackUsergroup } from '../types/index.ts';
 
+// Help text shared by several commands below.
+const GROUP_SHAPE =
+  '{ id, team_id, name, handle, description, date_create, date_update, date_delete, created_by, user_count, channel_count, users, ... }';
+const TEAM_WRITE_NOTE =
+  '--team (a T... ID) is needed only on Enterprise Grid: name the member workspace that owns the group, or Slack rejects the write (target_team_must_be_specified_in_org_context).';
+const TEAM_READ_NOTE =
+  '--team (a T... ID) is only for Enterprise Grid: it scopes the lookup to one member workspace. Leave it out on a single workspace.';
+const GROUP_REF_NOTE =
+  '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.';
+const USER_IDS_NOTE =
+  '<users...> are user IDs (U0123456789), space- or comma-separated; a leading @ is dropped, but handles and emails are not resolved.';
+
 // Resolve a <group> argument (id / @handle / name) to a group, or fail the
 // spinner and exit. Shared by every subcommand that takes a group reference.
 async function requireGroup(
@@ -104,7 +116,7 @@ export function createUsergroupsCommand(): Command {
       'date_update, date_delete, created_by, user_count, channel_count, ... }] } — date_delete 0 means enabled.',
     notes: [
       'Disabled (archived) groups are left out unless --include-disabled is set.',
-      '--team (a T... ID) is only for Enterprise Grid: it scopes the lookup to one member workspace. Leave it out on a single workspace.',
+      TEAM_READ_NOTE,
     ],
   })
     .option('--include-disabled', 'Include disabled (archived) groups', false)
@@ -150,9 +162,9 @@ export function createUsergroupsCommand(): Command {
       '{ id, name, handle, description, user_count, ..., member_ids: [...], members: [{ id, name, ' +
       'real_name, display_name, is_bot, deleted }] } — the group plus its members (only id and name for an S... ID the list does not return).',
     notes: [
-      '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.',
+      GROUP_REF_NOTE,
       'No group matches: exits 1. An S... ID is used as given, even when the list does not show it.',
-      '--team (a T... ID) is only for Enterprise Grid: it scopes the lookup to one member workspace. Leave it out on a single workspace.',
+      TEAM_READ_NOTE,
     ],
   })
     .argument('<group>', 'Group ID, @handle, or exact name')
@@ -192,11 +204,11 @@ export function createUsergroupsCommand(): Command {
       'slackcli usergroups create "Platform Team" --handle platform --description "Owns the platform" --channels C0123456789 --yes --json',
       'slackcli usergroups create "Platform Team" --team T0123456789 --yes',
     ],
-    json: '{ id, team_id, name, handle, description, date_create, date_update, date_delete, created_by, user_count, channel_count, users, ... } — the group as created.',
+    json: `${GROUP_SHAPE} — the group as created.`,
     confirms: true,
     notes: [
       '--channels takes channel IDs (C0123456789), comma-separated. Add members afterwards with "usergroups add".',
-      '--team (a T... ID) is needed only on Enterprise Grid: name the member workspace that owns the group, or Slack rejects the write (target_team_must_be_specified_in_org_context).',
+      TEAM_WRITE_NOTE,
     ],
   })
     .argument('<name>', 'Display name for the group')
@@ -246,11 +258,11 @@ export function createUsergroupsCommand(): Command {
       'slackcli usergroups update @platform --description "Owns platform and infra" --yes',
       'slackcli usergroups update S0123456789 --name "Platform" --handle platform-team --yes --json',
     ],
-    json: '{ id, team_id, name, handle, description, date_create, date_update, date_delete, created_by, user_count, channel_count, users, ... } — the group after the change.',
+    json: `${GROUP_SHAPE} — the group after the change.`,
     confirms: true,
     notes: [
-      '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.',
-      '--team (a T... ID) is needed only on Enterprise Grid: name the member workspace that owns the group, or Slack rejects the write (target_team_must_be_specified_in_org_context).',
+      GROUP_REF_NOTE,
+      TEAM_WRITE_NOTE,
     ],
   })
     .argument('<group>', 'Group ID, @handle, or exact name')
@@ -312,10 +324,10 @@ export function createUsergroupsCommand(): Command {
       'the member list after the write, and noop true when nothing changed.',
     confirms: true,
     notes: [
-      '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.',
-      '<users...> are user IDs (U0123456789), space- or comma-separated; a leading @ is dropped, but handles and emails are not resolved.',
+      GROUP_REF_NOTE,
+      USER_IDS_NOTE,
       'Users already in the group change nothing: reported as a no-op, no write.',
-      '--team (a T... ID) is needed only on Enterprise Grid: name the member workspace that owns the group, or Slack rejects the write (target_team_must_be_specified_in_org_context).',
+      TEAM_WRITE_NOTE,
     ],
   })
     .argument('<group>', 'Group ID, @handle, or exact name')
@@ -370,10 +382,10 @@ export function createUsergroupsCommand(): Command {
       'the member list after the write, and noop true when nothing changed.',
     confirms: true,
     notes: [
-      '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.',
-      '<users...> are user IDs (U0123456789), space- or comma-separated; a leading @ is dropped, but handles and emails are not resolved.',
+      GROUP_REF_NOTE,
+      USER_IDS_NOTE,
       'Refuses (exit 1) to remove the last member: Slack does not allow an empty group.',
-      '--team (a T... ID) is needed only on Enterprise Grid: name the member workspace that owns the group, or Slack rejects the write (target_team_must_be_specified_in_org_context).',
+      TEAM_WRITE_NOTE,
     ],
   })
     .argument('<group>', 'Group ID, @handle, or exact name')
@@ -421,11 +433,11 @@ export function createUsergroupsCommand(): Command {
       'slackcli usergroups enable @platform --yes',
       'slackcli usergroups enable S0123456789 --yes --json',
     ],
-    json: '{ id, team_id, name, handle, description, date_create, date_update, date_delete, created_by, user_count, channel_count, users, ... } — the group after the change.',
+    json: `${GROUP_SHAPE} — the group after the change.`,
     confirms: true,
     notes: [
-      '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.',
-      '--team (a T... ID) is needed only on Enterprise Grid: name the member workspace that owns the group, or Slack rejects the write (target_team_must_be_specified_in_org_context).',
+      GROUP_REF_NOTE,
+      TEAM_WRITE_NOTE,
     ],
   })
     .argument('<group>', 'Group ID, @handle, or exact name')
@@ -465,12 +477,12 @@ export function createUsergroupsCommand(): Command {
       'slackcli usergroups disable @platform --yes',
       'slackcli usergroups disable S0123456789 --yes --json',
     ],
-    json: '{ id, team_id, name, handle, description, date_create, date_update, date_delete, created_by, user_count, channel_count, users, ... } — the group after the change.',
+    json: `${GROUP_SHAPE} — the group after the change.`,
     confirms: true,
     notes: [
-      '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.',
+      GROUP_REF_NOTE,
       'A disabled group still resolves by handle or name, and shows in "usergroups list --include-disabled".',
-      '--team (a T... ID) is needed only on Enterprise Grid: name the member workspace that owns the group, or Slack rejects the write (target_team_must_be_specified_in_org_context).',
+      TEAM_WRITE_NOTE,
     ],
   })
     .argument('<group>', 'Group ID, @handle, or exact name')

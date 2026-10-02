@@ -13,6 +13,20 @@ import type { SlackClient } from '../lib/slack-client.ts';
 import { describeCommand } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
 
+// Help text shared by several commands below.
+const THREAD_TS_NOTE =
+  '--thread-ts takes 1712345678.123456 or p1712345678123456.';
+const PERMALINK_MESSAGE_NOTE =
+  '--permalink replaces --channel-id and --timestamp and must be a message link.';
+const MESSAGE_TARGET_NOTE =
+  'Name the message with --channel-id and --timestamp, or with a single --permalink.';
+const MESSAGE_TEXT_NOTE =
+  'One of --message or --message-file is required; they are mutually exclusive.';
+const RECIPIENT_NOTE =
+  '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM) or a Slack URL.';
+const MESSAGE_ID_FORMATS_NOTE =
+  '--channel-id takes a channel ID or a Slack URL; --timestamp takes 1712345678.123456 or p1712345678123456.';
+
 export async function parseBlocksInput(input: string): Promise<Array<Record<string, unknown>>> {
   let source = input;
   if (input.startsWith('@')) {
@@ -138,8 +152,8 @@ export function createMessagesCommand(): Command {
       '{ channel_id, ts, permalink? } for a post; { channel_id, file_id } with --file. ' +
       'permalink is omitted when its lookup fails.',
     notes: [
-      '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM) or a Slack URL.',
-      '--thread-ts takes 1712345678.123456 or p1712345678123456.',
+      RECIPIENT_NOTE,
+      THREAD_TS_NOTE,
       '--permalink replaces --recipient-id and --thread-ts: a message link replies in its thread, ' +
         'a channel link posts to the channel.',
       'One of --message or --message-file is required; they are mutually exclusive. ' +
@@ -234,14 +248,14 @@ export function createMessagesCommand(): Command {
     summary: 'Add an emoji reaction to a message',
     description:
       'Add an emoji reaction to one message as the authenticated user or app. ' +
-      'Name the message with --channel-id and --timestamp, or with a single --permalink.',
+      MESSAGE_TARGET_NOTE,
     examples: [
       'slackcli messages react --channel-id C0123456789 --timestamp 1712345678.123456 --emoji thumbsup',
       'slackcli messages react --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --emoji eyes',
     ],
     notes: [
-      '--channel-id takes a channel ID or a Slack URL; --timestamp takes 1712345678.123456 or p1712345678123456.',
-      '--permalink replaces --channel-id and --timestamp and must be a message link.',
+      MESSAGE_ID_FORMATS_NOTE,
+      PERMALINK_MESSAGE_NOTE,
       '--emoji is the name without colons; custom workspace emoji work too.',
       'Acts immediately, with no confirmation prompt.',
     ],
@@ -279,16 +293,16 @@ export function createMessagesCommand(): Command {
     summary: 'Replace the text of a message you posted',
     description:
       'Replace the text of an existing message posted by the authenticated user or app. ' +
-      'Name the message with --channel-id and --timestamp, or with a single --permalink.',
+      MESSAGE_TARGET_NOTE,
     examples: [
       'slackcli messages edit --channel-id C0123456789 --timestamp 1712345678.123456 --message "Corrected text"',
       'slackcli messages edit --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message-file ./fixed.md --json',
     ],
     json: '{ channel_id, ts } of the edited message.',
     notes: [
-      '--channel-id takes a channel ID or a Slack URL; --timestamp takes 1712345678.123456 or p1712345678123456.',
-      '--permalink replaces --channel-id and --timestamp and must be a message link.',
-      'One of --message or --message-file is required; they are mutually exclusive.',
+      MESSAGE_ID_FORMATS_NOTE,
+      PERMALINK_MESSAGE_NOTE,
+      MESSAGE_TEXT_NOTE,
       'Edits immediately, with no confirmation prompt.',
     ],
   })
@@ -397,11 +411,11 @@ export function createMessagesCommand(): Command {
     json: '{ channel_id, draft_id, thread_ts? } (thread_ts only for a threaded draft).',
     browserOnly: true,
     notes: [
-      '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM) or a Slack URL.',
-      '--thread-ts takes 1712345678.123456 or p1712345678123456.',
+      RECIPIENT_NOTE,
+      THREAD_TS_NOTE,
       '--permalink replaces --recipient-id and --thread-ts: a message link drafts a reply in its thread, ' +
         'a channel link drafts in the channel.',
-      'One of --message or --message-file is required; they are mutually exclusive.',
+      MESSAGE_TEXT_NOTE,
       'Creates the draft immediately, with no confirmation prompt.',
     ],
   })

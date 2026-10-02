@@ -96,10 +96,11 @@ function slackErrorCode(error: any): string | undefined {
 }
 
 // `@slack/web-api` failures that never produced a Slack answer: no response at
-// all, a non-2xx one, or a 429 the SDK was told not to wait out. Typed like the browser path's, so a caller can tell
-// "Slack could not be reached" from "Slack refused" on either auth type. The
-// standard path is never retried here (the SDK does that), so `retryAfterMs`
-// stays unset.
+// all, a non-2xx one, or a 429 the SDK was told not to wait out. Typed like the
+// browser path's, so a caller can tell "Slack could not be reached" from "Slack
+// refused" on either auth type. The standard path is never retried here (the
+// SDK does that), so `retryAfterMs` is informational only: it is set for a 429
+// and left unset otherwise.
 function sdkTransportError(error: any): SlackTransportError | undefined {
   const message = `Slack API error: ${error?.message}`;
   if (error?.code === ErrorCode.RequestError) {

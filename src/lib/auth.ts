@@ -1,13 +1,15 @@
 import { getLogger } from '@logtape/logtape';
-import { SlackClient } from './slack-client.ts';
+import { SlackClient, SlackTransportError } from './slack-client.ts';
 import { SlackAuthError, describeRejectedLogin } from './auth-errors.ts';
 import { errorMessageForLog } from './tildify.ts';
-import { addWorkspace, getWorkspace } from './workspaces.ts';
+import { addWorkspace, getWorkspace, getWorkspaceEntry, type ResolvedWorkspace } from './workspaces.ts';
 import type {
   StandardAuthConfig,
   BrowserAuthConfig,
   WorkspaceConfig,
   SecretBackend,
+  IdentityResult,
+  WorkspaceSelectorSource,
 } from '../types/index.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
 import {
@@ -272,8 +274,7 @@ function autoLoginFailed(reason: AutoLoginFailure, message: string): AutoLoginEr
 /** Selects the profile for one shell or session when `--workspace` is absent. */
 export const WORKSPACE_ENV_VAR = 'SLACKCLI_WORKSPACE';
 
-/** Where the effective workspace selector came from, highest precedence first. */
-export type WorkspaceSelectorSource = 'flag' | 'env' | 'default';
+export type { WorkspaceSelectorSource };
 
 export interface WorkspaceSelector {
   /** Absent when the stored default applies. */
@@ -295,6 +296,33 @@ export function effectiveWorkspaceSelector(flag?: string, env?: string): Workspa
   return { source: 'default' };
 }
 
+// Resolve a selector through `lookup` or throw. Shared by the two public
+// variants below, which differ only in whether the profile key is kept.
+async function selectWith<T>(
+  selector: WorkspaceSelector,
+  lookup: (identifier?: string) => Promise<T | null>,
+  configOf: (found: T) => WorkspaceConfig,
+): Promise<T> {
+  const found = await lookup(selector.identifier);
+
+  if (!found) {
+    logger.warn('No workspace resolved ({source})', { source: selector.source });
+    if (selector.identifier === undefined) {
+      throw new Error('No workspace configured. Run "slackcli auth login" first.');
+    }
+    const origin = selector.source === 'env' ? ` (from ${WORKSPACE_ENV_VAR})` : '';
+    throw new Error(`Workspace not found: ${selector.identifier}${origin}`);
+  }
+
+  const workspace = configOf(found);
+  logger.debug('Using {auth_type} workspace {workspace_id} ({source})', {
+    auth_type: workspace.auth_type,
+    workspace_id: workspace.workspace_id,
+    source: selector.source,
+  });
+  return found;
+}
+
 /**
  * Resolve a selector to a stored workspace or throw. A selector that matches
  * nothing is an error whatever its source: an env value never falls back to
@@ -305,27 +333,107 @@ export async function selectWorkspace(
   selector: WorkspaceSelector,
   lookup: (identifier?: string) => Promise<WorkspaceConfig | null> = getWorkspace,
 ): Promise<WorkspaceConfig> {
-  const workspace = await lookup(selector.identifier);
+  return selectWith(selector, lookup, (config) => config);
+}
 
-  if (!workspace) {
-    logger.warn('No workspace resolved ({source})', { source: selector.source });
-    if (selector.identifier === undefined) {
-      throw new Error('No workspace configured. Run "slackcli auth login" first.');
-    }
-    const origin = selector.source === 'env' ? ` (from ${WORKSPACE_ENV_VAR})` : '';
-    throw new Error(`Workspace not found: ${selector.identifier}${origin}`);
-  }
-
-  logger.debug('Using {auth_type} workspace {workspace_id} ({source})', {
-    auth_type: workspace.auth_type,
-    workspace_id: workspace.workspace_id,
-    source: selector.source,
-  });
-  return workspace;
+/** `selectWorkspace()`, keeping the profile key the workspace is stored under. */
+export async function selectWorkspaceEntry(
+  selector: WorkspaceSelector,
+  lookup: (identifier?: string) => Promise<ResolvedWorkspace | null> = getWorkspaceEntry,
+): Promise<ResolvedWorkspace> {
+  return selectWith(selector, lookup, (entry) => entry.config);
 }
 
 // Get authenticated client for workspace
 export async function getAuthenticatedClient(workspaceIdentifier?: string): Promise<SlackClient> {
   const selector = effectiveWorkspaceSelector(workspaceIdentifier, process.env[WORKSPACE_ENV_VAR]);
   return new SlackClient(await selectWorkspace(selector));
+}
+
+// `@slack/web-api` retries a dead connection for about thirty minutes by
+// default. An identity check is asked for an answer now, so the standard path
+// gets the same three retries the browser path makes.
+const IDENTITY_CHECK_SDK_RETRIES = 3;
+
+/** Seams for `checkIdentity()`; the defaults are what the CLI runs with. */
+export interface IdentityCheckDeps {
+  /** The `SLACKCLI_WORKSPACE` value. Defaults to the process environment. */
+  env?: string;
+  lookup?: (identifier?: string) => Promise<ResolvedWorkspace | null>;
+  createClient?: (config: WorkspaceConfig) => Pick<SlackClient, 'testAuth'>;
+}
+
+/**
+ * Who the CLI is acting as: resolve the profile the same way every command
+ * does, then verify it with exactly one `auth.test` call.
+ *
+ * Refused credentials and an unreachable Slack are results, not exceptions, so
+ * the caller can still report the stored profile. A selector that resolves to
+ * no profile (none configured, unknown, ambiguous) throws, as does any other
+ * failure of the call. The result never holds a token.
+ */
+export async function checkIdentity(
+  identifier?: string,
+  deps: IdentityCheckDeps = {},
+): Promise<IdentityResult> {
+  const {
+    env = process.env[WORKSPACE_ENV_VAR],
+    lookup = getWorkspaceEntry,
+    createClient = (config) => new SlackClient(config, { sdkRetries: IDENTITY_CHECK_SDK_RETRIES }),
+  } = deps;
+
+  const selector = effectiveWorkspaceSelector(identifier, env);
+  const { key, config } = await selectWorkspaceEntry(selector, lookup);
+  const stored = {
+    profile: key,
+    workspace_id: config.workspace_id,
+    workspace_name: config.workspace_name,
+    auth_type: config.auth_type,
+    source: selector.source,
+  };
+  const storedUser = config.user_id ? { user_id: config.user_id } : {};
+  const logOutcome = (status: IdentityResult['status'], detail: Record<string, unknown> = {}) =>
+    logger.info('Identity check for {profile_key}: {status}', {
+      profile_key: key,
+      workspace_id: config.workspace_id,
+      auth_type: config.auth_type,
+      source: selector.source,
+      status,
+      ...detail,
+    });
+
+  try {
+    const authTest = await createClient(config).testAuth();
+    logOutcome('ok');
+    return {
+      ...stored,
+      status: 'ok',
+      user: authTest.user,
+      user_id: authTest.user_id,
+      ...(authTest.bot_id ? { bot_id: authTest.bot_id } : {}),
+    };
+  } catch (error: unknown) {
+    if (error instanceof SlackAuthError) {
+      logOutcome('auth_failed', { slack_error: error.code });
+      return {
+        ...stored,
+        ...storedUser,
+        status: 'auth_failed',
+        error: { code: error.code, meaning: error.meaning, fix: error.fix },
+      };
+    }
+    if (error instanceof SlackTransportError) {
+      logOutcome('unreachable', { http_status: error.httpStatus });
+      return {
+        ...stored,
+        ...storedUser,
+        status: 'unreachable',
+        error: {
+          message: error.message,
+          ...(error.httpStatus === undefined ? {} : { http_status: error.httpStatus }),
+        },
+      };
+    }
+    throw error;
+  }
 }

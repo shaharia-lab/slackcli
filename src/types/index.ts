@@ -181,6 +181,45 @@ export interface SlackAuthTestResponse {
   is_enterprise_install?: boolean;
 }
 
+// Where the effective workspace selector came from, highest precedence first:
+// the `--workspace` flag, `SLACKCLI_WORKSPACE`, or the stored default.
+export type WorkspaceSelectorSource = 'flag' | 'env' | 'default';
+
+// What `auth whoami` knows about a profile before Slack answers. Never a
+// credential: only names, IDs, the auth type and where the selection came from.
+interface IdentityProfile {
+  /** The key the profile is stored under: its name, or the team id. */
+  profile: string;
+  workspace_id: string;
+  workspace_name: string;
+  auth_type: AuthType;
+  source: WorkspaceSelectorSource;
+}
+
+// The outcome of one `auth.test` call for a profile. A discriminated union on
+// `status`; the failing outcomes still carry the stored profile details.
+export type IdentityResult =
+  | (IdentityProfile & {
+      status: 'ok';
+      /** As Slack reports them now, not as stored at login. */
+      user: string;
+      user_id: string;
+      /** Bot tokens only. */
+      bot_id?: string;
+    })
+  | (IdentityProfile & {
+      status: 'auth_failed';
+      /** Stored at login; absent on a legacy record. */
+      user_id?: string;
+      error: { code: string; meaning: string; fix: string };
+    })
+  | (IdentityProfile & {
+      status: 'unreachable';
+      user_id?: string;
+      /** `http_status` is absent when no response was received at all. */
+      error: { message: string; http_status?: number };
+    });
+
 // CLI options interfaces
 export interface ConversationListOptions {
   types?: string;

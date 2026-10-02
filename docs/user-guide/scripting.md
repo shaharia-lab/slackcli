@@ -10,7 +10,7 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 `search messages`, `search channels`,
 `search people`, `saved list`, `canvas list`, `canvas read`, `team info`,
 `usergroups list`, `usergroups read`, `emoji list`, `emoji get`, `files info`,
-`files read`, `users info`, `users list`, `messages list-drafts`.
+`files read`, `users info`, `users list`, `messages list-drafts`, `auth whoami`.
 
 The writing commands support it too — `messages send`, `messages edit`,
 `messages draft`, `messages send-draft`, `messages delete-draft`, the `usergroups` write verbs (`create`, `update`, `add`,
@@ -149,6 +149,23 @@ A value that matches no stored profile fails the command with
 `Workspace not found: <value> (from SLACKCLI_WORKSPACE)` rather than falling back
 to the default. See
 [workspaces and profiles](workspaces.md#pin-a-workspace-for-one-shell).
+
+**Check the identity before a write**, so a job stops on an expired session or
+the wrong workspace instead of failing halfway. `auth whoami` exits `1` unless
+Slack accepted the credentials, and its `--json` object says which profile and
+user were used:
+
+```bash
+me=$(slackcli auth whoami --json) || {
+  echo "slack identity check failed: $(jq -r '.status' <<<"$me")" >&2   # auth_failed | unreachable
+  exit 1
+}
+[ "$(jq -r '.workspace_id' <<<"$me")" = "T1234567" ] || { echo "wrong workspace" >&2; exit 1; }
+```
+
+`status` is `auth_failed` when logging in again is needed (`.error.fix` holds the
+command) and `unreachable` when Slack did not answer, which is worth a retry.
+See [authentication](authentication.md#check-who-you-are-signed-in-as).
 
 **Paginate a search**:
 

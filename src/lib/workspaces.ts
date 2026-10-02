@@ -588,6 +588,17 @@ export async function getWorkspace(identifier?: string): Promise<WorkspaceConfig
   return readWorkspace(data, secretStoreFor(data), identifier);
 }
 
+// Same lookup as getWorkspace(), keeping the profile key the record is stored
+// under. `config.profile` cannot stand in for it: a record keyed by its team id
+// has no `profile` field.
+export async function getWorkspaceEntry(identifier?: string): Promise<ResolvedWorkspace | null> {
+  const data = await loadWorkspaces();
+  const resolved = resolveWorkspace(data, identifier);
+  if (!resolved) return null;
+  const config = await readWorkspace(data, secretStoreFor(data), resolved.key);
+  return config ? { key: resolved.key, config } : null;
+}
+
 // Get all workspaces paired with their profile keys.
 export async function getAllWorkspaceEntries(): Promise<ResolvedWorkspace[]> {
   const data = await loadWorkspaces();

@@ -18,6 +18,7 @@ import {
   formatUsergroupList,
   formatEmojiList,
   formatUsergroup,
+  formatIdentity,
   error,
 } from './formatter.ts';
 import { SlackAuthError } from './auth-errors.ts';
@@ -924,5 +925,94 @@ describe('formatter output with colour enabled', () => {
         + '  ' + dim('Members:') + ' 0\n',
       );
     });
+  });
+});
+
+describe('formatIdentity', () => {
+  let savedLevel: typeof chalk.level;
+
+  beforeEach(() => {
+    savedLevel = chalk.level;
+    chalk.level = 0;
+  });
+
+  afterEach(() => {
+    chalk.level = savedLevel;
+  });
+
+  const profile = {
+    profile: 'acme',
+    workspace_id: 'T123',
+    workspace_name: 'Acme Corp',
+    auth_type: 'browser',
+    source: 'default',
+  } as const;
+
+  it('prints the workspace, profile, user, auth type, source and status of a verified identity', () => {
+    expect(formatIdentity({ ...profile, status: 'ok', user: 'alice', user_id: 'U123' })).toBe(
+      [
+        'Acme Corp',
+        '  ID: T123',
+        '  Profile: acme',
+        '  User: alice (U123)',
+        '  Auth: 🌐 Browser',
+        '  Selected by: stored default',
+        '  Status: verified',
+      ].join('\n'),
+    );
+  });
+
+  it('prints the profile key even when it is the workspace ID', () => {
+    const output = formatIdentity({ ...profile, profile: 'T123', status: 'ok', user: 'alice', user_id: 'U123' });
+    expect(output).toContain('  Profile: T123');
+  });
+
+  it('shows the bot ID of a bot token', () => {
+    const output = formatIdentity({
+      ...profile,
+      auth_type: 'standard',
+      status: 'ok',
+      user: 'deploybot',
+      user_id: 'U999',
+      bot_id: 'B42',
+    });
+    expect(output).toContain('  User: deploybot (U999, bot B42)');
+    expect(output).toContain('  Auth: 🔑 Standard');
+  });
+
+  it.each([
+    ['flag', '--workspace flag'],
+    ['env', 'SLACKCLI_WORKSPACE'],
+    ['default', 'stored default'],
+  ] as const)('names the %s selection source', (source, label) => {
+    const output = formatIdentity({ ...profile, source, status: 'ok', user: 'alice', user_id: 'U123' });
+    expect(output).toContain(`  Selected by: ${label}`);
+  });
+
+  const authFailure = { code: 'invalid_auth', meaning: 'The stored token is invalid.', fix: 'slackcli auth login-auto' };
+
+  it('keeps the stored details and names the code when Slack refused the credentials', () => {
+    const output = formatIdentity({ ...profile, status: 'auth_failed', user_id: 'U123', error: authFailure });
+    expect(output).toContain('Acme Corp');
+    expect(output).toContain('  Profile: acme');
+    expect(output).toContain('  User: U123 (stored at login)');
+    expect(output).toContain('  Status: authentication failed (invalid_auth)');
+  });
+
+  it('omits the user line for a failing legacy record with no stored user ID', () => {
+    const output = formatIdentity({ ...profile, status: 'auth_failed', error: authFailure });
+    expect(output).not.toContain('User:');
+  });
+
+  it('reports an unreachable Slack as unreachable, not as an authentication failure', () => {
+    const output = formatIdentity({
+      ...profile,
+      status: 'unreachable',
+      user_id: 'U123',
+      error: { message: 'Slack API error: fetch failed' },
+    });
+    expect(output).toContain('  Status: unreachable');
+    expect(output).not.toContain('authentication failed');
+    expect(output).toContain('  User: U123 (stored at login)');
   });
 });

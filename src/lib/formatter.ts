@@ -3,7 +3,7 @@ import type {
   SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
   SlackTeam, SlackUsergroup, UsergroupMember,
-  CustomEmoji, DraftSummary,
+  CustomEmoji, DraftSummary, IdentityResult,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
 
@@ -97,6 +97,49 @@ export function formatWorkspace(
   return `${chalk.bold(config.workspace_name)} ${defaultBadge}
   ID: ${config.workspace_id}${profileLine}
   Auth: ${authType}${secretLine}`;
+}
+
+const SELECTION_SOURCE_LABELS: Record<IdentityResult['source'], string> = {
+  flag: '--workspace flag',
+  env: 'SLACKCLI_WORKSPACE',
+  default: 'stored default',
+};
+
+function identityStatusLine(identity: IdentityResult): string {
+  switch (identity.status) {
+    case 'ok':
+      return chalk.green('verified');
+    case 'auth_failed':
+      return chalk.red(`authentication failed (${identity.error.code})`);
+    case 'unreachable':
+      return chalk.red('unreachable');
+  }
+}
+
+// Format the `auth whoami` result. The profile line is always printed here,
+// unlike in formatWorkspace(): which profile is active is the question asked.
+export function formatIdentity(identity: IdentityResult): string {
+  const authType = identity.auth_type === 'browser' ? '🌐 Browser' : '🔑 Standard';
+  const lines = [
+    chalk.bold(identity.workspace_name),
+    `  ID: ${identity.workspace_id}`,
+    `  Profile: ${chalk.cyan(identity.profile)}`,
+  ];
+
+  if (identity.status === 'ok') {
+    const botId = identity.bot_id ? `, bot ${identity.bot_id}` : '';
+    lines.push(`  User: ${chalk.cyan(identity.user)} (${identity.user_id}${botId})`);
+  } else if (identity.user_id) {
+    // Not confirmed by Slack on this run, so say where the value comes from.
+    lines.push(`  User: ${identity.user_id} ${chalk.dim('(stored at login)')}`);
+  }
+
+  lines.push(
+    `  Auth: ${authType}`,
+    `  Selected by: ${SELECTION_SOURCE_LABELS[identity.source]}`,
+    `  Status: ${identityStatusLine(identity)}`,
+  );
+  return lines.join('\n');
 }
 
 // Format channel list

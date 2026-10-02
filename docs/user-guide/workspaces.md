@@ -44,6 +44,23 @@ A command picks its workspace from the first of these that is set:
   the variable: `auth list` still marks the stored default, and `auth
   set-default` still changes it.
 
+## See which profile is active
+
+`auth list` marks the stored default, but the flag and the variable can override
+it. `auth whoami` resolves the selection the way a real command would and shows
+the result, with where it came from:
+
+```bash
+slackcli auth whoami                    # Selected by: stored default
+SLACKCLI_WORKSPACE=acme slackcli auth whoami   # Selected by: SLACKCLI_WORKSPACE
+slackcli auth whoami --workspace=other  # Selected by: --workspace flag
+```
+
+It also prints the profile key and the authenticated user, so two profiles for
+the same workspace can be told apart, and it verifies the credentials with
+Slack — see
+[check who you are signed in as](authentication.md#check-who-you-are-signed-in-as).
+
 ## Several identities in one workspace
 
 By default each workspace is stored once. To keep **more than one identity for

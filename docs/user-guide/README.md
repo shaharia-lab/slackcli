@@ -21,7 +21,7 @@ list for the version you have installed.
 
 | Group | What it does |
 |---|---|
-| `auth` | Sign in, list/select/remove workspaces, extract tokens |
+| `auth` | Sign in, check the active identity, list/select/remove workspaces, extract tokens |
 | `conversations` | List channels and DMs, read history and threads, unreads |
 | `messages` | Send, reply, edit, react, create/list drafts, attach files, Block Kit |
 | `search` | Search messages, channels, and people |

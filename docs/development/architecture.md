@@ -177,7 +177,8 @@ metadata (`metadataOf()`) plus secrets (`storeCredentials()` /
   unavailable or refuses access throws `SecretStoreError` (`reason`
   `unavailable` / `access_denied`); a record whose secret is missing surfaces as
   `MissingCredentialError`. Keep those three cases distinct.
-- Only `getWorkspace()` resolves secrets. `auth list` and `auth set-default`
+- Only `getWorkspace()` and `getWorkspaceEntry()` (the same lookup, keeping the
+  profile key for `auth whoami`) resolve secrets. `auth list` and `auth set-default`
   work from metadata; `auth remove` and `auth logout` delete credentials before
   the record, so a failing backend leaves the profile listed and retryable.
 - The document-level operations (`putWorkspace`, `readWorkspace`,

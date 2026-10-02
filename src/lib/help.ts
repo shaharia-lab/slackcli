@@ -147,7 +147,7 @@ export function renderCommandTree(program: Command, width = HELP_WIDTH): string 
 
 export function renderRootFooter(width = HELP_WIDTH): string {
   const item = (text: string) => wrapText(text, width, '  ', '  ');
-  const env = (name: string, text: string) => wrapText(`${name.padEnd(28)}${text}`, width, '  ', ' '.repeat(30));
+  const env = (name: string, text: string) => wrapText(text, width, `  ${name.padEnd(30)}`, ' '.repeat(32));
   return [
     'Workspace:',
     item(
@@ -166,8 +166,9 @@ export function renderRootFooter(width = HELP_WIDTH): string {
     '',
     'Output:',
     item(
-      'Every command that returns data accepts --json: stdout then carries exactly one JSON object, ' +
-        'and progress and errors go to stderr. Failures exit 1.',
+      'Every command that returns data accepts --json: stdout then carries one JSON object, ' +
+        'and progress and errors go to stderr. A few list and search commands print nothing ' +
+        'for an empty result; their notes say so. Errors exit 1.',
     ),
     '',
     'Help:',

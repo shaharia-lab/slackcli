@@ -199,6 +199,19 @@ describe('renderRootFooter', () => {
     expect(footer.split('\n').every((line) => line.length <= 80)).toBe(true);
   });
 
+  it('aligns the environment variable descriptions in one column', () => {
+    const lines = renderRootFooter().split('\n');
+    const start = lines.indexOf('Environment:') + 1;
+    const end = lines.indexOf('', start);
+    const block = lines.slice(start, end);
+    expect(block.length).toBeGreaterThanOrEqual(6);
+    for (const line of block) {
+      // A variable line or its continuation: the description starts at column 32.
+      expect(line.slice(0, 32)).toMatch(/^( {2}SLACKCLI_[A-Z_]+ +| {32})$/);
+      expect(line[32]).toMatch(/\S/);
+    }
+  });
+
   it('contains no token-looking value', () => {
     expect(renderRootFooter()).not.toMatch(/xox[a-z]-/);
   });

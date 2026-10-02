@@ -17,6 +17,7 @@ import type { WorkspaceConfig, WorkspacesData } from '../types/index';
 import { configureLogging } from './logger';
 import { AUTH_ERROR_CODES, SlackAuthError } from './auth-errors';
 import { SlackClient } from './slack-client';
+import * as browserAuth from './browser-auth';
 
 // A failed `login-auto` must leave enough in the log to answer "which browser,
 // which step, why" without a reproduction session. Driven end to end through a
@@ -130,7 +131,7 @@ describe('login with rejected credentials', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toBeInstanceOf(SlackAuthError);
     expect(error.message).toStartWith(
-      `Authentication failed: the supplied browser tokens were rejected by Slack (${code}).`,
+      `Authentication failed: the browser session tokens were rejected by Slack (${code}).`,
     );
     expect(error.message).not.toContain('\n');
     expect(error.message).not.toContain('To fix');
@@ -149,6 +150,39 @@ describe('login with rejected credentials', () => {
     expect(error.message).not.toContain('slackcli auth');
     expect(error.message).not.toContain('profile "temp"');
     expect(error.message).not.toContain('secret');
+  });
+
+  // `login-auto` captures the tokens itself and verifies them through
+  // `authenticateBrowser()`. The browser is stubbed out; the capture result and
+  // Slack's refusal are real inputs to the code under test.
+  it('reports a token captured by login-auto and refused by Slack without re-login or copy advice', async () => {
+    let stopped = 0;
+    const open = spyOn(browserAuth, 'openBrowserSession').mockResolvedValue({
+      ok: true,
+      session: {} as never,
+      stop: async () => { stopped += 1; },
+    } as never);
+    const capture = spyOn(browserAuth, 'captureSlackTokens').mockResolvedValue({
+      ok: true,
+      xoxd: 'xoxd-secretcookie',
+      workspaces: [{ workspaceUrl: 'https://acme.slack.com', xoxc: 'xoxc-secrettoken', teamId: 'T1', teamName: 'Acme Corp' }],
+    });
+    slackReplies({ ok: false, error: 'invalid_auth' });
+
+    try {
+      const result = await authenticateAuto({ headless: true });
+
+      expect(stopped).toBe(1);
+      expect(result.saved).toEqual([]);
+      expect(result.failed).toEqual([{
+        workspaceUrl: 'https://acme.slack.com',
+        error: 'Authentication failed: the browser session tokens were rejected by Slack (invalid_auth). '
+          + 'They must come from a browser that is signed in to this workspace: sign in there, then try again.',
+      }]);
+    } finally {
+      open.mockRestore();
+      capture.mockRestore();
+    }
   });
 
   it('logs only the Slack code of a rejected login', async () => {

@@ -1,4 +1,5 @@
 import type { AuthType, WorkspaceConfig } from '../types/index.ts';
+import { isSlackWorkspaceUrl } from './browser-auth.ts';
 
 // The Slack error codes that mean "these credentials were refused". Permission
 // errors (`missing_scope`, `not_in_channel`, …) are deliberately not here: the
@@ -47,17 +48,20 @@ function printable(value: string): string {
     .join('');
 }
 
-// The stored workspace URL as an origin, or undefined when it is missing or is
-// not an https URL. Only the origin is kept, so nothing else from a damaged
-// record reaches the suggested command.
+// A hostname made only of characters that mean nothing to a shell.
+const PLAIN_HOSTNAME = /^[a-z0-9.-]+$/;
+
+// The stored workspace URL as `https://<host>`, or undefined when it is not one
+// `auth login-auto --workspace-url` would accept. The fix line is meant to be
+// run as printed, often by an agent, so the host must be a slack.com host with
+// no port and no character a shell would interpret; anything else from a
+// damaged record is dropped and the command falls back to its bare form.
 function workspaceOrigin(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' ? parsed.origin : undefined;
-  } catch {
-    return undefined;
-  }
+  if (!url || !isSlackWorkspaceUrl(url)) return undefined;
+  const parsed = new URL(url);
+  const host = parsed.hostname.toLowerCase();
+  if (parsed.port !== '' || !PLAIN_HOSTNAME.test(host)) return undefined;
+  return `https://${host}`;
 }
 
 /** The profile metadata of a stored workspace config, without its secrets. */
@@ -156,17 +160,19 @@ export class SlackAuthError extends Error {
 }
 
 /**
- * What to say when the credentials refused are the ones the user just supplied
- * to a login command. Nothing is stored yet, so "log in again" would be advice
- * to repeat the step that failed.
+ * What to say when the credentials refused are the ones a login command was just
+ * given or captured. Nothing is stored yet, so "log in again" would be advice to
+ * repeat the step that failed.
  */
 export function describeRejectedLogin(code: AuthErrorCode, authType: AuthType): string {
-  const supplied = authType === 'browser' ? 'the supplied browser tokens were' : 'the supplied token was';
+  // The browser wording has to hold for `login-auto` too, where the CLI captured
+  // the tokens itself and the user has nothing to copy.
+  const supplied = authType === 'browser' ? 'the browser session tokens were' : 'the supplied token was';
   const rejected = `${supplied} rejected by Slack (${code}).`;
   if (code === 'account_inactive') {
     return `${rejected} The user was deactivated or removed from the workspace; contact a workspace admin.`;
   }
   return authType === 'browser'
-    ? `${rejected} Copy fresh xoxd and xoxc values from a browser that is signed in to this workspace.`
+    ? `${rejected} They must come from a browser that is signed in to this workspace: sign in there, then try again.`
     : `${rejected} Check that it was copied in full and has not been revoked or rotated.`;
 }

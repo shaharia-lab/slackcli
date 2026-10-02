@@ -142,6 +142,15 @@ describe('describeAuthError', () => {
     'not a url',
     'http://acme.slack.com',
     'javascript:alert(1)',
+    'https://evil.example.com',
+    'https://acme.slack.com.evil.net',
+    'https://app.slack.com',
+    'https://acme.slack.com:8443',
+    'https://a$(id).slack.com',
+    'https://a`id`.slack.com',
+    'https://a;id.slack.com',
+    "https://a'b.slack.com",
+    'https://a b.slack.com',
   ])('does not put the unusable stored URL %p into the command', (workspaceUrl) => {
     expect(describeAuthError('invalid_auth', { ...browserProfile, workspaceUrl }).fix).toBe(
       'slackcli auth login-auto',
@@ -151,9 +160,14 @@ describe('describeAuthError', () => {
   it('keeps only the origin of the stored URL', () => {
     const fix = describeAuthError('token_expired', {
       ...browserProfile,
-      workspaceUrl: 'https://acme.slack.com/client/T1?x=1; rm -rf ~',
+      workspaceUrl: 'https://user:pw@ACME.slack.com/client/T1?x=1; rm -rf ~#$(id)',
     }).fix;
     expect(fix).toBe('slackcli auth login-auto --workspace-url https://acme.slack.com');
+  });
+
+  it('accepts an Enterprise Grid host', () => {
+    expect(describeAuthError('invalid_auth', { ...browserProfile, workspaceUrl: 'https://acme.enterprise.slack.com' }).fix)
+      .toBe('slackcli auth login-auto --workspace-url https://acme.enterprise.slack.com');
   });
 });
 
@@ -259,12 +273,21 @@ describe('describeRejectedLogin', () => {
     }
   });
 
+  // `login-auto` captures the tokens itself, so the browser wording must not
+  // tell the user they supplied or should copy anything.
+  it.each([...AUTH_ERROR_CODES])('does not assume the user typed the browser tokens (%s)', (code) => {
+    const text = describeRejectedLogin(code, 'browser');
+    expect(text).not.toContain('supplied');
+    expect(text.toLowerCase()).not.toContain('copy');
+    expect(text).not.toContain('xoxd');
+  });
+
   it('words the rejection for the kind of credential supplied', () => {
     expect(describeRejectedLogin('invalid_auth', 'standard')).toBe(
       'the supplied token was rejected by Slack (invalid_auth). Check that it was copied in full and has not been revoked or rotated.',
     );
     expect(describeRejectedLogin('invalid_auth', 'browser')).toBe(
-      'the supplied browser tokens were rejected by Slack (invalid_auth). Copy fresh xoxd and xoxc values from a browser that is signed in to this workspace.',
+      'the browser session tokens were rejected by Slack (invalid_auth). They must come from a browser that is signed in to this workspace: sign in there, then try again.',
     );
   });
 
@@ -272,7 +295,7 @@ describe('describeRejectedLogin', () => {
     for (const authType of ['browser', 'standard'] as const) {
       const text = describeRejectedLogin('account_inactive', authType);
       expect(text).toContain('contact a workspace admin');
-      expect(text).not.toContain('Copy fresh');
+      expect(text).not.toContain('sign in there');
       expect(text).not.toContain('copied in full');
     }
   });

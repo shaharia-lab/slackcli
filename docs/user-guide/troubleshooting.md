@@ -75,9 +75,9 @@ The `To fix:` line depends on how the profile authenticates:
 Logging in again as the same identity refreshes the tokens in place and keeps
 your profile key and default.
 
-If Slack refuses a token while you are logging in, the message says the supplied
-token was rejected instead, since there is no stored profile to refresh yet —
-see [Authentication fails](#authentication-fails).
+If Slack refuses a token while you are logging in, the message says the token
+was rejected instead, since there is no stored profile to refresh yet — see
+[Authentication fails](#authentication-fails).
 
 ## Permission errors on channels or messages
 

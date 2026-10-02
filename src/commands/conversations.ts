@@ -319,7 +319,7 @@ export function createConversationsCommand(): Command {
     summary: 'Fetch one message by channel and timestamp',
     description:
       'Fetch a single message by its channel and timestamp, or from its Slack link. Use ' +
-      '"conversations read" for a channel\'s history or a whole thread.',
+      '"conversations read" for a channel\'s history or a thread.',
     examples: [
       'slackcli conversations get C0123456789 1712345678.123456',
       'slackcli conversations get C0123456789 p1712345678123456 --json',

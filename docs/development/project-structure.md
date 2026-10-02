@@ -81,6 +81,7 @@ They hold no Slack API knowledge.
 | `clipboard.ts` | Cross-platform clipboard read (`pbpaste` / PowerShell / `xclip` / `xsel`). |
 | `interactive-input.ts` | Multi-line terminal input (double-Enter or Ctrl-D). |
 | `updater.ts` | Self-update via GitHub releases, with SHA-256 verification. |
+| `banner.ts` | The welcome screen bare `slackcli` prints in a terminal: the pure `renderBanner()` (logo, version, star call-to-action, issue link; narrow-terminal, no-colour and no-Unicode fallbacks), `shouldShowBanner()` (no arguments and stdout a TTY), `supportsUnicode()`, `shouldUseColor()` (chalk's level plus `NO_COLOR`) and the repository URL constants. Called from `src/index.ts` before `program.parse()`. |
 
 ## `src/types/index.ts`
 

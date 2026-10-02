@@ -3,7 +3,7 @@
 ```
 slackcli/
 ├── src/
-│   ├── index.ts                  CLI entry point: createProgram(), parse, update notice
+│   ├── index.ts                  CLI entry point: welcome screen or parse, update notice
 │   ├── program.ts                createProgram(): registers command groups, hooks and help
 │   ├── version.ts                App version (build-time define, else package.json)
 │   ├── commands/                 One file per command group

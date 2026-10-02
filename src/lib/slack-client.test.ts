@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { resetSync } from '@logtape/logtape';
 import { SlackClient, SlackTransportError } from './slack-client.ts';
+import { AUTH_ERROR_CODES, SlackAuthError } from './auth-errors.ts';
 import { configureLogging } from './logger.ts';
 import { RateLimiter, SLACK_MIN_REQUEST_INTERVAL_MS } from './rate-limiter.ts';
 
@@ -1405,5 +1406,165 @@ describe('SlackClient retry logging', () => {
     });
     const ok = all.find((r) => r.level === 'INFO' && r.properties.ok === true)!;
     expect(ok.properties.attempt).toBe(2);
+  });
+});
+
+// Slack refusing the credentials must read the same whichever transport the
+// profile uses: the profile, Slack's code, what it means and how to fix it.
+describe('SlackClient authentication failures', () => {
+  const noPacing = () => new RateLimiter({ minIntervalMs: 0, maxConcurrent: 8 });
+
+  function browserClient(overrides: Record<string, unknown> = {}): SlackClient {
+    return new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Acme Corp',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-secretcookie',
+      xoxc_token: 'xoxc-secrettoken',
+      workspace_url: 'https://acme.slack.com',
+      ...overrides,
+    } as ConstructorParameters<typeof SlackClient>[0], { rateLimiter: noPacing(), retry: { maxRetries: 0 } });
+  }
+
+  function standardClient(payload: Record<string, unknown>, overrides: Record<string, unknown> = {}): SlackClient {
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Acme Corp',
+      auth_type: 'standard',
+      token: 'xoxb-1234567890-secrettoken',
+      token_type: 'bot',
+      ...overrides,
+    } as ConstructorParameters<typeof SlackClient>[0], { rateLimiter: noPacing() });
+    (client as unknown as { webClient: { apiCall: () => Promise<unknown> } }).webClient = {
+      apiCall: async () => {
+        throw Object.assign(new Error(`An API error occurred: ${payload.error}`), { data: payload });
+      },
+    };
+    return client;
+  }
+
+  function slackReplies(payload: Record<string, unknown>): { calls: number } {
+    const seen = { calls: 0 };
+    globalThis.fetch = (async () => {
+      seen.calls += 1;
+      return new Response(JSON.stringify(payload), { status: 200 });
+    }) as unknown as typeof fetch;
+    return seen;
+  }
+
+  it.each([...AUTH_ERROR_CODES])('explains %s on the browser path', async (code) => {
+    const payload = { ok: false, error: code };
+    slackReplies(payload);
+
+    const error = await browserClient().getUserInfo('U1').catch((err) => err);
+
+    expect(error).toBeInstanceOf(SlackAuthError);
+    expect(error.code).toBe(code);
+    expect(error.slackData).toEqual(payload);
+    const lines = error.message.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe(`Authentication failed for profile "T123" (Acme Corp, browser auth): ${code}`);
+    expect(lines[1]).toBe(`   ${error.meaning}`);
+    expect(lines[2]).toBe(`   To fix: ${error.fix}`);
+  });
+
+  it.each([...AUTH_ERROR_CODES])('explains %s on the standard path', async (code) => {
+    const payload = { ok: false, error: code };
+
+    const error = await standardClient(payload).getUserInfo('U1').catch((err) => err);
+
+    expect(error).toBeInstanceOf(SlackAuthError);
+    expect(error.code).toBe(code);
+    expect(error.slackData).toEqual(payload);
+    const lines = error.message.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe(`Authentication failed for profile "T123" (Acme Corp, standard auth): ${code}`);
+    expect(lines[1]).toBe(`   ${error.meaning}`);
+    expect(lines[2]).toBe(`   To fix: ${error.fix}`);
+  });
+
+  it('points a browser profile at login-auto with its stored URL', async () => {
+    slackReplies({ ok: false, error: 'invalid_auth' });
+    const error = await browserClient().testAuth().catch((err) => err);
+    expect(error.fix).toBe('slackcli auth login-auto --workspace-url https://acme.slack.com');
+  });
+
+  it('points a standard profile at auth login', async () => {
+    const error = await standardClient({ ok: false, error: 'invalid_auth' }).testAuth().catch((err) => err);
+    expect(error.fix).toBe('slackcli auth login --token <token> --workspace-name <name>');
+  });
+
+  it('tells an inactive account that logging in again will not help, on both paths', async () => {
+    const payload = { ok: false, error: 'account_inactive' };
+    slackReplies(payload);
+    const errors = [
+      await browserClient().testAuth().catch((err) => err),
+      await standardClient(payload).testAuth().catch((err) => err),
+    ];
+    for (const error of errors) {
+      expect(error.message).toContain('To fix: logging in again will not help; contact a workspace admin.');
+      expect(error.message).not.toContain('slackcli auth login');
+    }
+  });
+
+  it('names the profile by its profile name when it has one', async () => {
+    slackReplies({ ok: false, error: 'token_revoked' });
+    const fromBrowser = await browserClient({ profile: 'acme-me' }).testAuth().catch((err) => err);
+    const fromStandard = await standardClient({ ok: false, error: 'token_revoked' }, { profile: 'acme-bot' })
+      .testAuth().catch((err) => err);
+    expect(fromBrowser.message).toStartWith('Authentication failed for profile "acme-me" (Acme Corp, browser auth): token_revoked');
+    expect(fromStandard.message).toStartWith('Authentication failed for profile "acme-bot" (Acme Corp, standard auth): token_revoked');
+  });
+
+  it('never puts a credential in the message', async () => {
+    slackReplies({ ok: false, error: 'invalid_auth' });
+    const errors = [
+      await browserClient().testAuth().catch((err) => err),
+      await standardClient({ ok: false, error: 'invalid_auth' }).testAuth().catch((err) => err),
+    ];
+    for (const error of errors) {
+      expect(error.message).not.toContain('secret');
+      expect(error.message).not.toContain('xox');
+    }
+  });
+
+  it('does not retry an authentication failure', async () => {
+    const seen = slackReplies({ ok: false, error: 'invalid_auth' });
+    const waits: number[] = [];
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Acme Corp',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://acme.slack.com',
+    }, { rateLimiter: noPacing(), sleep: async (ms) => { waits.push(ms); } });
+
+    await expect(client.getUserInfo('U1')).rejects.toBeInstanceOf(SlackAuthError);
+    expect(seen.calls).toBe(1);
+    expect(waits).toEqual([]);
+  });
+
+  it.each(['channel_not_found', 'enterprise_is_restricted', 'missing_scope'])(
+    'leaves the non-auth code %s unchanged on both paths',
+    async (code) => {
+      const payload = { ok: false, error: code };
+      slackReplies(payload);
+      const errors = [
+        await browserClient().getUserInfo('U1').catch((err) => err),
+        await standardClient(payload).getUserInfo('U1').catch((err) => err),
+      ];
+      expect(errors[0].message).toBe(`Slack API error: ${code}`);
+      expect(errors[1].message).toBe(`Slack API error: An API error occurred: ${code}`);
+      for (const error of errors) {
+        expect(error).not.toBeInstanceOf(SlackAuthError);
+        expect(error.slackData).toEqual(payload);
+      }
+    },
+  );
+
+  it('still lets leaveConversation read not_in_channel from an ok:false payload with no error code', async () => {
+    slackReplies({ ok: false, not_in_channel: true });
+    expect(await browserClient().leaveConversation('C1')).toEqual({ ok: false, not_in_channel: true });
   });
 });

@@ -13,6 +13,7 @@ import { extractSlackWorkspaceName } from './curl-parser.ts';
 import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
 import type { RetryOptions } from './retry.ts';
+import { SlackAuthError, authErrorProfile, isAuthErrorCode } from './auth-errors.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
@@ -183,6 +184,9 @@ export class SlackClient {
   // the wait happens between them, outside `run()`, so a call sitting out a
   // `Retry-After` does not stall every other call behind it. The standard path
   // is left to `@slack/web-api`, which retries by itself.
+  //
+  // An authentication failure (`auth-errors.ts`) is rethrown as a
+  // `SlackAuthError`. It is not a transport error, so it is never retried.
   async request(method: string, params: Record<string, any> = {}): Promise<any> {
     if (this.config.auth_type === 'standard') {
       return this.rateLimiter.run(() => this.attempt(method, params, 1));
@@ -253,6 +257,12 @@ export class SlackClient {
         error_message: error?.message,
         duration_ms: Math.round(performance.now() - startedAt),
       });
+      // Slack refused the credentials: say which profile, what the code means
+      // and how to fix it, identically for both transports. The original
+      // payload stays on `slackData`, as on every other failure.
+      if (isAuthErrorCode(slackError)) {
+        throw new SlackAuthError(slackError, authErrorProfile(this.config), error.slackData);
+      }
       throw error;
     }
   }

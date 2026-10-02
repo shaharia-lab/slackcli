@@ -42,10 +42,42 @@ environment variable: set it to a profile name, or override it with
   with fresh values.
 - The workspace URL must be `https://yourteam.slack.com`.
 
-## `invalid_auth` or `not_authed`
+## `Authentication failed for profile …` (`invalid_auth`, `not_authed`, `token_expired`, `token_revoked`, `account_inactive`)
 
-The stored token is no longer valid. Re-authenticate the same identity — logging
-in again refreshes the tokens in place and keeps your profile key and default.
+Slack refused the credentials stored for a profile. Whichever command hit it,
+the error names the profile, keeps Slack's code as it was sent, and says what it
+means and what to do:
+
+```text
+❌ Error: Authentication failed for profile "acme" (Acme Corp, browser auth): invalid_auth
+   The stored browser session is no longer valid. Browser sessions expire when you sign out or Slack rotates the session.
+   To fix: slackcli auth login-auto --workspace-url https://acme.slack.com
+```
+
+It goes to stderr and the exit code is `1`, as for any other failure, so
+`--json` output on stdout is never mixed with it.
+
+| Slack code | What it means | What to do |
+|---|---|---|
+| `invalid_auth` | The token or browser session is invalid or has expired | Log in again |
+| `token_expired` | The token or browser session has expired | Log in again |
+| `token_revoked` | It was revoked by the user or a workspace admin | Log in again; a standard profile needs a new token |
+| `not_authed` | No token was sent: the stored credentials are missing | Log in again |
+| `account_inactive` | The user was deactivated or removed from the workspace | Logging in again will not help; contact a workspace admin |
+
+The `To fix:` line depends on how the profile authenticates:
+
+- **Browser profile**: `slackcli auth login-auto --workspace-url <the stored
+  workspace URL>`. `login-browser` or `parse-curl` with fresh values work too.
+- **Standard profile**: `slackcli auth login --token <token> --workspace-name
+  <name>`, with a token from your Slack app settings.
+
+Logging in again as the same identity refreshes the tokens in place and keeps
+your profile key and default.
+
+If Slack refuses a token while you are logging in, the message says the supplied
+token was rejected instead, since there is no stored profile to refresh yet —
+see [Authentication fails](#authentication-fails).
 
 ## Permission errors on channels or messages
 

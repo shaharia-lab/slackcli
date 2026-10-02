@@ -26,7 +26,7 @@ command files have very few.
 ## Help
 
 `--help` is written for an agent that has nothing else to go on (#324).
-Every command calls `describeCommand(cmd, help)` from `src/lib/help.ts`
+Every command calls `describeCommand(cmd, HELP.<name>)` from `src/lib/help.ts`
 instead of a bare `.description()`. It sets `.summary()` (the one-liner in the
 parent's list), `.description()`, and appends `Examples` and `Notes` after the
 options. Standard notes come from fields, so the wording stays the same

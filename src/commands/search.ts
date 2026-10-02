@@ -9,7 +9,7 @@ import {
   formatPaginationHint,
   writeJson,
 } from '../lib/formatter.ts';
-import { describeCommand } from '../lib/help.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 
@@ -17,17 +17,16 @@ import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.
 const EMPTY_RESULT_NOTE =
   'No match prints nothing on stdout, even with --json (exit 0).';
 
-export function createSearchCommand(): Command {
-  const search = describeCommand(new Command('search'), {
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
     summary: 'Search messages, channels and people',
     description:
       'Search messages (Slack search operators supported), or find channels and people by name. ' +
       'Message search needs a user token (xoxp) or browser auth; channels and people work with ' +
       'any token but search differently by auth type.',
-  });
-
-  // Search messages
-  describeCommand(search.command('messages'), {
+  },
+  messages: {
     summary: 'Search messages with Slack search operators',
     description:
       'Search messages across the conversations you can see, one page at a time (Slack ' +
@@ -48,7 +47,57 @@ export function createSearchCommand(): Command {
       'Paged: when page < pages, rerun with --page <page + 1>. No match prints nothing on stdout, ' +
         'even with --json (exit 0).',
     ],
-  })
+  },
+  channels: {
+    summary: 'Find channels by name or keyword',
+    description:
+      'Find channels by name or keyword. Use "conversations list" to page through every ' +
+      'conversation instead, or "search messages" to search message text.',
+    examples: [
+      'slackcli search channels platform',
+      'slackcli search channels incident --limit 50 --json',
+    ],
+    json:
+      '{ query, total, channels: [...] } — the matching channel objects (id, name, ...); the ' +
+      'fields depend on the auth type.',
+    notes: [
+      'Browser auth: Slack\'s own search (search.modules), ranked by Slack; total is Slack\'s ' +
+        'match count, which can exceed the channels returned.',
+      'App token (xoxb/xoxp): no search API, so it lists up to 1000 non-archived channels the ' +
+        'token can see in one call and keeps those whose name, topic or purpose contains the ' +
+        'query (case-insensitive); total is the number returned.',
+      EMPTY_RESULT_NOTE,
+    ],
+  },
+  people: {
+    summary: 'Find people by name, username or email',
+    description:
+      'Find people by name, username or email. Use "users info" when you already have the user ' +
+      'ID, or "users list" to enumerate users by account status.',
+    examples: [
+      'slackcli search people alice',
+      'slackcli search people "@acme.com" --limit 50',
+      'slackcli search people alice --resolve-fields --json',
+    ],
+    json:
+      '{ query, total, people: [...] } — the matching user objects (id, name, real_name, profile, ' +
+      '...), each with resolved_fields { <label>: <value> } when --resolve-fields is set.',
+    notes: [
+      'Browser auth: Slack\'s own search (search.modules), ranked by Slack; total is Slack\'s ' +
+        'match count, which can exceed the people returned.',
+      'App token (xoxb/xoxp): no search API, so it lists the first 1000 users in one call, skips ' +
+        'deactivated users and bots, and keeps those whose username, real name, display name or ' +
+        'email contains the query (case-insensitive); total is the number returned.',
+      EMPTY_RESULT_NOTE,
+    ],
+  },
+} satisfies Record<string, CommandHelp>;
+
+export function createSearchCommand(): Command {
+  const search = describeCommand(new Command('search'), HELP.group);
+
+  // Search messages
+  describeCommand(search.command('messages'), HELP.messages)
     .argument('<query>', 'Search query (supports Slack search operators)')
     .option('--in <channel>', 'Filter by channel name (appends in:<channel> to the query)')
     .option('--from <user>', 'Filter by username (appends from:<user> to the query)')
@@ -112,27 +161,7 @@ export function createSearchCommand(): Command {
     });
 
   // Search channels
-  describeCommand(search.command('channels'), {
-    summary: 'Find channels by name or keyword',
-    description:
-      'Find channels by name or keyword. Use "conversations list" to page through every ' +
-      'conversation instead, or "search messages" to search message text.',
-    examples: [
-      'slackcli search channels platform',
-      'slackcli search channels incident --limit 50 --json',
-    ],
-    json:
-      '{ query, total, channels: [...] } — the matching channel objects (id, name, ...); the ' +
-      'fields depend on the auth type.',
-    notes: [
-      'Browser auth: Slack\'s own search (search.modules), ranked by Slack; total is Slack\'s ' +
-        'match count, which can exceed the channels returned.',
-      'App token (xoxb/xoxp): no search API, so it lists up to 1000 non-archived channels the ' +
-        'token can see in one call and keeps those whose name, topic or purpose contains the ' +
-        'query (case-insensitive); total is the number returned.',
-      EMPTY_RESULT_NOTE,
-    ],
-  })
+  describeCommand(search.command('channels'), HELP.channels)
     .argument('<query>', 'Channel name or keyword to search')
     .option('--limit <number>', 'Number of results', '20')
     .option('--workspace <id|name>', 'Workspace to use')
@@ -187,28 +216,7 @@ export function createSearchCommand(): Command {
     });
 
   // Search people
-  describeCommand(search.command('people'), {
-    summary: 'Find people by name, username or email',
-    description:
-      'Find people by name, username or email. Use "users info" when you already have the user ' +
-      'ID, or "users list" to enumerate users by account status.',
-    examples: [
-      'slackcli search people alice',
-      'slackcli search people "@acme.com" --limit 50',
-      'slackcli search people alice --resolve-fields --json',
-    ],
-    json:
-      '{ query, total, people: [...] } — the matching user objects (id, name, real_name, profile, ' +
-      '...), each with resolved_fields { <label>: <value> } when --resolve-fields is set.',
-    notes: [
-      'Browser auth: Slack\'s own search (search.modules), ranked by Slack; total is Slack\'s ' +
-        'match count, which can exceed the people returned.',
-      'App token (xoxb/xoxp): no search API, so it lists the first 1000 users in one call, skips ' +
-        'deactivated users and bots, and keeps those whose username, real name, display name or ' +
-        'email contains the query (case-insensitive); total is the number returned.',
-      EMPTY_RESULT_NOTE,
-    ],
-  })
+  describeCommand(search.command('people'), HELP.people)
     .argument('<query>', 'Name, username, or email to search')
     .option('--limit <number>', 'Number of results', '20')
     .option(

@@ -10,7 +10,7 @@ import {
   workspaceMismatchWarning,
 } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
-import { describeCommand } from '../lib/help.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
 
 // Help text shared by several commands below.
@@ -18,7 +18,7 @@ const THREAD_TS_NOTE =
   '--thread-ts takes 1712345678.123456 or p1712345678123456.';
 const PERMALINK_MESSAGE_NOTE =
   '--permalink replaces --channel-id and --timestamp and must be a message link.';
-const MESSAGE_TARGET_NOTE =
+const MESSAGE_TARGET_TEXT =
   'Name the message with --channel-id and --timestamp, or with a single --permalink.';
 const MESSAGE_TEXT_NOTE =
   'One of --message or --message-file is required; they are mutually exclusive.';
@@ -26,6 +26,142 @@ const RECIPIENT_NOTE =
   '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM) or a Slack URL.';
 const MESSAGE_ID_FORMATS_NOTE =
   '--channel-id takes a channel ID or a Slack URL; --timestamp takes 1712345678.123456 or p1712345678123456.';
+
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
+    summary: 'Send, edit, react to and draft messages',
+    description:
+      'Send, edit and react to messages, and create, list, send or delete drafts. ' +
+      'To read messages use "slackcli conversations"; to find them, "slackcli search".',
+  },
+  send: {
+    summary: 'Send a message to a channel, DM or thread',
+    description:
+      'Post a message to a channel, a user (the DM is opened for you) or a thread, ' +
+      'optionally with a file or Block Kit blocks. Works with both auth types. ' +
+      'To leave an unsent message for a human to review, use "messages draft" instead.',
+    examples: [
+      'slackcli messages send --recipient-id C0123456789 --message "Deploy done"',
+      'slackcli messages send --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message "Fixed"',
+      'slackcli messages send --recipient-id U0123456789 --message-file ./note.md --json',
+    ],
+    json:
+      '{ channel_id, ts, permalink? } for a post; { channel_id, file_id } with --file. ' +
+      'permalink is omitted when its lookup fails.',
+    notes: [
+      RECIPIENT_NOTE,
+      THREAD_TS_NOTE,
+      '--permalink replaces --recipient-id and --thread-ts: a message link replies in its thread, ' +
+        'a channel link posts to the channel.',
+      'One of --message or --message-file is required; they are mutually exclusive. ' +
+        'With --file the text becomes the file comment.',
+      '--blocks cannot be combined with --file; the message text is the notification fallback.',
+      'Sends immediately, with no confirmation prompt.',
+    ],
+  },
+  react: {
+    summary: 'Add an emoji reaction to a message',
+    description:
+      'Add an emoji reaction to one message as the authenticated user or app. ' +
+      MESSAGE_TARGET_TEXT,
+    examples: [
+      'slackcli messages react --channel-id C0123456789 --timestamp 1712345678.123456 --emoji thumbsup',
+      'slackcli messages react --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --emoji eyes',
+    ],
+    notes: [
+      MESSAGE_ID_FORMATS_NOTE,
+      PERMALINK_MESSAGE_NOTE,
+      '--emoji is the name without colons; custom workspace emoji work too.',
+      'Acts immediately, with no confirmation prompt.',
+    ],
+  },
+  edit: {
+    summary: 'Replace the text of a message you posted',
+    description:
+      'Replace the text of an existing message posted by the authenticated user or app. ' +
+      MESSAGE_TARGET_TEXT,
+    examples: [
+      'slackcli messages edit --channel-id C0123456789 --timestamp 1712345678.123456 --message "Corrected text"',
+      'slackcli messages edit --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message-file ./fixed.md --json',
+    ],
+    json: '{ channel_id, ts } of the edited message.',
+    notes: [
+      MESSAGE_ID_FORMATS_NOTE,
+      PERMALINK_MESSAGE_NOTE,
+      MESSAGE_TEXT_NOTE,
+      'Edits immediately, with no confirmation prompt.',
+    ],
+  },
+  listDrafts: {
+    summary: 'List your active (unsent) drafts',
+    description:
+      'List the authenticated user\'s active drafts, ' +
+      'excluding deleted and already-sent ones. Use it to find the draft ID for send-draft or delete-draft.',
+    examples: [
+      'slackcli messages list-drafts',
+      'slackcli messages list-drafts --limit 25 --json',
+    ],
+    json:
+      '{ draft_count, drafts: [{ draft_id, channel_id, text, date_created, file_ids, thread_ts?, date_scheduled? }] }. ' +
+      'No drafts gives { draft_count: 0, drafts: [] }.',
+    browserOnly: true,
+    notes: ['--limit must be a positive integer (default 100).'],
+  },
+  draft: {
+    summary: 'Create an unsent draft for a human to review',
+    description:
+      'Create an unsent draft in a channel, DM or thread; it appears in the Slack composer for a human ' +
+      'to review and send. Use "messages send" to post directly, or "messages send-draft" to post it later.',
+    examples: [
+      'slackcli messages draft --recipient-id C0123456789 --message "Release notes for review"',
+      'slackcli messages draft --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message-file ./reply.md --json',
+    ],
+    json: '{ channel_id, draft_id, thread_ts? } (thread_ts only for a threaded draft).',
+    browserOnly: true,
+    notes: [
+      RECIPIENT_NOTE,
+      THREAD_TS_NOTE,
+      '--permalink replaces --recipient-id and --thread-ts: a message link drafts a reply in its thread, ' +
+        'a channel link drafts in the channel.',
+      MESSAGE_TEXT_NOTE,
+      'Creates the draft immediately, with no confirmation prompt.',
+    ],
+  },
+  sendDraft: {
+    summary: 'Post an active draft, then delete the draft',
+    description:
+      'Post an active draft to its saved channel and thread with its original formatting, ' +
+      'then delete the draft. Get the draft ID from "messages draft" or "messages list-drafts".',
+    examples: [
+      'slackcli messages send-draft Dr0123456789',
+      'slackcli messages send-draft Dr0123456789 --yes --json',
+    ],
+    json:
+      '{ channel_id, ts, permalink?, cleanup_error? }. cleanup_error means the message was posted ' +
+      'but the draft was not deleted (exit 1): do not retry without checking.',
+    browserOnly: true,
+    confirms: true,
+    notes: [
+      'Exception to the rule above: the draft is read (drafts.list) before the prompt, so a refusal ' +
+        'still makes that one read call, but posts nothing.',
+      'Scheduled drafts, drafts with files, empty drafts and drafts with several destinations are refused before posting.',
+    ],
+  },
+  deleteDraft: {
+    summary: 'Delete a draft without sending it',
+    description:
+      'Discard a draft without posting it. Get the draft ID from "messages draft" or "messages list-drafts"; ' +
+      'use "messages send-draft" to post it instead.',
+    examples: [
+      'slackcli messages delete-draft Dr0123456789',
+      'slackcli messages delete-draft Dr0123456789 --yes --json',
+    ],
+    json: '{ draft_id, deleted: true }.',
+    browserOnly: true,
+    confirms: true,
+  },
+} satisfies Record<string, CommandHelp>;
 
 export async function parseBlocksInput(input: string): Promise<Array<Record<string, unknown>>> {
   let source = input;
@@ -129,39 +265,10 @@ function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | un
 }
 
 export function createMessagesCommand(): Command {
-  const messages = describeCommand(new Command('messages'), {
-    summary: 'Send, edit, react to and draft messages',
-    description:
-      'Send, edit and react to messages, and create, list, send or delete drafts. ' +
-      'To read messages use "slackcli conversations"; to find them, "slackcli search".',
-  });
+  const messages = describeCommand(new Command('messages'), HELP.group);
 
   // Send message
-  describeCommand(messages.command('send'), {
-    summary: 'Send a message to a channel, DM or thread',
-    description:
-      'Post a message to a channel, a user (the DM is opened for you) or a thread, ' +
-      'optionally with a file or Block Kit blocks. Works with both auth types. ' +
-      'To leave an unsent message for a human to review, use "messages draft" instead.',
-    examples: [
-      'slackcli messages send --recipient-id C0123456789 --message "Deploy done"',
-      'slackcli messages send --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message "Fixed"',
-      'slackcli messages send --recipient-id U0123456789 --message-file ./note.md --json',
-    ],
-    json:
-      '{ channel_id, ts, permalink? } for a post; { channel_id, file_id } with --file. ' +
-      'permalink is omitted when its lookup fails.',
-    notes: [
-      RECIPIENT_NOTE,
-      THREAD_TS_NOTE,
-      '--permalink replaces --recipient-id and --thread-ts: a message link replies in its thread, ' +
-        'a channel link posts to the channel.',
-      'One of --message or --message-file is required; they are mutually exclusive. ' +
-        'With --file the text becomes the file comment.',
-      '--blocks cannot be combined with --file; the message text is the notification fallback.',
-      'Sends immediately, with no confirmation prompt.',
-    ],
-  })
+  describeCommand(messages.command('send'), HELP.send)
     .option('--recipient-id <id>', 'Channel ID, User ID, or Slack URL')
     .option('--message <text>', 'Message text content')
     .addOption(
@@ -244,22 +351,7 @@ export function createMessagesCommand(): Command {
     });
 
   // Add reaction to message
-  describeCommand(messages.command('react'), {
-    summary: 'Add an emoji reaction to a message',
-    description:
-      'Add an emoji reaction to one message as the authenticated user or app. ' +
-      MESSAGE_TARGET_NOTE,
-    examples: [
-      'slackcli messages react --channel-id C0123456789 --timestamp 1712345678.123456 --emoji thumbsup',
-      'slackcli messages react --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --emoji eyes',
-    ],
-    notes: [
-      MESSAGE_ID_FORMATS_NOTE,
-      PERMALINK_MESSAGE_NOTE,
-      '--emoji is the name without colons; custom workspace emoji work too.',
-      'Acts immediately, with no confirmation prompt.',
-    ],
-  })
+  describeCommand(messages.command('react'), HELP.react)
     .option('--channel-id <id>', 'Channel ID or URL where the message is')
     .option('--timestamp <ts>', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
@@ -289,23 +381,7 @@ export function createMessagesCommand(): Command {
     });
 
   // Edit an existing message
-  describeCommand(messages.command('edit'), {
-    summary: 'Replace the text of a message you posted',
-    description:
-      'Replace the text of an existing message posted by the authenticated user or app. ' +
-      MESSAGE_TARGET_NOTE,
-    examples: [
-      'slackcli messages edit --channel-id C0123456789 --timestamp 1712345678.123456 --message "Corrected text"',
-      'slackcli messages edit --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message-file ./fixed.md --json',
-    ],
-    json: '{ channel_id, ts } of the edited message.',
-    notes: [
-      MESSAGE_ID_FORMATS_NOTE,
-      PERMALINK_MESSAGE_NOTE,
-      MESSAGE_TEXT_NOTE,
-      'Edits immediately, with no confirmation prompt.',
-    ],
-  })
+  describeCommand(messages.command('edit'), HELP.edit)
     .option('--channel-id <id>', 'Channel ID or URL where the message is')
     .option('--timestamp <ts>', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
@@ -349,21 +425,7 @@ export function createMessagesCommand(): Command {
     });
 
   // List active draft messages
-  describeCommand(messages.command('list-drafts'), {
-    summary: 'List your active (unsent) drafts',
-    description:
-      'List the authenticated user\'s active drafts, ' +
-      'excluding deleted and already-sent ones. Use it to find the draft ID for send-draft or delete-draft.',
-    examples: [
-      'slackcli messages list-drafts',
-      'slackcli messages list-drafts --limit 25 --json',
-    ],
-    json:
-      '{ draft_count, drafts: [{ draft_id, channel_id, text, date_created, file_ids, thread_ts?, date_scheduled? }] }. ' +
-      'No drafts gives { draft_count: 0, drafts: [] }.',
-    browserOnly: true,
-    notes: ['--limit must be a positive integer (default 100).'],
-  })
+  describeCommand(messages.command('list-drafts'), HELP.listDrafts)
     .option('--limit <number>', 'Maximum number of drafts to return', '100')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output drafts as JSON', false)
@@ -399,26 +461,7 @@ export function createMessagesCommand(): Command {
     });
 
   // Create draft message
-  describeCommand(messages.command('draft'), {
-    summary: 'Create an unsent draft for a human to review',
-    description:
-      'Create an unsent draft in a channel, DM or thread; it appears in the Slack composer for a human ' +
-      'to review and send. Use "messages send" to post directly, or "messages send-draft" to post it later.',
-    examples: [
-      'slackcli messages draft --recipient-id C0123456789 --message "Release notes for review"',
-      'slackcli messages draft --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message-file ./reply.md --json',
-    ],
-    json: '{ channel_id, draft_id, thread_ts? } (thread_ts only for a threaded draft).',
-    browserOnly: true,
-    notes: [
-      RECIPIENT_NOTE,
-      THREAD_TS_NOTE,
-      '--permalink replaces --recipient-id and --thread-ts: a message link drafts a reply in its thread, ' +
-        'a channel link drafts in the channel.',
-      MESSAGE_TEXT_NOTE,
-      'Creates the draft immediately, with no confirmation prompt.',
-    ],
-  })
+  describeCommand(messages.command('draft'), HELP.draft)
     .option('--recipient-id <id>', 'Channel ID, User ID, or Slack URL')
     .option('--message <text>', 'Message text content')
     .addOption(
@@ -474,26 +517,7 @@ export function createMessagesCommand(): Command {
       }
     });
 
-  describeCommand(messages.command('send-draft'), {
-    summary: 'Post an active draft, then delete the draft',
-    description:
-      'Post an active draft to its saved channel and thread with its original formatting, ' +
-      'then delete the draft. Get the draft ID from "messages draft" or "messages list-drafts".',
-    examples: [
-      'slackcli messages send-draft Dr0123456789',
-      'slackcli messages send-draft Dr0123456789 --yes --json',
-    ],
-    json:
-      '{ channel_id, ts, permalink?, cleanup_error? }. cleanup_error means the message was posted ' +
-      'but the draft was not deleted (exit 1): do not retry without checking.',
-    browserOnly: true,
-    confirms: true,
-    notes: [
-      'Exception to the rule above: the draft is read (drafts.list) before the prompt, so a refusal ' +
-        'still makes that one read call, but posts nothing.',
-      'Scheduled drafts, drafts with files, empty drafts and drafts with several destinations are refused before posting.',
-    ],
-  })
+  describeCommand(messages.command('send-draft'), HELP.sendDraft)
     .argument('<draft-id>', 'ID returned by messages draft or list-drafts')
     .option('--yes', 'Confirm sending without a prompt', false)
     .option('--workspace <id|name>', 'Workspace to use')
@@ -529,19 +553,7 @@ export function createMessagesCommand(): Command {
       }
     });
 
-  describeCommand(messages.command('delete-draft'), {
-    summary: 'Delete a draft without sending it',
-    description:
-      'Discard a draft without posting it. Get the draft ID from "messages draft" or "messages list-drafts"; ' +
-      'use "messages send-draft" to post it instead.',
-    examples: [
-      'slackcli messages delete-draft Dr0123456789',
-      'slackcli messages delete-draft Dr0123456789 --yes --json',
-    ],
-    json: '{ draft_id, deleted: true }.',
-    browserOnly: true,
-    confirms: true,
-  })
+  describeCommand(messages.command('delete-draft'), HELP.deleteDraft)
     .argument('<draft-id>', 'ID returned by messages draft or list-drafts')
     .option('--yes', 'Confirm deletion without a prompt', false)
     .option('--workspace <id|name>', 'Workspace to use')

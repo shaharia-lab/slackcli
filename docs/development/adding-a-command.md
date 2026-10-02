@@ -83,19 +83,29 @@ export function formatChannelMembers(members: ChannelMember[]): string { /* … 
 
 ## 5. Wire up the command
 
-`src/commands/conversations.ts`:
+`src/commands/conversations.ts`. The help goes in the file's `HELP` map, near
+the top (see [Help](#help) below):
 
 ```ts
-describeCommand(conversations.command('members'), {
-  summary: 'List the members of a channel',
-  description: 'List the members of a channel, private channel or DM, with their names.',
-  examples: [
-    'slackcli conversations members C0123456789',
-    'slackcli conversations members https://acme.slack.com/archives/C0123456789 --json',
-  ],
-  json: '{ channel_id, member_count, members[] }.',
-  notes: ['<channel-id> accepts a channel ID (C…) or a Slack URL.'],
-})
+const HELP = {
+  // …
+  members: {
+    summary: 'List the members of a channel',
+    description: 'List the members of a channel, private channel or DM, with their names.',
+    examples: [
+      'slackcli conversations members C0123456789',
+      'slackcli conversations members https://acme.slack.com/archives/C0123456789 --json',
+    ],
+    json: '{ channel_id, member_count, members[] }.',
+    notes: ['<channel-id> accepts a channel ID (C…) or a Slack URL.'],
+  },
+} satisfies Record<string, CommandHelp>;
+```
+
+and the command chain refers to it:
+
+```ts
+describeCommand(conversations.command('members'), HELP.members)
   .argument('[channel-id]', 'Channel ID or Slack URL')
   .option('--limit <number>', 'Number of members to return', '100')
   .option('--workspace <id|name>', 'Workspace to use')
@@ -152,6 +162,14 @@ uses `describeCommand()` from `src/lib/help.ts`, never a bare `.description()`:
 - `notes`: accepted value formats, flags that replace or require each other,
   and auth-type differences. Keep the whole help to about one screen; depth
   belongs in `docs/user-guide/`.
+
+Each command file keeps its help in one `HELP` map near the top
+(`satisfies Record<string, CommandHelp>`), and the command chain only says
+`describeCommand(cmd, HELP.<name>)`. Keep it that way: SonarCloud's duplication
+check treats every string literal as the same token, so help objects written
+inline next to similar commands (add/remove, enable/disable) extend the
+duplicated blocks around them and fail the quality gate. A note repeated by
+several commands becomes a named constant above the map.
 
 `src/program.test.ts` enforces these rules for every command in the tree.
 

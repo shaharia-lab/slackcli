@@ -3,15 +3,15 @@ import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatSavedItems, writeJson } from '../lib/formatter.ts';
 import { enrichSavedItems } from '../lib/saved.ts';
-import { describeCommand } from '../lib/help.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
 
-export function createSavedCommand(): Command {
-  const saved = describeCommand(new Command('saved'), {
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
     summary: 'View your saved-for-later items',
     description: 'Read your Slack "Later" (saved for later) list, with message text, channel and author resolved.',
-  });
-
-  describeCommand(saved.command('list'), {
+  },
+  list: {
     summary: 'List your saved-for-later items',
     description:
       'List your saved items, paging through the whole list (or up to --limit). ' +
@@ -30,7 +30,13 @@ export function createSavedCommand(): Command {
         'no todo_state, so --state matches nothing.',
       '--limit caps the items fetched, before --state filters them.',
     ],
-  })
+  },
+} satisfies Record<string, CommandHelp>;
+
+export function createSavedCommand(): Command {
+  const saved = describeCommand(new Command('saved'), HELP.group);
+
+  describeCommand(saved.command('list'), HELP.list)
     .option('--limit <number>', 'Maximum number of items to return')
     .option('--state <state>', 'Filter by state: saved, to_do, or completed (browser auth only)')
     .option('--workspace <id|name>', 'Workspace to use')

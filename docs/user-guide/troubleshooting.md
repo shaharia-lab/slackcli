@@ -10,11 +10,20 @@ Nothing is authenticated yet. Run `slackcli auth login-auto`, or see
 The selector matched nothing. `slackcli auth list` shows the profile keys,
 workspace IDs, and names that are valid.
 
+When the message ends with `(from SLACKCLI_WORKSPACE)`, the value came from that
+environment variable, not from `--workspace`. Fix the value, `unset
+SLACKCLI_WORKSPACE`, or pass `--workspace` to override it — see
+[pin a workspace for one shell](workspaces.md#pin-a-workspace-for-one-shell).
+
 ## `"x" matches multiple profiles`
 
 You have more than one identity for that workspace. Pass the profile name
 instead of the bare ID or name — see
 [workspaces and profiles](workspaces.md#how-a-selector-is-resolved).
+
+If you passed no `--workspace`, the selector came from the `SLACKCLI_WORKSPACE`
+environment variable: set it to a profile name, or override it with
+`--workspace`.
 
 ## Authentication fails
 

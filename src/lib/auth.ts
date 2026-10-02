@@ -257,24 +257,63 @@ function autoLoginFailed(reason: AutoLoginFailure, message: string): AutoLoginEr
   return new AutoLoginError(reason, message);
 }
 
-// Get authenticated client for workspace
-export async function getAuthenticatedClient(workspaceIdentifier?: string): Promise<SlackClient> {
-  const workspace = await getWorkspace(workspaceIdentifier);
+/** Selects the profile for one shell or session when `--workspace` is absent. */
+export const WORKSPACE_ENV_VAR = 'SLACKCLI_WORKSPACE';
+
+/** Where the effective workspace selector came from, highest precedence first. */
+export type WorkspaceSelectorSource = 'flag' | 'env' | 'default';
+
+export interface WorkspaceSelector {
+  /** Absent when the stored default applies. */
+  identifier?: string;
+  source: WorkspaceSelectorSource;
+}
+
+/**
+ * Pick the effective workspace selector: the `--workspace` flag, then
+ * `SLACKCLI_WORKSPACE`, then the stored default. Pure, so the precedence is
+ * testable without touching `process.env`. The env value is trimmed and an
+ * empty one counts as unset — an exported-but-blank variable must not turn
+ * every command into "workspace not found".
+ */
+export function effectiveWorkspaceSelector(flag?: string, env?: string): WorkspaceSelector {
+  if (flag) return { identifier: flag, source: 'flag' };
+  const fromEnv = env?.trim();
+  if (fromEnv) return { identifier: fromEnv, source: 'env' };
+  return { source: 'default' };
+}
+
+/**
+ * Resolve a selector to a stored workspace or throw. A selector that matches
+ * nothing is an error whatever its source: an env value never falls back to
+ * the stored default, since that would silently run against another workspace.
+ * `lookup` is the seam tests use in place of the real config file.
+ */
+export async function selectWorkspace(
+  selector: WorkspaceSelector,
+  lookup: (identifier?: string) => Promise<WorkspaceConfig | null> = getWorkspace,
+): Promise<WorkspaceConfig> {
+  const workspace = await lookup(selector.identifier);
 
   if (!workspace) {
-    logger.warn('No workspace resolved ({selector})', {
-      selector: workspaceIdentifier ? 'explicit' : 'default',
-    });
-    if (workspaceIdentifier) {
-      throw new Error(`Workspace not found: ${workspaceIdentifier}`);
-    } else {
+    logger.warn('No workspace resolved ({source})', { source: selector.source });
+    if (selector.identifier === undefined) {
       throw new Error('No workspace configured. Run "slackcli auth login" first.');
     }
+    const origin = selector.source === 'env' ? ` (from ${WORKSPACE_ENV_VAR})` : '';
+    throw new Error(`Workspace not found: ${selector.identifier}${origin}`);
   }
 
-  logger.debug('Using {auth_type} workspace {workspace_id}', {
+  logger.debug('Using {auth_type} workspace {workspace_id} ({source})', {
     auth_type: workspace.auth_type,
     workspace_id: workspace.workspace_id,
+    source: selector.source,
   });
-  return new SlackClient(workspace);
+  return workspace;
+}
+
+// Get authenticated client for workspace
+export async function getAuthenticatedClient(workspaceIdentifier?: string): Promise<SlackClient> {
+  const selector = effectiveWorkspaceSelector(workspaceIdentifier, process.env[WORKSPACE_ENV_VAR]);
+  return new SlackClient(await selectWorkspace(selector));
 }

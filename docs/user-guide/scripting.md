@@ -134,6 +134,22 @@ whichever workspace happens to be the default:
 slackcli messages send --workspace=automation-bot --recipient-id=C123 --message="Nightly build green"
 ```
 
+**Pin the identity for a whole script or job** with `SLACKCLI_WORKSPACE` instead
+of repeating the flag. It applies only to that process environment, so it does
+not change the default other terminals use, and `--workspace` still overrides
+it:
+
+```bash
+export SLACKCLI_WORKSPACE=automation-bot
+slackcli messages send --recipient-id=C123 --message="Nightly build green"
+slackcli conversations read C123 --limit=5 --json
+```
+
+A value that matches no stored profile fails the command with
+`Workspace not found: <value> (from SLACKCLI_WORKSPACE)` rather than falling back
+to the default. See
+[workspaces and profiles](workspaces.md#pin-a-workspace-for-one-shell).
+
 **Paginate a search**:
 
 ```bash

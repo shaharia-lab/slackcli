@@ -52,7 +52,7 @@ They hold no Slack API knowledge.
 | Module | Responsibility |
 |---|---|
 | `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, retries browser-auth calls per `retry.ts`, and logs each attempt's method, auth type, duration and outcome. |
-| `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid. |
+| `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, stored default) is resolved. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
 | `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. |

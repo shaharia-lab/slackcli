@@ -57,9 +57,10 @@ list for the version you have installed.
 
 ## Two things that apply everywhere
 
-**`--workspace <id|name>`** — every command that talks to Slack accepts it, and
-falls back to your default workspace when you omit it. See
-[workspaces and profiles](workspaces.md).
+**`--workspace <id|name>`** — every command that talks to Slack accepts it.
+Without it, a command uses `SLACKCLI_WORKSPACE` if that is set, otherwise your
+default workspace. See [workspaces and profiles](workspaces.md) and
+[pin a workspace for one shell](workspaces.md#pin-a-workspace-for-one-shell).
 
 **Paste Slack URLs instead of IDs** — anywhere a channel, user, message, canvas,
 or file ID is expected. See

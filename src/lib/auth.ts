@@ -2,13 +2,21 @@ import { getLogger } from '@logtape/logtape';
 import { SlackClient, SlackTransportError } from './slack-client.ts';
 import { SlackAuthError, describeRejectedLogin } from './auth-errors.ts';
 import { errorMessageForLog } from './tildify.ts';
-import { addWorkspace, getWorkspace, getWorkspaceEntry, type ResolvedWorkspace } from './workspaces.ts';
+import {
+  addWorkspace,
+  getAllWorkspaceEntries,
+  getWorkspace,
+  getWorkspaceEntry,
+  type ResolvedWorkspace,
+} from './workspaces.ts';
 import type {
   StandardAuthConfig,
   BrowserAuthConfig,
   WorkspaceConfig,
   SecretBackend,
   IdentityResult,
+  ProfileCheck,
+  ProfileList,
   WorkspaceSelectorSource,
 } from '../types/index.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
@@ -436,4 +444,145 @@ export async function checkIdentity(
     }
     throw error;
   }
+}
+
+/** One stored profile's key with the outcome of its check. */
+export interface CheckedProfile {
+  profile: string;
+  check: ProfileCheck;
+}
+
+/** Reported before each profile is checked; `index` starts at 1. */
+export interface ProfileCheckProgress {
+  profile: string;
+  index: number;
+  total: number;
+}
+
+/** Seams for `checkAllProfiles()`; the defaults are what the CLI runs with. */
+export interface ProfileCheckDeps {
+  /** The stored profiles, metadata only. */
+  listEntries?: () => Promise<ResolvedWorkspace[]>;
+  /** Reads one profile, credentials included, by its exact key. */
+  lookup?: (key: string) => Promise<ResolvedWorkspace | null>;
+  createClient?: IdentityCheckDeps['createClient'];
+}
+
+// `IdentityResult` without the profile details: `auth list` prints those from
+// the stored record, so only what the check itself found is kept.
+function toProfileCheck(identity: IdentityResult): ProfileCheck {
+  switch (identity.status) {
+    case 'ok':
+      return {
+        status: 'ok',
+        user: identity.user,
+        user_id: identity.user_id,
+        ...(identity.bot_id ? { bot_id: identity.bot_id } : {}),
+      };
+    case 'auth_failed':
+      return { status: 'auth_failed', error: identity.error };
+    case 'unreachable':
+      return { status: 'unreachable', error: identity.error };
+  }
+}
+
+const failureMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+async function checkProfile(key: string, deps: Required<Omit<ProfileCheckDeps, 'listEntries'>>): Promise<ProfileCheck> {
+  let entry: ResolvedWorkspace | null;
+  try {
+    entry = await deps.lookup(key);
+  } catch (error: unknown) {
+    // Credentials that cannot be read cannot authenticate. Report the store's
+    // own message for this profile instead of ending the whole run.
+    logger.warn('Profile check for {profile_key}: credentials unreadable: {error}', {
+      profile_key: key,
+      error: errorMessageForLog(error),
+    });
+    return { status: 'auth_failed', error: { message: failureMessage(error) } };
+  }
+  if (!entry) {
+    logger.warn('Profile check for {profile_key}: profile no longer stored', { profile_key: key });
+    return { status: 'auth_failed', error: { message: `Profile "${key}" is no longer stored.` } };
+  }
+
+  const found = entry;
+  try {
+    // The entry already read is the only one the lookup can return, so
+    // neither SLACKCLI_WORKSPACE nor the stored default can redirect the check.
+    return toProfileCheck(
+      await checkIdentity(key, { lookup: async () => found, createClient: deps.createClient }),
+    );
+  } catch (error: unknown) {
+    // Neither refused credentials nor a transport failure: Slack did not say
+    // the credentials are bad, so they are not reported as such.
+    logger.warn('Profile check for {profile_key}: check failed: {error}', {
+      profile_key: key,
+      error: errorMessageForLog(error),
+    });
+    return { status: 'unreachable', error: { message: failureMessage(error) } };
+  }
+}
+
+/**
+ * Verify every stored profile with one `auth.test` call each, in stored order.
+ *
+ * Sequential, since the rate limiter is process-wide. A profile that fails in
+ * any way becomes a result and the remaining profiles are still checked; only a
+ * config file that cannot be listed throws. Results never hold a token.
+ */
+export async function checkAllProfiles(
+  onProgress?: (progress: ProfileCheckProgress) => void,
+  deps: ProfileCheckDeps = {},
+): Promise<CheckedProfile[]> {
+  const {
+    listEntries = getAllWorkspaceEntries,
+    lookup = getWorkspaceEntry,
+    createClient = (config) => new SlackClient(config, { sdkRetries: IDENTITY_CHECK_SDK_RETRIES }),
+  } = deps;
+
+  const entries = await listEntries();
+  const results: CheckedProfile[] = [];
+  for (const [index, { key }] of entries.entries()) {
+    onProgress?.({ profile: key, index: index + 1, total: entries.length });
+    results.push({ profile: key, check: await checkProfile(key, { lookup, createClient }) });
+  }
+
+  logger.info('Checked {total} profiles: {ok} ok, {auth_failed} auth_failed, {unreachable} unreachable', {
+    total: results.length,
+    ok: results.filter((r) => r.check.status === 'ok').length,
+    auth_failed: results.filter((r) => r.check.status === 'auth_failed').length,
+    unreachable: results.filter((r) => r.check.status === 'unreachable').length,
+  });
+  return results;
+}
+
+/**
+ * The stored profiles as `auth list --json` reports them. Pure: it reads only
+ * the metadata it is given. `checks` (from `checkAllProfiles()`) adds a `check`
+ * to each profile it names; without it no entry has one.
+ */
+export function buildProfileList(
+  entries: ResolvedWorkspace[],
+  defaultKey: string | undefined,
+  checks?: CheckedProfile[],
+): ProfileList {
+  const checkOf = new Map(checks?.map(({ profile, check }) => [profile, check]));
+  // A stored default can outlive its profile; never name one that is not listed.
+  const listedDefault = entries.some(({ key }) => key === defaultKey) ? defaultKey : undefined;
+  return {
+    default: listedDefault ?? null,
+    workspaces: entries.map(({ key, config }) => {
+      const check = checkOf.get(key);
+      return {
+        profile: key,
+        workspace_id: config.workspace_id,
+        workspace_name: config.workspace_name,
+        auth_type: config.auth_type,
+        is_default: key === listedDefault,
+        secret_backend: config.secret_backend ?? 'file',
+        ...(check ? { check } : {}),
+      };
+    }),
+  };
 }

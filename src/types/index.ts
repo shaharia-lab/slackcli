@@ -220,6 +220,37 @@ export type IdentityResult =
       error: { message: string; http_status?: number };
     });
 
+// The outcome of checking one stored profile for `auth list --check`: the
+// `IdentityResult` statuses without the profile details the list entry already
+// carries. `auth_failed` holds Slack's code with its meaning and fix, or only a
+// `message` when the stored credentials could not be read at all.
+export type ProfileCheck =
+  | { status: 'ok'; user: string; user_id: string; bot_id?: string }
+  | {
+      status: 'auth_failed';
+      error: { code: string; meaning: string; fix: string } | { message: string };
+    }
+  | { status: 'unreachable'; error: { message: string; http_status?: number } };
+
+// One stored profile as `auth list --json` reports it. Never a credential.
+export interface ProfileListEntry {
+  /** The key the profile is stored under: its name, or the team id. */
+  profile: string;
+  workspace_id: string;
+  workspace_name: string;
+  auth_type: AuthType;
+  is_default: boolean;
+  secret_backend: SecretBackend;
+  /** Present only with `--check`. */
+  check?: ProfileCheck;
+}
+
+export interface ProfileList {
+  /** The stored default's profile key; `null` when none is set or it names no stored profile. */
+  default: string | null;
+  workspaces: ProfileListEntry[];
+}
+
 // CLI options interfaces
 export interface ConversationListOptions {
   types?: string;

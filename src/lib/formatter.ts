@@ -3,7 +3,7 @@ import type {
   SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
   SlackTeam, SlackUsergroup, UsergroupMember,
-  CustomEmoji, DraftSummary, IdentityResult,
+  CustomEmoji, DraftSummary, IdentityResult, ProfileCheck,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
 
@@ -74,10 +74,31 @@ export function formatTimestamp(ts: string): string {
 }
 
 // Format workspace info
+// One profile's `auth list --check` outcome, as the indented lines that follow
+// its stored details. A refusal by Slack also gets the command that fixes it.
+function profileCheckLines(check: ProfileCheck): string {
+  switch (check.status) {
+    case 'ok': {
+      const botId = check.bot_id ? `, bot ${check.bot_id}` : '';
+      return `\n  Status: ${chalk.green('ok')} (${check.user}, ${check.user_id}${botId})`;
+    }
+    case 'auth_failed':
+      return 'code' in check.error
+        ? `\n  Status: ${chalk.red('auth failed')} (${check.error.code}: ${check.error.meaning})` +
+          `\n  To fix: ${check.error.fix}`
+        : `\n  Status: ${chalk.red('auth failed')} (${check.error.message})`;
+    case 'unreachable':
+      return `\n  Status: ${chalk.yellow('unreachable')} (${check.error.message})`;
+  }
+}
+
+// `check` is the `auth list --check` outcome; without it the output is exactly
+// what plain `auth list` has always printed.
 export function formatWorkspace(
   config: WorkspaceConfig,
   isDefault: boolean = false,
   profileKey?: string,
+  check?: ProfileCheck,
 ): string {
   const defaultBadge = isDefault ? chalk.green('(default)') : '';
   const authType = config.auth_type === 'browser' ? '🌐 Browser' : '🔑 Standard';
@@ -94,9 +115,11 @@ export function formatWorkspace(
     ? `\n  Secrets: ${chalk.cyan(config.secret_backend)}`
     : '';
 
+  const checkLines = check ? profileCheckLines(check) : '';
+
   return `${chalk.bold(config.workspace_name)} ${defaultBadge}
   ID: ${config.workspace_id}${profileLine}
-  Auth: ${authType}${secretLine}`;
+  Auth: ${authType}${secretLine}${checkLines}`;
 }
 
 const SELECTION_SOURCE_LABELS: Record<IdentityResult['source'], string> = {

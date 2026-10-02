@@ -5,7 +5,10 @@ import {
   authenticateBrowser,
   authenticateAuto,
   AutoLoginError,
+  buildProfileList,
+  checkAllProfiles,
   checkIdentity,
+  type CheckedProfile,
 } from '../lib/auth.ts';
 import {
   getAllWorkspaceEntries,
@@ -264,10 +267,36 @@ export function createAuthCommand(): Command {
   auth
     .command('list')
     .description('List all authenticated workspaces')
-    .action(async () => {
+    .option('--check', 'Verify every profile with one auth.test call each (exits 1 unless all are ok)', false)
+    .option('--json', 'Output in JSON format', false)
+    .action(async (options) => {
+      // Started only for --check: plain `auth list` reads local config alone.
+      let spinner: Ora | undefined;
       try {
         const entries = await getAllWorkspaceEntries();
         const defaultKey = await getDefaultWorkspaceId();
+
+        let checks: CheckedProfile[] | undefined;
+        if (options.check && entries.length > 0) {
+          spinner = ora('Checking profiles...').start();
+          const progress = spinner;
+          checks = await checkAllProfiles(({ profile, index, total }) => {
+            progress.text = `Checking ${profile} (${index}/${total})...`;
+          });
+          const failed = checks.filter(({ check }) => check.status !== 'ok').length;
+          if (failed === 0) {
+            spinner.succeed(`All ${checks.length} profile${checks.length === 1 ? '' : 's'} verified`);
+          } else {
+            spinner.fail(`${failed} of ${checks.length} profile${checks.length === 1 ? '' : 's'} not verified`);
+            // Not process.exit(): the output below must drain first (see writeJson).
+            process.exitCode = 1;
+          }
+        }
+
+        if (options.json) {
+          writeJson(buildProfileList(entries, defaultKey, checks));
+          return;
+        }
 
         if (entries.length === 0) {
           info('No authenticated workspaces found.');
@@ -277,11 +306,13 @@ export function createAuthCommand(): Command {
 
         console.log(chalk.bold(`\n📋 Authenticated Workspaces (${entries.length}):\n`));
 
+        const checkOf = new Map(checks?.map(({ profile, check }) => [profile, check]));
         entries.forEach(({ key, config }, idx) => {
           const isDefault = key === defaultKey;
-          console.log(`${idx + 1}. ${formatWorkspace(config, isDefault, key)}\n`);
+          console.log(`${idx + 1}. ${formatWorkspace(config, isDefault, key, checkOf.get(key))}\n`);
         });
       } catch (err: any) {
+        spinner?.stop();
         error('Failed to list workspaces', err.message);
         process.exit(1);
       }

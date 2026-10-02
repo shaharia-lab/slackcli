@@ -1,7 +1,8 @@
 import { describe, expect, it, mock, afterEach, beforeEach, spyOn } from 'bun:test';
 import { createAuthCommand, resolveSecretBackend } from './auth.ts';
 import * as authLib from '../lib/auth.ts';
-import type { IdentityResult } from '../types/index.ts';
+import * as workspacesLib from '../lib/workspaces.ts';
+import type { IdentityResult, ProfileCheck } from '../types/index.ts';
 
 function subcommand(name: string) {
   return createAuthCommand().commands.find((command) => command.name() === name);
@@ -217,6 +218,168 @@ describe('auth whoami', () => {
       ).rejects.toThrow('exit');
       expect(exitSpy).toHaveBeenCalledWith(1);
       expect(stderr).toContain('Workspace not found: nope');
+      expect(stdout).toBe('');
+    } finally {
+      process.exit = originalExit;
+    }
+  });
+});
+
+describe('auth list', () => {
+  // As stored: metadata only, the way getAllWorkspaceEntries() returns it.
+  const entries = [
+    {
+      key: 'T1',
+      config: { workspace_id: 'T1', workspace_name: 'example', auth_type: 'browser', workspace_url: 'https://example.slack.com' },
+    },
+    {
+      key: 'bot',
+      config: { workspace_id: 'T1', workspace_name: 'example', auth_type: 'standard', token_type: 'bot', profile: 'bot', secret_backend: 'keychain' },
+    },
+  ] as unknown as workspacesLib.ResolvedWorkspace[];
+  const listed = [
+    { profile: 'T1', workspace_id: 'T1', workspace_name: 'example', auth_type: 'browser', is_default: true, secret_backend: 'file' },
+    { profile: 'bot', workspace_id: 'T1', workspace_name: 'example', auth_type: 'standard', is_default: false, secret_backend: 'keychain' },
+  ];
+
+  const ok: ProfileCheck = { status: 'ok', user: 'alice', user_id: 'U1' };
+  const refused: ProfileCheck = {
+    status: 'auth_failed',
+    error: { code: 'invalid_auth', meaning: 'The stored browser session is no longer valid.', fix: 'slackcli auth login-auto' },
+  };
+  const unreachable: ProfileCheck = { status: 'unreachable', error: { message: 'Slack API error: fetch failed' } };
+
+  let stdout: string;
+  let stderr: string;
+  let savedExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    stdout = '';
+    stderr = '';
+    savedExitCode = process.exitCode;
+    process.exitCode = 0;
+    spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stdout += chunk.toString();
+      return true;
+    }) as typeof process.stdout.write);
+    spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderr += chunk.toString();
+      return true;
+    }) as typeof process.stderr.write);
+    spyOn(console, 'log').mockImplementation((...args: unknown[]) => { stdout += `${args.join(' ')}\n`; });
+    spyOn(console, 'error').mockImplementation((...args: unknown[]) => { stderr += `${args.join(' ')}\n`; });
+  });
+
+  afterEach(() => {
+    mock.restore();
+    // The command reports failure through process.exitCode; do not let it
+    // become the test run's own exit code.
+    process.exitCode = savedExitCode ?? 0;
+  });
+
+  async function list(args: string[], checks: ProfileCheck[] = [], stored = entries, defaultKey: string | null = 'T1') {
+    spyOn(workspacesLib, 'getAllWorkspaceEntries').mockResolvedValue(stored);
+    spyOn(workspacesLib, 'getDefaultWorkspaceId').mockResolvedValue(defaultKey ?? undefined);
+    const check = spyOn(authLib, 'checkAllProfiles').mockImplementation(async (onProgress) => {
+      stored.forEach(({ key }, i) => onProgress?.({ profile: key, index: i + 1, total: stored.length }));
+      return stored.map(({ key }, i) => ({ profile: key, check: checks[i] }));
+    });
+    await createAuthCommand().parseAsync(['list', ...args], { from: 'user' });
+    return { check, exitCode: process.exitCode };
+  }
+
+  it('offers --check and --json, both off by default', () => {
+    expect(longOptions('list').sort()).toEqual(['--check', '--json']);
+    for (const option of subcommand('list')?.options ?? []) {
+      expect(option.defaultValue).toBe(false);
+    }
+  });
+
+  it('prints the stored profiles and checks nothing without --check', async () => {
+    const { check, exitCode } = await list([]);
+    expect(check).not.toHaveBeenCalled();
+    expect(stdout).toContain('Authenticated Workspaces (2)');
+    expect(stdout).toContain('1. ');
+    expect(stdout).toContain('Profile: bot');
+    expect(stdout).not.toContain('Status:');
+    expect(stderr).toBe('');
+    expect(exitCode).toBe(0);
+  });
+
+  it('writes one JSON object with no check field without --check', async () => {
+    const { check, exitCode } = await list(['--json']);
+    expect(check).not.toHaveBeenCalled();
+    expect(JSON.parse(stdout)).toEqual({ default: 'T1', workspaces: listed });
+    expect(exitCode).toBe(0);
+  });
+
+  it('reports a null default when none is stored', async () => {
+    await list(['--json'], [], entries, null);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.default).toBeNull();
+    expect(parsed.workspaces.map((w: { is_default: boolean }) => w.is_default)).toEqual([false, false]);
+  });
+
+  it('adds a check to every profile and exits 0 when all are ok', async () => {
+    const { check, exitCode } = await list(['--check', '--json'], [ok, ok]);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(stdout)).toEqual({
+      default: 'T1',
+      workspaces: [{ ...listed[0], check: ok }, { ...listed[1], check: ok }],
+    });
+    expect(exitCode).toBe(0);
+  });
+
+  it.each([
+    ['an auth failure', [ok, refused]],
+    ['an unreachable profile', [unreachable, ok]],
+    ['a mix of failures', [refused, unreachable]],
+  ] as const)('exits 1 with %s, still writing one JSON object for every profile', async (_name, checks) => {
+    const { exitCode } = await list(['--check', '--json'], [...checks]);
+    expect(JSON.parse(stdout).workspaces.map((w: { check: ProfileCheck }) => w.check)).toEqual([...checks]);
+    expect(exitCode).toBe(1);
+  });
+
+  it('prints a status under each profile with --check', async () => {
+    const { exitCode } = await list(['--check'], [refused, unreachable]);
+    expect(stdout).toContain('Status: auth failed (invalid_auth: The stored browser session is no longer valid.)');
+    expect(stdout).toContain('To fix: slackcli auth login-auto');
+    expect(stdout).toContain('Status: unreachable (Slack API error: fetch failed)');
+    expect(exitCode).toBe(1);
+
+    stdout = '';
+    process.exitCode = 0;
+    const verified = await list(['--check'], [ok, ok]);
+    expect(stdout.match(/Status: ok \(alice, U1\)/g)).toHaveLength(2);
+    expect(verified.exitCode).toBe(0);
+  });
+
+  it.each([[[]], [['--check']]] as const)('prints the guidance and exits 0 for %j when no profile is stored', async (args) => {
+    const { check, exitCode } = await list([...args], [], [], null);
+    expect(check).not.toHaveBeenCalled();
+    expect(stdout).toContain('No authenticated workspaces found.');
+    expect(stdout).toContain('Run "slackcli auth login" or "slackcli auth login-browser" to authenticate.');
+    expect(exitCode).toBe(0);
+  });
+
+  it.each([[['--json']], [['--check', '--json']]] as const)('writes an empty list for %j when no profile is stored', async (args) => {
+    const { check, exitCode } = await list([...args], [], [], null);
+    expect(check).not.toHaveBeenCalled();
+    expect(JSON.parse(stdout)).toEqual({ default: null, workspaces: [] });
+    expect(exitCode).toBe(0);
+  });
+
+  it('exits 1 with the error and nothing on stdout when the config cannot be read', async () => {
+    spyOn(workspacesLib, 'getAllWorkspaceEntries').mockRejectedValue(new Error('workspaces.json is not valid JSON'));
+    const exitSpy = mock(() => { throw new Error('exit'); });
+    const originalExit = process.exit;
+    process.exit = exitSpy as never;
+    try {
+      await expect(
+        createAuthCommand().parseAsync(['list', '--check', '--json'], { from: 'user' }),
+      ).rejects.toThrow('exit');
+      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(stderr).toContain('workspaces.json is not valid JSON');
       expect(stdout).toBe('');
     } finally {
       process.exit = originalExit;

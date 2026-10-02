@@ -19,6 +19,7 @@ import {
   formatEmojiList,
   formatUsergroup,
   formatIdentity,
+  formatWorkspace,
   error,
 } from './formatter.ts';
 import { SlackAuthError } from './auth-errors.ts';
@@ -1014,5 +1015,80 @@ describe('formatIdentity', () => {
     expect(output).toContain('  Status: unreachable');
     expect(output).not.toContain('authentication failed');
     expect(output).toContain('  User: U123 (stored at login)');
+  });
+});
+
+describe('formatWorkspace', () => {
+  let savedLevel: typeof chalk.level;
+
+  beforeEach(() => {
+    savedLevel = chalk.level;
+    chalk.level = 0;
+  });
+
+  afterEach(() => {
+    chalk.level = savedLevel;
+  });
+
+  const browser = {
+    workspace_id: 'T1',
+    workspace_name: 'example',
+    workspace_url: 'https://example.slack.com',
+    auth_type: 'browser',
+    xoxd_token: 'xoxd-secretcookie',
+    xoxc_token: 'xoxc-secrettoken',
+  } as const;
+
+  it('prints exactly the stored details when no check is supplied', () => {
+    expect(formatWorkspace(browser, true, 'T1')).toBe('example (default)\n  ID: T1\n  Auth: 🌐 Browser');
+    expect(formatWorkspace({ ...browser, secret_backend: 'keychain' }, false, 'acme')).toBe(
+      'example \n  ID: T1\n  Profile: acme\n  Auth: 🌐 Browser\n  Secrets: keychain',
+    );
+    expect(formatWorkspace(browser, false, 'acme', undefined)).toBe(formatWorkspace(browser, false, 'acme'));
+  });
+
+  it('appends an ok status with the user Slack reported', () => {
+    const plain = formatWorkspace(browser, false, 'acme');
+    expect(formatWorkspace(browser, false, 'acme', { status: 'ok', user: 'alice', user_id: 'U1' })).toBe(
+      `${plain}\n  Status: ok (alice, U1)`,
+    );
+    expect(
+      formatWorkspace(browser, false, 'acme', { status: 'ok', user: 'helper', user_id: 'U2', bot_id: 'B1' }),
+    ).toBe(`${plain}\n  Status: ok (helper, U2, bot B1)`);
+  });
+
+  it('appends the Slack code, its meaning and the fix when the credentials were refused', () => {
+    const out = formatWorkspace(browser, false, 'acme', {
+      status: 'auth_failed',
+      error: { code: 'invalid_auth', meaning: 'The stored browser session is no longer valid.', fix: 'slackcli auth login-auto' },
+    });
+    expect(out).toBe(
+      `${formatWorkspace(browser, false, 'acme')}` +
+        '\n  Status: auth failed (invalid_auth: The stored browser session is no longer valid.)' +
+        '\n  To fix: slackcli auth login-auto',
+    );
+  });
+
+  it('appends the store message, with no fix line, when the credentials could not be read', () => {
+    const out = formatWorkspace(browser, false, 'acme', {
+      status: 'auth_failed',
+      error: { message: 'Stored credentials for profile "acme" are incomplete (missing xoxc).' },
+    });
+    expect(out).toContain('\n  Status: auth failed (Stored credentials for profile "acme" are incomplete (missing xoxc).)');
+    expect(out).not.toContain('To fix:');
+  });
+
+  it('reports an unreachable Slack as such, never as an authentication failure', () => {
+    const out = formatWorkspace(browser, false, 'acme', {
+      status: 'unreachable',
+      error: { message: 'Slack API error: fetch failed' },
+    });
+    expect(out).toBe(`${formatWorkspace(browser, false, 'acme')}\n  Status: unreachable (Slack API error: fetch failed)`);
+    expect(out).not.toContain('auth failed');
+  });
+
+  it('never prints a token', () => {
+    const out = formatWorkspace(browser, true, 'acme', { status: 'ok', user: 'alice', user_id: 'U1' });
+    expect(out).not.toContain('secret');
   });
 });

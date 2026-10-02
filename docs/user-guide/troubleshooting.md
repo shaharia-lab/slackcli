@@ -49,6 +49,19 @@ It also shows which profile was selected and by what (`--workspace`,
 workspace I think I am?". Details in
 [authentication](authentication.md#check-who-you-are-signed-in-as).
 
+With several workspaces, check all of them at once:
+
+```bash
+slackcli auth list --check
+```
+
+Each profile gets a `Status:` line — `ok`, `auth failed` (with the code, its
+meaning and a `To fix:` line), or `unreachable` — and the command exits `1` if
+any of them is not `ok`. An `auth failed` line with no code means the stored
+credentials could not be read at all, for example a Keychain item that was
+deleted: log in to that workspace again. Details in
+[authentication](authentication.md#check-every-stored-profile).
+
 ## Authentication fails
 
 **Standard tokens**

@@ -592,7 +592,7 @@ export function createAuthCommand(): Command {
         '(end with an empty line), in that order.',
       'Prefer --from-clipboard or stdin over the argument: an argument lands in shell history.',
       'Without --login it stores nothing, but prints the full xoxd/xoxc tokens on stdout as a ready-to-run ' +
-        '"auth login-browser" command: do not capture or log that output. --login avoids printing them.',
+        '"auth login-browser" command: do not capture or log that output. With --login only a 20-character prefix is shown.',
     ],
   })
     .argument('[curl-command]', 'cURL command copied from DevTools (or use --from-clipboard, stdin, or interactive paste)')

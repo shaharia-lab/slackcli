@@ -13,6 +13,37 @@ slackcli conversations list --workspace="My Team"
 
 `--workspace` is accepted by every command that talks to Slack.
 
+## Pin a workspace for one shell
+
+Set `SLACKCLI_WORKSPACE` to select a workspace for every command in the current
+shell, script, or job, without repeating `--workspace` and without changing the
+default that other terminals use:
+
+```bash
+export SLACKCLI_WORKSPACE=acme
+slackcli conversations list                     # runs against acme
+slackcli conversations list --workspace=other   # the flag still wins
+```
+
+A command picks its workspace from the first of these that is set:
+
+| Order | Source | Scope |
+| --- | --- | --- |
+| 1 | `--workspace <id\|name>` | That one command |
+| 2 | `SLACKCLI_WORKSPACE` | The current shell or process environment |
+| 3 | The stored default (`auth set-default`) | Every shell on the machine |
+
+- The variable takes the same values as `--workspace` (see
+  [how a selector is resolved](#how-a-selector-is-resolved)).
+- An unset, empty, or whitespace-only variable is ignored.
+- A value that matches no profile is an error that names the variable —
+  `Workspace not found: acme (from SLACKCLI_WORKSPACE)` — and never falls back to
+  the stored default. A value that matches several profiles gets the same
+  "matches multiple profiles" error as the flag.
+- `auth list`, `auth set-default`, `auth remove`, and the login commands ignore
+  the variable: `auth list` still marks the stored default, and `auth
+  set-default` still changes it.
+
 ## Several identities in one workspace
 
 By default each workspace is stored once. To keep **more than one identity for
@@ -56,7 +87,7 @@ slackcli messages send --recipient-id=C123 --message="Done" --workspace=automati
 
 ## How a selector is resolved
 
-`--workspace`, `auth set-default`, and `auth remove` all accept the same kinds of
+`--workspace`, `SLACKCLI_WORKSPACE`, `auth set-default`, and `auth remove` all accept the same kinds of
 value, tried in this order:
 
 1. An exact profile key

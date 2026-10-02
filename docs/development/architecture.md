@@ -223,7 +223,15 @@ is valid.
   verification and persistence back through `authenticateBrowser()`, so a
   workspace enrolled by the browser is indistinguishable from one added by hand.
 - `getAuthenticatedClient(identifier?)` is what every command calls to get a
-  ready `SlackClient`.
+  ready `SlackClient`. It is also the one place the workspace is chosen:
+  `effectiveWorkspaceSelector(flag, env)` — pure — picks the `--workspace` value,
+  then `SLACKCLI_WORKSPACE` (trimmed; empty counts as unset), then the stored
+  default, and `selectWorkspace()` resolves that through `getWorkspace()` or
+  throws. A selector that matches nothing never falls back to the default, and
+  the error names the variable when the value came from it. Commands keep
+  passing `options.workspace`; they never read the variable themselves. The
+  `auth` management commands (`list`, `set-default`, `remove`, logins) do not go
+  through this seam and so ignore the variable.
 
 Per-workspace failures in `authenticateAuto()` are collected rather than thrown:
 when several workspaces are captured at once, one stale token must not discard

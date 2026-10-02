@@ -3,7 +3,15 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
-import { authenticateAuto, AutoLoginError } from './auth';
+import {
+  authenticateAuto,
+  AutoLoginError,
+  effectiveWorkspaceSelector,
+  selectWorkspace,
+  WORKSPACE_ENV_VAR,
+} from './auth';
+import { AmbiguousWorkspaceError, resolveWorkspace } from './workspaces';
+import type { WorkspaceConfig, WorkspacesData } from '../types/index';
 import { configureLogging } from './logger';
 
 // A failed `login-auto` must leave enough in the log to answer "which browser,
@@ -68,5 +76,139 @@ describe.skipIf(process.platform === 'win32')('authenticateAuto logging', () => 
     expect(error).toBeInstanceOf(AutoLoginError);
     const failure = records.find((r) => r.category.join('.') === 'slackcli.auth' && r.level === 'error');
     expect(failure?.properties.reason).toBe('browser_not_found');
+  });
+});
+
+describe('effectiveWorkspaceSelector', () => {
+  it('prefers the flag over the environment variable', () => {
+    expect(effectiveWorkspaceSelector('other', 'acme')).toEqual({ identifier: 'other', source: 'flag' });
+  });
+
+  it('uses the environment variable when no flag is given', () => {
+    expect(effectiveWorkspaceSelector(undefined, 'acme')).toEqual({ identifier: 'acme', source: 'env' });
+  });
+
+  it('treats an empty flag as not given', () => {
+    expect(effectiveWorkspaceSelector('', 'acme')).toEqual({ identifier: 'acme', source: 'env' });
+  });
+
+  it('trims the environment value', () => {
+    expect(effectiveWorkspaceSelector(undefined, '  acme\n')).toEqual({ identifier: 'acme', source: 'env' });
+  });
+
+  it('keeps inner whitespace, so a workspace name with spaces still works', () => {
+    expect(effectiveWorkspaceSelector(undefined, ' My Team ')).toEqual({ identifier: 'My Team', source: 'env' });
+  });
+
+  it.each([undefined, '', ' ', '\t\n  '])('falls back to the stored default for env %p', (env) => {
+    const selector = effectiveWorkspaceSelector(undefined, env);
+    expect(selector).toEqual({ source: 'default' });
+    expect('identifier' in selector).toBe(false);
+  });
+
+  it('does not let a blank environment value shadow the flag', () => {
+    expect(effectiveWorkspaceSelector('other', '  ')).toEqual({ identifier: 'other', source: 'flag' });
+  });
+});
+
+describe('selectWorkspace', () => {
+  const standard = (id: string, name: string, profile?: string): WorkspaceConfig => ({
+    workspace_id: id,
+    workspace_name: name,
+    auth_type: 'standard',
+    token: 'xoxb-test',
+    token_type: 'bot',
+    ...(profile ? { profile } : {}),
+  });
+
+  // Two identities in team T1 (so "T1" by id and "example" by name are
+  // ambiguous), plus an unrelated default.
+  const data: WorkspacesData = {
+    default_workspace: 'T2',
+    workspaces: {
+      acme: standard('T1', 'example', 'acme'),
+      'T1-2': standard('T1', 'example'),
+      T2: standard('T2', 'other'),
+    },
+  };
+  // Same matching as the real getWorkspace(), minus the config file.
+  const lookup = async (identifier?: string) => resolveWorkspace(data, identifier)?.config ?? null;
+  const select = (flag?: string, env?: string) => selectWorkspace(effectiveWorkspaceSelector(flag, env), lookup);
+
+  let records: LogRecord[];
+
+  beforeEach(() => {
+    records = [];
+    configureLogging({ level: 'debug', verbose: false, sinks: { capture: (r) => records.push(r) } });
+  });
+
+  afterEach(() => {
+    resetSync();
+  });
+
+  const authRecords = () => records.filter((r) => r.category.join('.') === 'slackcli.auth');
+
+  it('selects the profile named by the environment variable', async () => {
+    expect(await select(undefined, 'acme')).toBe(data.workspaces.acme);
+  });
+
+  it('accepts every selector kind --workspace accepts', async () => {
+    expect(await select(undefined, 'T1-2')).toBe(data.workspaces['T1-2']); // profile key
+    expect(await select(undefined, 'T2')).toBe(data.workspaces.T2); // workspace id
+    expect(await select(undefined, 'other')).toBe(data.workspaces.T2); // workspace name
+  });
+
+  it('lets the flag override the environment variable', async () => {
+    expect(await select('T2', 'acme')).toBe(data.workspaces.T2);
+  });
+
+  it.each([undefined, '', '   '])('uses the stored default when the variable is %p', async (env) => {
+    expect(await select(undefined, env)).toBe(data.workspaces.T2);
+  });
+
+  it('names the variable when its value matches no profile, and does not fall back', async () => {
+    await expect(select(undefined, 'nope')).rejects.toThrow(`Workspace not found: nope (from ${WORKSPACE_ENV_VAR})`);
+  });
+
+  it('reports a trimmed value in the not-found error', async () => {
+    await expect(select(undefined, ' nope ')).rejects.toThrow('Workspace not found: nope (from SLACKCLI_WORKSPACE)');
+  });
+
+  it('keeps the plain not-found error for an unknown flag value', async () => {
+    const failure = await select('nope', 'acme').catch((e: Error) => e);
+    expect((failure as Error).message).toBe('Workspace not found: nope');
+  });
+
+  it('raises the existing ambiguity error for an ambiguous environment value', async () => {
+    const failure = await select(undefined, 'example').catch((e: Error) => e);
+    expect(failure).toBeInstanceOf(AmbiguousWorkspaceError);
+    expect((failure as AmbiguousWorkspaceError).keys).toEqual(['acme', 'T1-2']);
+  });
+
+  it('reports no workspace configured when nothing is stored and nothing is selected', async () => {
+    await expect(selectWorkspace({ source: 'default' }, async () => null)).rejects.toThrow(
+      'No workspace configured. Run "slackcli auth login" first.',
+    );
+  });
+
+  it.each([
+    ['flag', 'T2', 'acme'],
+    ['env', undefined, 'acme'],
+    ['default', undefined, undefined],
+  ] as const)('logs the selection source %s without the selector value', async (source, flag, env) => {
+    const workspace = await select(flag, env);
+    const [record] = authRecords();
+    expect(record.properties).toMatchObject({ source, workspace_id: workspace.workspace_id });
+    // `run_id` is added to every record by the logger.
+    const keys = Object.keys(record.properties).filter((key) => key !== 'run_id');
+    expect(keys.sort()).toEqual(['auth_type', 'source', 'workspace_id']);
+  });
+
+  it('logs the source, not the value, when nothing resolves', async () => {
+    await select(undefined, 'nope').catch(() => {});
+    const [record] = authRecords();
+    expect(record.level).toBe('warning');
+    expect(record.properties).toMatchObject({ source: 'env' });
+    expect(JSON.stringify(record.properties)).not.toContain('nope');
   });
 });

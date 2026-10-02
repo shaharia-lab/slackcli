@@ -17,6 +17,15 @@ slackcli messages send --recipient-id=C1234567890 --message="Hello from the term
 `slackcli --help`, and `slackcli <group> --help`, print the authoritative option
 list for the version you have installed.
 
+Running `slackcli` on its own in a terminal shows a short welcome screen: the
+logo and version, a pointer to `slackcli --help`, the repository link (a star
+helps the project) and where to report a bug or request a feature. It prints only
+when stdout is a terminal. From a script, a pipe, CI or an AI agent, bare
+`slackcli` still prints the plain help to stderr and exits `1`, as before. The
+screen uses colour unless `NO_COLOR` is set, and falls back to a plain title in
+a terminal narrower than the logo (47 columns) and to `*` for the star emoji
+where the terminal is not known to show Unicode.
+
 ## Command groups
 
 | Group | What it does |

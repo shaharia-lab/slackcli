@@ -92,12 +92,13 @@ export function renderBanner({ version, columns, unicode, color }: BannerOptions
 
   const bar = c.yellow('|');
   const star = unicode ? '⭐' : '*';
+  const starText = `${star} Like SlackCLI? Star the repo to support it!`;
   lines.push(
     '',
     '  Slack from your terminal, for humans and AI agents.',
     `  Run  ${c.bold('slackcli --help')}  to see all commands.`,
     '',
-    `  ${bar} ${c.bold(`${star} Like SlackCLI? Star the repo to support it!`)}`,
+    `  ${bar} ${c.bold(starText)}`,
     `  ${bar}    ${c.cyan(REPO_URL)}`,
     '',
     '  Report a bug or request a feature:',

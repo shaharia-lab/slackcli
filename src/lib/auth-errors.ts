@@ -129,7 +129,8 @@ export function describeAuthError(code: AuthErrorCode, profile: AuthErrorProfile
  */
 export function formatAuthError(description: AuthErrorDescription, profile: AuthErrorProfile): string {
   const name = printable(profile.workspaceName);
-  const who = `profile "${printable(profile.profileKey)}" (${name ? `${name}, ` : ''}${profile.authType} auth)`;
+  const namePart = name ? `${name}, ` : '';
+  const who = `profile "${printable(profile.profileKey)}" (${namePart}${profile.authType} auth)`;
   return [
     `Authentication failed for ${who}: ${description.code}`,
     `   ${description.meaning}`,

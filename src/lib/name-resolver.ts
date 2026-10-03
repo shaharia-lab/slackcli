@@ -78,6 +78,29 @@ function acceptsUser(expected: ExpectedKind): boolean {
   return expected === 'user' || expected === 'channel-or-user';
 }
 
+/** A `#name` / `@handle` input, given its prefix and what follows it. */
+function parsePrefixed(
+  prefix: '#' | '@',
+  rest: string,
+  expected: ExpectedKind,
+): NameReference | null {
+  // `@U0123456789` / `#C0123456789` are IDs written with a prefix.
+  if (!rest || isIdLike(rest)) return null;
+  if (prefix === '#') return acceptsChannel(expected) ? { kind: 'channel', name: rest } : null;
+  return acceptsUser(expected) ? { kind: 'user', handle: rest } : null;
+}
+
+/** An input with no prefix: an e-mail address, or a bare channel or user name. */
+function parseBare(value: string, expected: ExpectedKind): NameReference | null {
+  if (EMAIL_PATTERN.test(value)) {
+    return acceptsUser(expected) ? { kind: 'email', email: value } : null;
+  }
+
+  if (expected === 'channel') return { kind: 'channel', name: value };
+  if (expected === 'user') return { kind: 'user', handle: value };
+  return { kind: 'channel-or-user', name: value };
+}
+
 /**
  * The name an input refers to, or null when it is an ID, a Slack URL, or a form
  * this argument does not take a name in (file arguments never do).
@@ -88,21 +111,8 @@ export function parseNameReference(input: string, expected: ExpectedKind): NameR
   if (isIdLike(value)) return null;
 
   const prefix = value[0];
-  if (prefix === '#' || prefix === '@') {
-    const rest = value.slice(1).trim();
-    // `@U0123456789` / `#C0123456789` are IDs written with a prefix.
-    if (!rest || isIdLike(rest)) return null;
-    if (prefix === '#') return acceptsChannel(expected) ? { kind: 'channel', name: rest } : null;
-    return acceptsUser(expected) ? { kind: 'user', handle: rest } : null;
-  }
-
-  if (EMAIL_PATTERN.test(value)) {
-    return acceptsUser(expected) ? { kind: 'email', email: value } : null;
-  }
-
-  if (expected === 'channel') return { kind: 'channel', name: value };
-  if (expected === 'user') return { kind: 'user', handle: value };
-  return { kind: 'channel-or-user', name: value };
+  if (prefix === '#' || prefix === '@') return parsePrefixed(prefix, value.slice(1).trim(), expected);
+  return parseBare(value, expected);
 }
 
 /**

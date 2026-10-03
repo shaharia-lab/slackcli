@@ -23,8 +23,12 @@ export const STDIN_PATH = '-';
  */
 export const MAX_STDIN_BYTES = 1024 * 1024;
 
-/** How long to wait for end of input before giving up on a pipe that never closes. */
-export const STDIN_TIMEOUT_MS = 30_000;
+/**
+ * How long the whole read may take. It is a backstop against a pipe nobody
+ * ever closes (an unattended run would hang forever), so it is generous: a
+ * producer that needs minutes, such as a build, still gets its text through.
+ */
+export const STDIN_TIMEOUT_MS = 5 * 60_000;
 
 export interface MessageTextOptions {
   message?: string;
@@ -100,7 +104,7 @@ export function readStreamText(
     const onError = (err: unknown) => finish(err instanceof Error ? err : new Error(String(err)));
 
     const timer = setTimeout(
-      () => finish(new Error(`no end of input after ${limits.timeoutMs / 1000} s; the pipe was never closed`)),
+      () => finish(new Error(`no end of input after ${limits.timeoutMs / 1000} s; the writing side of the pipe is still open`)),
       limits.timeoutMs
     );
 

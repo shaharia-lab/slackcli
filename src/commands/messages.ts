@@ -36,7 +36,7 @@ const MESSAGE_TEXT_NOTE =
   'One of --message or --message-file is required; they are mutually exclusive.';
 const STDIN_NOTE =
   '--message-file - reads the text from piped standard input (no shell quoting, no temp file); ' +
-  'one trailing newline is dropped. A terminal on stdin, more than 1 MB, or a pipe not closed within 30 s is refused.';
+  'one trailing newline is dropped. A terminal on stdin, more than 1 MB, or a pipe still open after 5 minutes is refused.';
 const RECIPIENT_NOTE =
   '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM), a Slack URL, ' +
   'a channel name (#general) or a user (@alice, alice@example.com). A bare name must match ' +
@@ -63,6 +63,7 @@ const HELP = {
       'slackcli messages send --recipient-id="#general" --message "Deploy done"',
       'slackcli messages send --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message "Fixed"',
       'slackcli messages send --recipient-id U0123456789 --message-file ./note.md --json',
+      'slackcli messages send --recipient-id C0123456789 --message-file - < ./report.txt',
       'slackcli messages send --recipient-id C0123456789 --message "Deploy done" --dry-run',
     ],
     json:

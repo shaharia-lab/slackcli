@@ -159,7 +159,6 @@ describe('messages command', () => {
   });
 });
 
-
 describe('permalinkField', () => {
   it('spreads a permalink in when the lookup succeeds', async () => {
     const client = {

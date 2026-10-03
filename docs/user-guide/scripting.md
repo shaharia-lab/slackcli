@@ -247,7 +247,7 @@ MSG
 Quote the heredoc delimiter (`<<'MSG'`) so the shell leaves `$` and backticks
 alone. One trailing newline is dropped; the rest is sent as is. Empty input, a
 terminal on standard input, more than 1 MB, or a pipe that stays open for more
-than 30 seconds exits 1 with `invalid_input`, and nothing is posted. The same
+than 5 minutes exits 1 with `invalid_input`, and nothing is posted. The same
 works on `messages edit` and `messages draft`.
 
 **Reply into a thread from a link** — no ID juggling:

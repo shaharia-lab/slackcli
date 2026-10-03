@@ -105,8 +105,12 @@ MSG
   fails at once and tells you to pipe the text in. It never waits for typing.
 - Empty or whitespace-only input is rejected like an empty file, and nothing is
   sent.
-- At most 1 MB is read (a Slack message holds about 40 KB). Larger input, or a
-  pipe that is still open after 30 seconds, is an error and nothing is sent.
+- At most 1 MB is read (a Slack message holds about 40 KB). Larger input is an
+  error and nothing is sent.
+- The command waits for the producer to finish, for up to 5 minutes. A pipe
+  that is still open after that is an error and nothing is sent, so a stuck
+  producer cannot hang an unattended run. For a step that takes longer, write
+  its output to a file first and pass the path.
 - Only `-` itself means standard input. To read a file that is really named
   `-`, write `./-`.
 - `--message` cannot be combined with `--message-file -`, as with a path.

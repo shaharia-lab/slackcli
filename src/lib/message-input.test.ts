@@ -136,6 +136,16 @@ describe('readStreamText', () => {
     await expect(failed).rejects.toThrow('input is larger than 4 bytes');
   });
 
+  it('waits through a slow producer that finishes inside the deadline', async () => {
+    const stream = new FakeStream();
+    const read = readStreamText(stream, { maxBytes: 16, timeoutMs: 400 });
+    setTimeout(() => {
+      stream.emit('data', Buffer.from('late'));
+      stream.emit('end');
+    }, 60);
+    expect(await read).toBe('late');
+  });
+
   it('gives up when the input never ends', async () => {
     const stream = new FakeStream();
     const started = Date.now();
@@ -179,9 +189,9 @@ describe('readStreamText', () => {
     expect(await read).toBe('plain');
   });
 
-  it('defaults to 1 MB and 30 seconds', () => {
+  it('defaults to 1 MB and 5 minutes', () => {
     expect(MAX_STDIN_BYTES).toBe(1024 * 1024);
-    expect(STDIN_TIMEOUT_MS).toBe(30_000);
+    expect(STDIN_TIMEOUT_MS).toBe(300_000);
   });
 });
 

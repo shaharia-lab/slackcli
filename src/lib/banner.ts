@@ -80,7 +80,7 @@ export function renderBanner({ version, columns, unicode, color }: BannerOptions
   if (columns >= LOGO_WIDTH) {
     const logo = LOGO_LINES.map((line) => c.bold(line));
     if (LOGO_WIDTH + VERSION_GAP.length + versionLabel.length <= columns) {
-      const last = LOGO_LINES[LOGO_LINES.length - 1].padEnd(LOGO_WIDTH);
+      const last = (LOGO_LINES.at(-1) ?? '').padEnd(LOGO_WIDTH);
       logo[logo.length - 1] = c.bold(last) + VERSION_GAP + c.dim(versionLabel);
     } else {
       logo.push(`  ${c.dim(versionLabel)}`);

@@ -1,9 +1,10 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatSavedItems, writeJson } from '../lib/formatter.ts';
+import { formatSavedItems, writeJson } from '../lib/formatter.ts';
 import { enrichSavedItems } from '../lib/saved.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { failCommand } from '../lib/command-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -71,9 +72,7 @@ export function createSavedCommand(): Command {
 
         console.log('\n' + formatSavedItems(items, users));
       } catch (err: any) {
-        spinner.fail('Failed to fetch saved items');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch saved items' });
       }
     });
 

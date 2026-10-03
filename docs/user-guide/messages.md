@@ -85,8 +85,9 @@ Test for the key rather than assuming it.
 With `--file`, the upload flow returns the attached file rather than a message
 timestamp, so that branch emits `channel_id` and `file_id` only.
 
-Errors are unaffected by `--json`: they still go to stderr with exit code `1`,
-and nothing is written to stdout.
+A failure with `--json` writes nothing to stdout and exits `1`; the last line of
+stderr is a JSON error object with a stable `code`. See
+[errors under `--json`](scripting.md#errors-under---json).
 
 ### Text formatting
 

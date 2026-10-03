@@ -103,6 +103,7 @@ describe('resolveCanvasId', () => {
     expect(err.summary).toBe('No canvas found for this channel');
     expect(err.detail).toBeUndefined();
     expect(err.exitCode).toBe(0);
+    expect(err.code).toBe('not_found');
   });
 
   it('fails with exit code 1 when neither a canvas ID nor a channel is given', async () => {
@@ -113,6 +114,7 @@ describe('resolveCanvasId', () => {
     expect(err.summary).toBe('Missing canvas ID');
     expect(err.detail).toBe('Provide a canvas ID or use --channel to read a channel canvas.');
     expect(err.exitCode).toBe(1);
+    expect(err.code).toBe('invalid_input');
     expect(calls).toEqual([]);
   });
 
@@ -134,6 +136,7 @@ describe('resolveCanvasId', () => {
         'Canvas ID must start with F followed by alphanumeric characters (e.g., F1234567890).',
       );
       expect(err.exitCode).toBe(1);
+      expect(err.code).toBe('invalid_input');
     },
   );
 
@@ -223,6 +226,7 @@ describe('fetchCanvasHtml', () => {
     const err = await captureError(fetchCanvasHtml(client, 'F1'));
 
     expect(err.summary).toBe('Authentication expired');
+    expect(err.code).toBe('auth_failed');
     expect(err.detail).toBe('The downloaded content is a Slack sign-in page. Your token may have expired.');
     expect(err.exitCode).toBe(1);
   });

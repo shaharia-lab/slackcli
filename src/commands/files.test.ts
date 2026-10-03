@@ -57,8 +57,12 @@ describe('confirmedOutputPath', () => {
     Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
   }
 
+  const savedExitCode = process.exitCode;
+
   afterEach(() => {
     Object.defineProperty(process.stdin, 'isTTY', { value: realIsTTY, configurable: true });
+    // A refused confirmation sets exit code 1; do not let it become the run's own.
+    process.exitCode = savedExitCode ?? 0;
   });
 
   it('downloads to a path inside the working directory without confirming', async () => {

@@ -25,6 +25,13 @@ import { AUTH_ERROR_CODES, SlackAuthError, authErrorProfile } from './auth-error
 import { SlackClient, SlackTransportError } from './slack-client';
 import * as browserAuth from './browser-auth';
 
+// A failing --json command's error object is the last line of stderr (#326);
+// a spinner's start line may come before it.
+function lastJsonLine(text: string): any {
+  const lines = text.trimEnd().split('\n');
+  return JSON.parse(lines[lines.length - 1]);
+}
+
 // A failed `login-auto` must leave enough in the log to answer "which browser,
 // which step, why" without a reproduction session. Driven end to end through a
 // stand-in browser that exits at once; POSIX-only, since it execs a shell script.
@@ -1079,23 +1086,47 @@ describe.skipIf(process.platform === 'win32')('auth whoami through the CLI', () 
   }, 30_000);
 
   it.each([
-    [['--workspace', 'nope'], '', 'Workspace not found: nope'],
-    [[], 'nope', 'Workspace not found: nope (from SLACKCLI_WORKSPACE)'],
-    [['--workspace', 'example'], '', '"example" matches multiple profiles: T1, second'],
-  ] as const)('exits 1 with a clear error and no Slack call for %j (env %p)', async (args, env, message) => {
+    [['--workspace', 'nope'], '', 'not_found', 'Workspace not found: nope'],
+    [[], 'nope', 'not_found', 'Workspace not found: nope (from SLACKCLI_WORKSPACE)'],
+    [['--workspace', 'example'], '', 'invalid_input', '"example" matches multiple profiles: T1, second'],
+  ] as const)('exits 1 with a JSON error and no Slack call for %j (env %p)', async (args, env, errorCode, message) => {
     const { code, stdout, stderr } = await run([...args, '--json'], env);
+    expect(code).toBe(1);
+    const { error } = lastJsonLine(stderr);
+    expect(error.code).toBe(errorCode);
+    expect(error.message).toContain(message);
+    expect(error.retryable).toBe(false);
+    expect(stdout).toBe('');
+    expect(requests).toEqual([]);
+  }, 30_000);
+
+  it.each([
+    [['--workspace', 'nope'], '', 'Workspace not found: nope'],
+    [['--workspace', 'example'], '', '"example" matches multiple profiles: T1, second'],
+  ] as const)('keeps the text error without --json for %j (env %p)', async (args, env, message) => {
+    const { code, stdout, stderr } = await run([...args], env);
     expect(code).toBe(1);
     expect(stderr).toContain(message);
     expect(stdout).toBe('');
-    expect(requests).toEqual([]);
   }, 30_000);
 
   it('exits 1 with the login hint when no workspace is configured', async () => {
     await writeFile(join(home, '.config', 'slackcli', 'workspaces.json'), JSON.stringify({ workspaces: {} }), { mode: 0o600 });
     const { code, stdout, stderr } = await run(['--json']);
     expect(code).toBe(1);
-    expect(stderr).toContain('No workspace configured. Run "slackcli auth login" first.');
+    expect(lastJsonLine(stderr)).toEqual({
+      error: {
+        code: 'auth_failed',
+        message: 'No workspace configured. Run "slackcli auth login" first.',
+        hint: 'slackcli auth login-auto',
+        retryable: false,
+      },
+    });
     expect(stdout).toBe('');
+
+    const human = await run([]);
+    expect(human.code).toBe(1);
+    expect(human.stderr).toContain('No workspace configured. Run "slackcli auth login" first.');
   }, 30_000);
 });
 

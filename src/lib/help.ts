@@ -168,7 +168,8 @@ export function renderRootFooter(width = HELP_WIDTH): string {
     item(
       'Every command that returns data accepts --json: stdout then carries one JSON object, ' +
         'and progress and errors go to stderr. A few list and search commands print nothing ' +
-        'for an empty result; their notes say so. Errors exit 1.',
+        'for an empty result; their notes say so. Errors exit 1; with --json, the last line of ' +
+        'stderr is then a JSON object {"error":{code,message,hint?,retryable,slack_error?}}.',
     ),
     '',
     'Help:',

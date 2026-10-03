@@ -3,13 +3,14 @@ import ora from 'ora';
 import * as readline from 'node:readline';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import {
-  error,
   formatUsergroup,
   formatUsergroupList,
   writeJson,
 } from '../lib/formatter.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { isInteractiveTerminal } from '../lib/interactive-input.ts';
+import { ConfirmationRequiredError, InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
+import { failCommand } from '../lib/command-errors.ts';
 import {
   addUsergroupMembers,
   fetchUsergroupMembers,
@@ -182,22 +183,26 @@ const HELP = {
   },
 } satisfies Record<string, CommandHelp>;
 
-// Resolve a <group> argument (id / @handle / name) to a group, or fail the
-// spinner and exit. Shared by every subcommand that takes a group reference.
+// Resolve a <group> argument (id / @handle / name) to a group, or report the
+// failure and return undefined, so the caller returns. Shared by every
+// subcommand that takes a group reference.
 async function requireGroup(
   client: any,
   ref: string,
   spinner: ReturnType<typeof ora>,
-  teamId?: string,
-): Promise<SlackUsergroup> {
+  options: { team?: string; json?: boolean },
+): Promise<SlackUsergroup | undefined> {
   spinner.text = 'Resolving user group...';
   const group = await resolveUsergroup(client, ref, {
-    teamId,
+    teamId: options.team,
     onProgress: (msg) => { spinner.text = msg; },
   });
   if (!group) {
-    spinner.fail(`No user group matching "${ref}" (try an ID, @handle, or exact name)`);
-    process.exit(1);
+    failCommand(new NotFoundError(`No user group matching "${ref}" (try an ID, @handle, or exact name)`), {
+      json: options.json,
+      spinner,
+    });
+    return undefined;
   }
   return group;
 }
@@ -216,20 +221,25 @@ export function parseUserIds(raw: string[]): string[] {
 //   TTY,   no --yes   -> prompt y/N interactively
 //   non-TTY, no --yes -> REFUSE with a clear message (never auto-pass, so a
 //                        script cannot mutate a group unattended by accident)
-// Returns true to proceed, false to abort. Every caller exits non-zero on false
-// (both the non-TTY refusal and a TTY "no" decline the write and stop).
-export async function confirmWrite(prompt: string, assumeYes: boolean): Promise<boolean> {
+// Returns true to proceed, false to abort. On false it has already reported the
+// refusal (as a `confirmation_required` object under --json) and set exit code
+// 1, so every caller just returns.
+export async function confirmWrite(prompt: string, assumeYes: boolean, json = false): Promise<boolean> {
   if (assumeYes) return true;
 
   if (!isInteractiveTerminal()) {
-    error(
-      `Refusing to run this write unattended. stdin is not a terminal, so there is ` +
-        `no way to confirm interactively. Re-run with --yes to proceed non-interactively.`,
+    failCommand(
+      new ConfirmationRequiredError(
+        `Refusing to run this write unattended. stdin is not a terminal, so there is ` +
+          `no way to confirm interactively. Re-run with --yes to proceed non-interactively.`,
+        'Re-run with --yes to confirm the write.',
+      ),
+      { json },
     );
     return false;
   }
 
-  return new Promise((resolve) => {
+  const confirmed = await new Promise<boolean>((resolve) => {
     // Prompt on stderr, not stdout: a `--json` command in an interactive
     // terminal still calls this, and writing the "[y/N]" prompt to stdout would
     // corrupt the JSON on the pipe.
@@ -239,6 +249,15 @@ export async function confirmWrite(prompt: string, assumeYes: boolean): Promise<
       resolve(/^y(es)?$/i.test(answer.trim()));
     });
   });
+  if (!confirmed) {
+    // Declining at the prompt is silent in text mode, as it always was.
+    if (json) {
+      failCommand(new ConfirmationRequiredError('The write was not confirmed.'), { json });
+    } else {
+      process.exitCode = 1;
+    }
+  }
+  return confirmed;
 }
 
 export function createUsergroupsCommand(): Command {
@@ -268,9 +287,7 @@ export function createUsergroupsCommand(): Command {
         }
         console.log('\n' + formatUsergroupList(groups));
       } catch (err: any) {
-        spinner.fail('Failed to fetch user groups');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch user groups' });
       }
     });
 
@@ -284,7 +301,8 @@ export function createUsergroupsCommand(): Command {
       const spinner = ora('Fetching user group...').start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const group = await requireGroup(client, ref, spinner, options.team);
+        const group = await requireGroup(client, ref, spinner, options);
+        if (!group) return;
         const { ids, members } = await fetchUsergroupMembers(client, group.id, {
           teamId: options.team,
           onProgress: (msg) => { spinner.text = msg; },
@@ -298,9 +316,7 @@ export function createUsergroupsCommand(): Command {
         }
         console.log('\n' + formatUsergroup(group, members));
       } catch (err: any) {
-        spinner.fail('Failed to read user group');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to read user group' });
       }
     });
 
@@ -315,8 +331,8 @@ export function createUsergroupsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (name, options) => {
-      if (!(await confirmWrite(`Create user group "${name}"?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Create user group "${name}"?`, options.yes, options.json))) {
+        return;
       }
       const spinner = ora(`Creating user group "${name}"...`).start();
       try {
@@ -337,9 +353,7 @@ export function createUsergroupsCommand(): Command {
         }
         console.log('\n' + formatUsergroup(group, []));
       } catch (err: any) {
-        spinner.fail('Failed to create user group');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to create user group' });
       }
     });
 
@@ -355,16 +369,20 @@ export function createUsergroupsCommand(): Command {
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, options) => {
       if (options.name === undefined && options.handle === undefined && options.description === undefined) {
-        error('Nothing to update — pass at least one of --name, --handle, or --description.');
-        process.exit(1);
+        failCommand(
+          new InvalidInputError('Nothing to update — pass at least one of --name, --handle, or --description.'),
+          { json: options.json },
+        );
+        return;
       }
-      if (!(await confirmWrite(`Update user group "${ref}"?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Update user group "${ref}"?`, options.yes, options.json))) {
+        return;
       }
       const spinner = ora('Updating user group...').start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const group = await requireGroup(client, ref, spinner, options.team);
+        const group = await requireGroup(client, ref, spinner, options);
+        if (!group) return;
 
         spinner.text = 'Applying update...';
         const response = await client.updateUsergroup(group.id, {
@@ -383,9 +401,7 @@ export function createUsergroupsCommand(): Command {
         }
         console.log('\n' + formatUsergroup(updated, []));
       } catch (err: any) {
-        spinner.fail('Failed to update user group');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to update user group' });
       }
     });
 
@@ -399,13 +415,14 @@ export function createUsergroupsCommand(): Command {
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, users, options) => {
       const ids = parseUserIds(users);
-      if (!(await confirmWrite(`Add ${ids.length} user(s) to "${ref}"?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Add ${ids.length} user(s) to "${ref}"?`, options.yes, options.json))) {
+        return;
       }
       const spinner = ora('Adding members...').start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const group = await requireGroup(client, ref, spinner, options.team);
+        const group = await requireGroup(client, ref, spinner, options);
+        if (!group) return;
         const result = await addUsergroupMembers(client, group.id, ids, {
           teamId: options.team,
           onProgress: (msg) => { spinner.text = msg; },
@@ -422,9 +439,7 @@ export function createUsergroupsCommand(): Command {
           return;
         }
       } catch (err: any) {
-        spinner.fail('Failed to add members');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to add members' });
       }
     });
 
@@ -438,13 +453,14 @@ export function createUsergroupsCommand(): Command {
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, users, options) => {
       const ids = parseUserIds(users);
-      if (!(await confirmWrite(`Remove ${ids.length} user(s) from "${ref}"?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Remove ${ids.length} user(s) from "${ref}"?`, options.yes, options.json))) {
+        return;
       }
       const spinner = ora('Removing members...').start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const group = await requireGroup(client, ref, spinner, options.team);
+        const group = await requireGroup(client, ref, spinner, options);
+        if (!group) return;
         const result = await removeUsergroupMembers(client, group.id, ids, {
           teamId: options.team,
           onProgress: (msg) => { spinner.text = msg; },
@@ -461,9 +477,7 @@ export function createUsergroupsCommand(): Command {
           return;
         }
       } catch (err: any) {
-        spinner.fail('Failed to remove members');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to remove members' });
       }
     });
 
@@ -475,13 +489,14 @@ export function createUsergroupsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, options) => {
-      if (!(await confirmWrite(`Enable user group "${ref}"?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Enable user group "${ref}"?`, options.yes, options.json))) {
+        return;
       }
       const spinner = ora('Enabling user group...').start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const group = await requireGroup(client, ref, spinner, options.team);
+        const group = await requireGroup(client, ref, spinner, options);
+        if (!group) return;
         const response = await client.enableUsergroup(group.id, { team_id: options.team });
         const updated = normalizeUsergroups([response.usergroup])[0];
 
@@ -491,9 +506,7 @@ export function createUsergroupsCommand(): Command {
           return;
         }
       } catch (err: any) {
-        spinner.fail('Failed to enable user group');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to enable user group' });
       }
     });
 
@@ -504,13 +517,14 @@ export function createUsergroupsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, options) => {
-      if (!(await confirmWrite(`Disable user group "${ref}"?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Disable user group "${ref}"?`, options.yes, options.json))) {
+        return;
       }
       const spinner = ora('Disabling user group...').start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const group = await requireGroup(client, ref, spinner, options.team);
+        const group = await requireGroup(client, ref, spinner, options);
+        if (!group) return;
         const response = await client.disableUsergroup(group.id, { team_id: options.team });
         const updated = normalizeUsergroups([response.usergroup])[0];
 
@@ -520,9 +534,7 @@ export function createUsergroupsCommand(): Command {
           return;
         }
       } catch (err: any) {
-        spinner.fail('Failed to disable user group');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to disable user group' });
       }
     });
 

@@ -1,6 +1,7 @@
 import { getLogger } from '@logtape/logtape';
 import { SlackClient, SlackTransportError } from './slack-client.ts';
 import { SlackAuthError, describeRejectedLogin } from './auth-errors.ts';
+import { CliError, NotFoundError } from './cli-errors.ts';
 import { errorMessageForLog } from './tildify.ts';
 import {
   addWorkspace,
@@ -316,10 +317,10 @@ async function selectWith<T>(
   if (!found) {
     logger.warn('No workspace resolved ({source})', { source: selector.source });
     if (selector.identifier === undefined) {
-      throw new Error('No workspace configured. Run "slackcli auth login" first.');
+      throw new CliError('auth_failed', 'No workspace configured. Run "slackcli auth login" first.', 'slackcli auth login-auto');
     }
     const origin = selector.source === 'env' ? ` (from ${WORKSPACE_ENV_VAR})` : '';
-    throw new Error(`Workspace not found: ${selector.identifier}${origin}`);
+    throw new NotFoundError(`Workspace not found: ${selector.identifier}${origin}`, 'slackcli auth list');
   }
 
   const workspace = configOf(found);

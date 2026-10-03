@@ -105,7 +105,30 @@ describe('logs show', () => {
     const result = run(['logs', 'show', '--run', 'no-such-run', '--json']);
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('No run with run_id "no-such-run"');
+    expect(JSON.parse(result.stderr)).toEqual({
+      error: {
+        code: 'not_found',
+        message: 'No run with run_id "no-such-run" in the log.',
+        hint: 'List recent runs with: slackcli logs show --last 10',
+        retryable: false,
+      },
+    });
+
+    const text = run(['logs', 'show', '--run', 'no-such-run']);
+    expect(text.code).toBe(1);
+    expect(text.stderr).toContain('No run with run_id "no-such-run"');
+  });
+
+  it.each([
+    [['--last=0'], '--last must be a positive integer'],
+    [['--last', '2', '--run', 'x'], 'Use either --last or --run, not both.'],
+  ])('reports %j as invalid_input under --json', (args, message) => {
+    const result = run(['logs', 'show', ...args, '--json']);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe('');
+    const { error } = JSON.parse(result.stderr);
+    expect(error.code).toBe('invalid_input');
+    expect(error.message).toContain(message);
   });
 
   it.each([['0'], ['-1'], ['abc'], ['1.5']])('rejects --last %p', (value) => {

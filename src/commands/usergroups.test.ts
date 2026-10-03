@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import * as readline from 'node:readline';
 import { confirmWrite, createUsergroupsCommand, parseUserIds } from './usergroups.ts';
 
 function subcommand(name: string) {
@@ -43,9 +44,16 @@ describe('parseUserIds', () => {
 
 describe('confirmWrite', () => {
   const realIsTTY = process.stdin.isTTY;
+  let savedExitCode: typeof process.exitCode;
+  beforeEach(() => {
+    savedExitCode = process.exitCode;
+  });
   afterEach(() => {
     // Restore whatever the runner's stdin was.
     Object.defineProperty(process.stdin, 'isTTY', { value: realIsTTY, configurable: true });
+    // A refusal sets exit code 1; do not let it become the test run's own.
+    process.exitCode = savedExitCode ?? 0;
+    mock.restore();
   });
 
   it('proceeds without prompting when --yes is set (even non-TTY)', async () => {
@@ -56,5 +64,61 @@ describe('confirmWrite', () => {
   it('refuses when stdin is not a TTY and --yes is absent', async () => {
     Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
     expect(await confirmWrite('Do it?', false)).toBe(false);
+  });
+
+  it('sets exit code 1 and prints the text refusal on a non-TTY refusal', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+    const lines: string[] = [];
+    spyOn(console, 'error').mockImplementation((...args: unknown[]) => { lines.push(args.join(' ')); });
+    const written = spyOn(process.stderr, 'write').mockImplementation((() => true) as typeof process.stderr.write);
+    process.exitCode = 0;
+    expect(await confirmWrite('Do it?', false)).toBe(false);
+    expect(process.exitCode).toBe(1);
+    expect(lines.join('\n')).toContain('Refusing to run this write unattended.');
+    expect(written).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [false, ''],
+    [true, 'The write was not confirmed.'],
+  ])('sets exit code 1 when the prompt is declined (json %p)', async (json, message) => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    spyOn(readline, 'createInterface').mockReturnValue({
+      question: (_query: string, answer: (text: string) => void) => answer('n'),
+      close: () => {},
+    } as unknown as readline.Interface);
+    let stderr = '';
+    spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderr += chunk.toString();
+      return true;
+    }) as typeof process.stderr.write);
+    process.exitCode = 0;
+    expect(await confirmWrite('Do it?', false, json)).toBe(false);
+    expect(process.exitCode).toBe(1);
+    if (json) {
+      expect(JSON.parse(stderr).error).toEqual({ code: 'confirmation_required', message, retryable: false });
+    } else {
+      // Declining is silent in text mode, as it always was.
+      expect(stderr).toBe('');
+    }
+  });
+
+  it('reports a non-TTY refusal as a confirmation_required object under --json', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+    const printed = spyOn(console, 'error').mockImplementation(() => {});
+    let stderr = '';
+    spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderr += chunk.toString();
+      return true;
+    }) as typeof process.stderr.write);
+    process.exitCode = 0;
+    expect(await confirmWrite('Do it?', false, true)).toBe(false);
+    expect(process.exitCode).toBe(1);
+    expect(printed).not.toHaveBeenCalled();
+    expect(JSON.parse(stderr).error).toMatchObject({
+      code: 'confirmation_required',
+      hint: 'Re-run with --yes to confirm the write.',
+      retryable: false,
+    });
   });
 });

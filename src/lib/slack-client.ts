@@ -13,6 +13,7 @@ import { extractSlackWorkspaceName } from './curl-parser.ts';
 import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
 import type { RetryOptions } from './retry.ts';
+import { UnsupportedAuthTypeError } from './cli-errors.ts';
 import { SlackAuthError, authErrorProfile, isAuthErrorCode } from './auth-errors.ts';
 
 interface ExternalUploadUrlResponse {
@@ -536,7 +537,7 @@ export class SlackClient {
     thread_ts?: string;
   } = {}): Promise<any> {
     if (this.config.auth_type === 'standard') {
-      throw new Error('Draft creation requires browser authentication');
+      throw new UnsupportedAuthTypeError('Draft creation requires browser authentication');
     }
 
     const destinations: any = [{ channel_id: channelId }];
@@ -559,7 +560,7 @@ export class SlackClient {
   // List active drafts (browser auth only; Slack has no public API for drafts).
   async listDrafts(options: { limit?: number } = {}): Promise<SlackDraftListResponse> {
     if (this.config.auth_type === 'standard') {
-      throw new Error('Draft listing requires browser authentication');
+      throw new UnsupportedAuthTypeError('Draft listing requires browser authentication');
     }
 
     const params: Record<string, any> = { is_active: true };
@@ -571,7 +572,7 @@ export class SlackClient {
   // current time. Reusing the draft's last_updated_ts causes draft_has_conflict.
   async deleteDraft(draftId: string): Promise<void> {
     if (this.config.auth_type === 'standard') {
-      throw new Error('Draft deletion requires browser authentication');
+      throw new UnsupportedAuthTypeError('Draft deletion requires browser authentication');
     }
     await this.request('drafts.delete', {
       draft_id: draftId,

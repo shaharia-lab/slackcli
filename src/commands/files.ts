@@ -10,6 +10,7 @@ import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackFile } from '../types/index.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
+import { failCommand } from '../lib/command-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -247,9 +248,7 @@ export function createFilesCommand(): Command {
         }
         console.log('\n' + formatFileInfo(file));
       } catch (err: any) {
-        spinner.fail('Failed to fetch file metadata');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch file metadata' });
       }
     });
 
@@ -297,9 +296,7 @@ export function createFilesCommand(): Command {
         }
         process.stdout.write(result.content + (result.content.endsWith('\n') ? '' : '\n'));
       } catch (err: any) {
-        spinner.fail('Failed to read file');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to read file' });
       }
     });
 

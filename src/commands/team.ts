@@ -1,9 +1,10 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatTeamInfo, writeJson } from '../lib/formatter.ts';
+import { formatTeamInfo, writeJson } from '../lib/formatter.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { SlackTeam } from '../types/index.ts';
+import { failCommand } from '../lib/command-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -65,9 +66,7 @@ export function createTeamCommand(): Command {
 
         console.log('\n' + formatTeamInfo(info));
       } catch (err: any) {
-        spinner.fail('Failed to fetch workspace info');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch workspace info' });
       }
     });
 

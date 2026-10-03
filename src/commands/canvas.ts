@@ -14,6 +14,8 @@ import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../l
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackCanvas } from '../types/index.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { failCommand } from '../lib/command-errors.ts';
+import { InvalidInputError } from '../lib/cli-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -70,17 +72,20 @@ function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | un
 }
 
 // Expected failures keep their own exit code (some have always exited 0);
-// anything else is an unexpected error and exits 1.
-function reportCanvasReadFailure(spinner: Ora, err: any): void {
+// anything else is an unexpected error and exits 1. Under --json, a failure
+// that exits 1 is reported as an error object; an exit-0 one is not a failure.
+function reportCanvasReadFailure(spinner: Ora, err: any, json: boolean): void {
   if (err instanceof CanvasReadError) {
+    if (json && err.exitCode !== 0) {
+      failCommand(err, { json, spinner, message: err.detail ? `${err.summary}. ${err.detail}` : err.summary });
+      return;
+    }
     spinner.fail(err.summary);
     if (err.detail) error(err.detail);
     if (err.exitCode !== 0) process.exit(err.exitCode);
     return;
   }
-  spinner.fail('Failed to read canvas');
-  error(err.message);
-  process.exit(1);
+  failCommand(err, { json, spinner, context: 'Failed to read canvas' });
 }
 
 export function createCanvasCommand(): Command {
@@ -98,9 +103,12 @@ export function createCanvasCommand(): Command {
       try {
         const limit = Number.parseInt(options.limit);
         if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
-          spinner.fail('Invalid limit');
-          error('Limit must be a number between 1 and 1000');
-          process.exit(1);
+          failCommand(new InvalidInputError('Limit must be a number between 1 and 1000'), {
+            json: options.json,
+            spinner,
+            context: 'Invalid limit',
+          });
+          return;
         }
 
         const channel = options.channel
@@ -143,9 +151,7 @@ export function createCanvasCommand(): Command {
 
         console.log('\n' + formatCanvasList(files));
       } catch (err: any) {
-        spinner.fail('Failed to fetch canvases');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch canvases' });
       }
     });
 
@@ -206,7 +212,7 @@ export function createCanvasCommand(): Command {
 
         console.log('\n' + formatCanvasContent(file, markdown));
       } catch (err: any) {
-        reportCanvasReadFailure(spinner, err);
+        reportCanvasReadFailure(spinner, err, options.json);
       }
     });
 

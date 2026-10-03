@@ -13,6 +13,8 @@ import {
 } from '../lib/logs.ts';
 import { confirmWrite } from './usergroups.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { failCommand } from '../lib/command-errors.ts';
+import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -107,8 +109,8 @@ export function createLogsCommand(): Command {
     .option('--json', 'Output as JSON', false)
     .action(async (options) => {
       if (options.last !== undefined && options.run !== undefined) {
-        error('Use either --last or --run, not both.');
-        process.exit(1);
+        failCommand(new InvalidInputError('Use either --last or --run, not both.'), { json: options.json });
+        return;
       }
 
       let last: number | undefined;
@@ -116,8 +118,8 @@ export function createLogsCommand(): Command {
         try {
           last = parseLastOption(options.last);
         } catch (err) {
-          error(describeError(err));
-          process.exit(1);
+          failCommand(new InvalidInputError(describeError(err)), { json: options.json });
+          return;
         }
       }
 
@@ -127,8 +129,8 @@ export function createLogsCommand(): Command {
       try {
         result = await readRuns(dir);
       } catch (err) {
-        error(`Cannot read the log in ${dir}: ${describeError(err)}`);
-        process.exit(1);
+        failCommand(err, { json: options.json, message: `Cannot read the log in ${dir}: ${describeError(err)}` });
+        return;
       }
 
       if (result.skipped > 0) {
@@ -137,8 +139,11 @@ export function createLogsCommand(): Command {
 
       const runs = selectRuns(result.runs, { last, runId: options.run });
       if (options.run !== undefined && runs.length === 0) {
-        error(`No run with run_id "${options.run}" in the log.`, 'List recent runs with: slackcli logs show --last 10');
-        process.exit(1);
+        failCommand(new NotFoundError(`No run with run_id "${options.run}" in the log.`), {
+          json: options.json,
+          hint: 'List recent runs with: slackcli logs show --last 10',
+        });
+        return;
       }
 
       if (options.json) {

@@ -1,6 +1,7 @@
 import { isAuthPage } from './canvas-parser.ts';
 import type { SlackClient } from './slack-client.ts';
 import type { SlackCanvas, SlackUser } from '../types/index.ts';
+import { CliError, type ErrorCode } from './cli-errors.ts';
 
 const CANVAS_ID_PATTERN = /^F[A-Z0-9]+$/i;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -11,15 +12,16 @@ type OnProgress = (message: string) => void;
  * An expected `canvas read` failure. `summary` is the spinner's fail line and
  * `detail` the follow-up error line, if any. `exitCode` is kept per failure:
  * some paths have always exited 0 after the spinner fails, and callers depend
- * on that, so it is not collapsed into a single "failed" code.
+ * on that, so it is not collapsed into a single "failed" code. `code` is what
+ * a failing `--json` run reports (#326).
  */
-export class CanvasReadError extends Error {
+export class CanvasReadError extends CliError {
   readonly summary: string;
   readonly detail?: string;
   readonly exitCode: 0 | 1;
 
-  constructor(summary: string, exitCode: 0 | 1, detail?: string) {
-    super(detail ?? summary);
+  constructor(summary: string, exitCode: 0 | 1, detail?: string, code: ErrorCode = 'not_found') {
+    super(code, detail ?? summary);
     this.name = 'CanvasReadError';
     this.summary = summary;
     this.detail = detail;
@@ -53,6 +55,7 @@ export async function resolveCanvasId(
       'Missing canvas ID',
       1,
       'Provide a canvas ID or use --channel to read a channel canvas.',
+      'invalid_input',
     );
   }
 
@@ -61,6 +64,7 @@ export async function resolveCanvasId(
       'Invalid canvas ID',
       1,
       'Canvas ID must start with F followed by alphanumeric characters (e.g., F1234567890).',
+      'invalid_input',
     );
   }
 
@@ -95,6 +99,7 @@ export async function fetchCanvasHtml(
       'Authentication expired',
       1,
       'The downloaded content is a Slack sign-in page. Your token may have expired.',
+      'auth_failed',
     );
   }
 

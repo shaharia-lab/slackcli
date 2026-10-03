@@ -1,12 +1,13 @@
 // Helpers that make `conversations read` safe to poll: a strict "newer than the
 // cursor" filter, a self filter, and the cursor to pass back as --oldest.
 import type { SlackAuthTestResponse, SlackMessage } from '../types/index.ts';
+import { InvalidInputError } from './cli-errors.ts';
 
 // Split a Slack ts ("1234567890.123456", or bare epoch seconds "1234567890")
 // into integer seconds and the fractional digits.
 function splitTs(ts: string): { seconds: bigint; fraction: string } {
   const match = /^(\d+)(?:\.(\d+))?$/.exec(ts);
-  if (!match) throw new Error(`Invalid Slack timestamp: ${ts}`);
+  if (!match) throw new InvalidInputError(`Invalid Slack timestamp: ${ts}`);
   return { seconds: BigInt(match[1]), fraction: match[2] ?? '' };
 }
 

@@ -435,16 +435,16 @@ export function isUpdateNotifierDisabled(env: NodeJS.ProcessEnv = process.env): 
   return isTruthyEnv(env.SLACKCLI_NO_UPDATE_NOTIFIER) || isTruthyEnv(env.CI);
 }
 
-// Show a one-line update notification after the command finishes (via beforeExit),
-// and refresh the cache in the background if it is stale. The banner uses the
-// freshly fetched version when the refresh finished, the cached one otherwise.
-// Returns the pending refresh so tests can await it; the CLI does not.
 // Whether the command has already set a non-zero exit code.
 function isFailing(): boolean {
   const code = process.exitCode;
   return code !== undefined && code !== null && Number(code) !== 0;
 }
 
+// Show a one-line update notification after the command finishes (via beforeExit),
+// and refresh the cache in the background if it is stale. The banner uses the
+// freshly fetched version when the refresh finished, the cached one otherwise.
+// Returns the pending refresh so tests can await it; the CLI does not.
 export function notifyIfUpdateAvailable(
   argv: string[] = process.argv,
   env: NodeJS.ProcessEnv = process.env,

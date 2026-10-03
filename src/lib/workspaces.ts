@@ -16,7 +16,7 @@ import {
   type SecretStore,
 } from './secret-store.ts';
 import { warning } from './formatter.ts';
-import { InvalidInputError } from './cli-errors.ts';
+import { InvalidInputError, NotFoundError } from './cli-errors.ts';
 
 const logger = getLogger(['slackcli', 'workspaces']);
 
@@ -322,7 +322,7 @@ export async function dropWorkspace(
 ): Promise<void> {
   const resolved = resolveWorkspace(data, identifier);
   if (!resolved) {
-    throw new Error(`Workspace ${identifier} not found`);
+    throw new NotFoundError(`Workspace ${identifier} not found`);
   }
 
   await deleteCredentials(store, resolved.key, resolved.config.auth_type);
@@ -432,7 +432,7 @@ export async function migrateWorkspaceCredentials(
 ): Promise<MigrationResult> {
   const resolved = resolveWorkspace(data, identifier);
   if (!resolved) {
-    throw new Error(`Workspace ${identifier} not found`);
+    throw new NotFoundError(`Workspace ${identifier} not found`);
   }
 
   const key = resolved.key;
@@ -575,7 +575,7 @@ export async function setDefaultWorkspace(identifier: string): Promise<void> {
 
   const resolved = resolveWorkspace(data, identifier);
   if (!resolved) {
-    throw new Error(`Workspace ${identifier} not found`);
+    throw new NotFoundError(`Workspace ${identifier} not found`);
   }
 
   data.default_workspace = resolved.key;

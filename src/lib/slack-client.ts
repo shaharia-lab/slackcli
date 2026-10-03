@@ -13,7 +13,7 @@ import { extractSlackWorkspaceName } from './curl-parser.ts';
 import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
 import type { RetryOptions } from './retry.ts';
-import { UnsupportedAuthTypeError } from './cli-errors.ts';
+import { InvalidInputError, UnsupportedAuthTypeError } from './cli-errors.ts';
 import { SlackAuthError, authErrorProfile, isAuthErrorCode } from './auth-errors.ts';
 
 interface ExternalUploadUrlResponse {
@@ -482,15 +482,15 @@ export class SlackClient {
   } = {}): Promise<ExternalUploadCompleteResponse> {
     const fileStats = await stat(filePath).catch((error: unknown) => {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-        throw new Error(`File not found: ${filePath}`);
+        throw new InvalidInputError(`File not found: ${filePath}`);
       }
       throw error;
     });
     if (!fileStats.isFile()) {
-      throw new Error(`Cannot upload non-file path: ${filePath}`);
+      throw new InvalidInputError(`Cannot upload non-file path: ${filePath}`);
     }
     if (fileStats.size === 0) {
-      throw new Error(`Cannot upload empty file: ${filePath}`);
+      throw new InvalidInputError(`Cannot upload empty file: ${filePath}`);
     }
 
     const filename = basename(filePath);

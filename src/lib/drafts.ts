@@ -1,11 +1,12 @@
 import type { DraftSummary, SlackDraft, SlackDraftListResponse } from '../types/index.ts';
 import type { SlackClient } from './slack-client.ts';
+import { InvalidInputError, NotFoundError } from './cli-errors.ts';
 
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
 export function parseDraftLimit(value: string): number {
   if (!POSITIVE_INTEGER.test(value)) {
-    throw new Error('--limit must be a positive integer');
+    throw new InvalidInputError('--limit must be a positive integer');
   }
 
   const limit = Number(value);
@@ -113,7 +114,7 @@ export interface SentDraftResult {
 export function findActiveDraft(response: SlackDraftListResponse, draftId: string): SlackDraft {
   const draft = response.drafts?.find((item) => item.id === draftId && !item.is_deleted && !item.is_sent);
   if (!draft) {
-    throw new Error(`Active draft ${draftId} was not found`);
+    throw new NotFoundError(`Active draft ${draftId} was not found`);
   }
   return draft;
 }
@@ -125,27 +126,27 @@ export function validateSendableDraft(draft: SlackDraft): {
   blocks: Array<Record<string, unknown>>;
 } {
   if (draft.date_scheduled && draft.date_scheduled > 0) {
-    throw new Error('Scheduled drafts cannot be sent with this command');
+    throw new InvalidInputError('Scheduled drafts cannot be sent with this command');
   }
   if (draft.file_ids?.length) {
-    throw new Error('Drafts with file attachments cannot be sent with this command');
+    throw new InvalidInputError('Drafts with file attachments cannot be sent with this command');
   }
   if (draft.destinations?.length !== 1) {
-    throw new Error('Draft must have exactly one channel destination');
+    throw new InvalidInputError('Draft must have exactly one channel destination');
   }
   const destination = draft.destinations[0];
   const channelId = destination?.channel_id;
-  if (!channelId) throw new Error('Draft must have exactly one channel destination');
+  if (!channelId) throw new InvalidInputError('Draft must have exactly one channel destination');
   if (destination.broadcast) {
-    throw new Error('Draft has unsupported destination options');
+    throw new InvalidInputError('Draft has unsupported destination options');
   }
   const blocks = draft.blocks ?? [];
   if (!blocks.length || blocks.some((block) => block.type !== 'rich_text')) {
-    throw new Error('Draft must contain supported rich-text blocks');
+    throw new InvalidInputError('Draft must contain supported rich-text blocks');
   }
   const text = extractDraftText(blocks);
   if (!text.trim()) {
-    throw new Error('Draft has no text to send');
+    throw new InvalidInputError('Draft has no text to send');
   }
   return { channelId, threadTs: destination.thread_ts, text, blocks };
 }
@@ -154,13 +155,13 @@ export async function loadActiveDraft(
   client: Pick<SlackClient, 'listDrafts'>,
   draftId: string,
 ): Promise<SlackDraft> {
-  if (!draftId.trim()) throw new Error('Draft ID cannot be empty');
+  if (!draftId.trim()) throw new InvalidInputError('Draft ID cannot be empty');
   const response = await client.listDrafts({ limit: 1000 });
   try {
     return findActiveDraft(response, draftId);
   } catch (error) {
     if (response.has_more) {
-      throw new Error(`Draft ${draftId} was not found in the first 1000 active drafts`);
+      throw new NotFoundError(`Draft ${draftId} was not found in the first 1000 active drafts`);
     }
     throw error;
   }

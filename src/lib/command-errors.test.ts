@@ -19,6 +19,8 @@ import {
   setJsonErrorMode,
 } from './command-errors.ts';
 import { SlackClient, SlackTransportError } from './slack-client.ts';
+import { findActiveDraft, parseDraftLimit, validateSendableDraft } from './drafts.ts';
+import { filterNewerThan } from './poll.ts';
 import { SlackUrlParseError } from './slack-url-parser.ts';
 import type { WorkspaceConfig } from '../types/index.ts';
 
@@ -136,6 +138,47 @@ describe('classifyError', () => {
     expect(result.message).toBe('bad config near xox?-[REDACTED]');
     expect(result.hint).toBe('cookie d=[REDACTED]');
     expect(JSON.stringify(result)).not.toContain('abcdefghijkl');
+  });
+});
+
+// Failures the CLI detects inside lib modules: each is thrown as a typed error,
+// so a --json run reports a specific code rather than `unknown`.
+describe('classifyError on CLI-raised lib failures', () => {
+  async function codeOf(run: () => unknown): Promise<string> {
+    try {
+      await run();
+    } catch (err) {
+      return classifyError(err).code;
+    }
+    throw new Error('expected a failure');
+  }
+
+  const draft = (overrides: Record<string, unknown> = {}) => ({
+    id: 'Dr0123456789',
+    destinations: [{ channel_id: 'C0123456789' }],
+    blocks: [{ type: 'rich_text', elements: [] }],
+    ...overrides,
+  }) as any;
+
+  it.each([
+    ['a draft --limit of 0', () => parseDraftLimit('0'), 'invalid_input'],
+    ['a draft ID that is not active', () => findActiveDraft({ ok: true, drafts: [] } as any, 'Dr0123456789'), 'not_found'],
+    ['a scheduled draft', () => validateSendableDraft(draft({ date_scheduled: 1 })), 'invalid_input'],
+    ['a draft with attachments', () => validateSendableDraft(draft({ file_ids: ['F0123456789'] })), 'invalid_input'],
+    ['a malformed --oldest', () => filterNewerThan([{ ts: '1712345678.000100' } as any], 'yesterday'), 'invalid_input'],
+  ])('reports %s as %p', async (_label, run, code) => {
+    expect(await codeOf(run)).toBe(code);
+  });
+
+  it('reports a --file that does not exist as invalid_input, on either auth type', async () => {
+    const missing = join(tmpdir(), 'slackcli-no-such-file-326.txt');
+    for (const config of [
+      { workspace_id: 'T1', workspace_name: 'x', auth_type: 'standard', token_type: 'bot', token: token('xoxb', 'fake') },
+      { workspace_id: 'T1', workspace_name: 'x', auth_type: 'browser', workspace_url: 'https://acme.slack.com', xoxd_token: token('xoxd', 'f'), xoxc_token: token('xoxc', 'f') },
+    ]) {
+      const client = new SlackClient(config as WorkspaceConfig);
+      expect(await codeOf(() => client.uploadFileExternal('C0123456789', missing))).toBe('invalid_input');
+    }
   });
 });
 

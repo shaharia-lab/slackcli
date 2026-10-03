@@ -9,6 +9,7 @@ import {
   resolveUsergroup,
 } from './usergroups.ts';
 import type { SlackClient } from './slack-client.ts';
+import { InvalidInputError } from './cli-errors.ts';
 
 // Minimal fake client: records every request and returns canned responses
 // keyed by method. Mirrors the SlackClient surface the helpers call.
@@ -190,5 +191,7 @@ describe('addUsergroupMembers / removeUsergroupMembers (read-modify-write)', () 
       'usergroups.users.list': () => ({ ok: true, users: ['U1'] }),
     });
     await expect(removeUsergroupMembers(client, 'S1', ['U1'])).rejects.toThrow(/last member/);
+    // Typed, so a --json run reports invalid_input rather than unknown (#326).
+    await expect(removeUsergroupMembers(client, 'S1', ['U1'])).rejects.toBeInstanceOf(InvalidInputError);
   });
 });

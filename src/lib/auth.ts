@@ -466,7 +466,7 @@ export interface ProfileCheckDeps {
   listEntries?: () => Promise<ResolvedWorkspace[]>;
   /** Reads one profile, credentials included, by its exact key. */
   lookup?: (key: string) => Promise<ResolvedWorkspace | null>;
-  createClient?: IdentityCheckDeps['createClient'];
+  createClient?: NonNullable<IdentityCheckDeps['createClient']>;
 }
 
 // `IdentityResult` without the profile details: `auth list` prints those from

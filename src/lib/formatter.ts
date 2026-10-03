@@ -673,8 +673,12 @@ export function formatDryRun(preview: DryRunPreview): string {
 
   const width = Math.max(...rows.map(([label]) => label.length)) + 1;
   const indent = ' '.repeat(2 + width + 1);
-  const lines = rows.map(([label, value]) =>
-    `  ${`${label}:`.padEnd(width)} ${value.split('\n').join(`\n${indent}`)}`);
+  const continuation = `\n${indent}`;
+  const lines = rows.map(([label, value]) => {
+    const cell = `${label}:`.padEnd(width);
+    const body = value.split('\n').join(continuation);
+    return `  ${cell} ${body}`;
+  });
   return [chalk.bold('Dry run: nothing was sent.'), ...lines].join('\n');
 }
 

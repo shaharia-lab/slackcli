@@ -20,7 +20,7 @@ No Slack app to build, no admin approval to wait for.
 
 <br>
 
-### ⭐ Like the idea? [Star the repo.](https://github.com/shaharia-lab/slackcli)
+### ⭐ Want to support the project? [Star the repo.](https://github.com/shaharia-lab/slackcli)
 
 It takes two seconds, and it is how the next person finds SlackCLI.
 

@@ -231,6 +231,25 @@ slackcli messages send --recipient-id=C123 --message-file=/tmp/notes.md --json
 unreadable file is rejected before anything is posted, so a failed generation
 step cannot silently post an empty message.
 
+**Pipe the text in** with `--message-file -` when it is already in a variable
+or comes from another command. Nothing is quoted for the shell and nothing is
+written to disk:
+
+```bash
+printf '%s' "$REPORT" | slackcli messages send --recipient-id=C123 --message-file - --json
+
+slackcli messages send --recipient-id=C123 --message-file - --json <<'MSG'
+Build `main` failed:
+  "tests" step, see $LOG
+MSG
+```
+
+Quote the heredoc delimiter (`<<'MSG'`) so the shell leaves `$` and backticks
+alone. One trailing newline is dropped; the rest is sent as is. Empty input, a
+terminal on standard input, more than 1 MB, or a pipe that stays open for more
+than 30 seconds exits 1 with `invalid_input`, and nothing is posted. The same
+works on `messages edit` and `messages draft`.
+
 **Reply into a thread from a link** — no ID juggling:
 
 ```bash

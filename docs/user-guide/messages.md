@@ -44,13 +44,16 @@ slackcli messages send --recipient-id=C1234567890 --message="Here is the file" -
 
 # Message text from a file
 slackcli messages send --recipient-id=C1234567890 --message-file=./release-notes.md
+
+# Message text from standard input
+printf '%s' "$REPORT" | slackcli messages send --recipient-id=C1234567890 --message-file -
 ```
 
 | Option | Purpose |
 |---|---|
 | `--recipient-id <id>` | Channel ID, user ID, Slack URL, `"#channel"`, `@handle` or email ([names](links-and-timestamps.md#channel-names-and-user-handles)) |
 | `--message <text>` | Message text. **Required** unless `--message-file` is given |
-| `--message-file <path>` | Read the message text from a UTF-8 file; cannot be combined with `--message` |
+| `--message-file <path>` | Read the message text from a UTF-8 file, or from standard input with `-`; cannot be combined with `--message` |
 | `--thread-ts <ts>` | Post as a reply in this thread |
 | `--permalink <url>` | Replaces `--recipient-id` and `--thread-ts` |
 | `--file <path>` | Attach a file; the message text becomes the comment |
@@ -78,6 +81,37 @@ The file's contents are sent exactly as `--message` would send them, mrkdwn
 included. `--message` and `--message-file` are mutually exclusive, and exactly
 one of them is required. A missing path, or a file that is empty or only
 whitespace, is an error raised **before** anything is sent.
+
+### Message text from standard input (`--message-file -`)
+
+Give `-` as the path and the text is read from standard input. Nothing has to
+be quoted for the shell and no temporary file is written, so this is the
+safest way to send multi-line text, code, or anything containing quotes,
+backticks or `$`:
+
+```bash
+printf '%s' "$REPORT" | slackcli messages send --recipient-id=C1234567890 --message-file -
+
+slackcli messages send --recipient-id=C1234567890 --message-file - <<'MSG'
+Build `main` failed:
+  "tests" step, see $LOG
+MSG
+```
+
+- The text is sent as it arrives. Only **one** trailing newline is dropped,
+  the one `echo` or a heredoc adds; every other character, including further
+  blank lines, is kept.
+- Standard input must be piped or redirected. If it is a terminal, the command
+  fails at once and tells you to pipe the text in. It never waits for typing.
+- Empty or whitespace-only input is rejected like an empty file, and nothing is
+  sent.
+- At most 1 MB is read (a Slack message holds about 40 KB). Larger input, or a
+  pipe that is still open after 30 seconds, is an error and nothing is sent.
+- Only `-` itself means standard input. To read a file that is really named
+  `-`, write `./-`.
+- `--message` cannot be combined with `--message-file -`, as with a path.
+
+The same works on `messages edit` and `messages draft`.
 
 ### JSON output (`--json`)
 
@@ -188,7 +222,8 @@ order to edit it.
 ```
 
 `--message-file` works here exactly as it does on `messages send` — the new
-body comes from a UTF-8 file, mutually exclusive with `--message`.
+body comes from a UTF-8 file, or from standard input with `-`, mutually
+exclusive with `--message`.
 
 ## `messages react`
 
@@ -247,7 +282,7 @@ opens in the composer already formatted. User, user group, channel and
 broadcast tokens (`<@U…>`, `<!subteam^S…>`, `<#C…>`, `<!here>`) and links
 (`<https://…|label>`) become real mentions and links; any other `<…>` text stays
 literal. `--message-file` works here exactly as
-it does on `messages send`.
+it does on `messages send`, including `-` for standard input.
 
 `--json` prints the draft's identity. A draft is unsent, so it has no message
 timestamp and no permalink — the draft id is what a follow-up has to work with.

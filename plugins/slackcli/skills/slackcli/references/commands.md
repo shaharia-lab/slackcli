@@ -57,11 +57,11 @@ Standard token: `get` resolves top-level messages only; use `read --thread-ts=<p
 ## messages
 
 ```
-messages send --recipient-id=<C…|U…|url|"#name"|@handle|email> (--message=T | --message-file=F) [--thread-ts=TS] [--file=PATH] [--blocks=JSON|@file] [--json]
+messages send --recipient-id=<C…|U…|url|"#name"|@handle|email> (--message=T | --message-file=F|-) [--thread-ts=TS] [--file=PATH] [--blocks=JSON|@file] [--json]
 messages send --permalink=URL --message=T          # reply in that thread
-messages edit (--channel-id=C --timestamp=TS | --permalink=URL) (--message=T | --message-file=F) [--json]
+messages edit (--channel-id=C --timestamp=TS | --permalink=URL) (--message=T | --message-file=F|-) [--json]
 messages react (--channel-id=C --timestamp=TS | --permalink=URL) --emoji=NAME
-messages draft --recipient-id=C (--message=T | --message-file=F) [--json]    # browser auth only
+messages draft --recipient-id=C (--message=T | --message-file=F|-) [--json]    # browser auth only
 messages send-draft Dr… [--yes] [--json]                                     # post, then delete draft
 messages delete-draft Dr… [--yes] [--json]                                   # discard draft
 messages list-drafts [--limit=100] [--json]                                  # browser auth only

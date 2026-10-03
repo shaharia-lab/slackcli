@@ -23,6 +23,7 @@ import { confirmWrite } from './usergroups.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError } from '../lib/cli-errors.ts';
 import { resolveIdentifier } from '../lib/name-resolver.ts';
+import { resolveMessageText } from '../lib/message-input.ts';
 
 // Help text shared by several commands below.
 const THREAD_TS_NOTE =
@@ -33,6 +34,9 @@ const MESSAGE_TARGET_TEXT =
   'Name the message with --channel-id and --timestamp, or with a single --permalink.';
 const MESSAGE_TEXT_NOTE =
   'One of --message or --message-file is required; they are mutually exclusive.';
+const STDIN_NOTE =
+  '--message-file - reads the text from piped standard input (no shell quoting, no temp file); ' +
+  'one trailing newline is dropped. A terminal on stdin, more than 1 MB, or a pipe not closed within 30 s is refused.';
 const RECIPIENT_NOTE =
   '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM), a Slack URL, ' +
   'a channel name (#general) or a user (@alice, alice@example.com). A bare name must match ' +
@@ -73,6 +77,7 @@ const HELP = {
         'a channel link posts to the channel.',
       'One of --message or --message-file is required; they are mutually exclusive. ' +
         'With --file the text becomes the file comment.',
+      STDIN_NOTE,
       '--blocks cannot be combined with --file; the message text is the notification fallback.',
       'Sends immediately, with no confirmation prompt.',
       'A dry run to a user ID does not open the DM; it previews the user as the target.',
@@ -112,6 +117,7 @@ const HELP = {
       CHANNEL_NAME_NOTE,
       PERMALINK_MESSAGE_NOTE,
       MESSAGE_TEXT_NOTE,
+      STDIN_NOTE,
       'Edits immediately, with no confirmation prompt.',
     ],
     dryRun: true,
@@ -150,6 +156,7 @@ const HELP = {
       '--permalink replaces --recipient-id and --thread-ts: a message link drafts a reply in its thread, ' +
         'a channel link drafts in the channel.',
       MESSAGE_TEXT_NOTE,
+      STDIN_NOTE,
       'Creates the draft immediately, with no confirmation prompt.',
     ],
     dryRun: true,
@@ -235,42 +242,6 @@ export async function parseBlocksInput(input: string): Promise<Array<Record<stri
   return blocks as Array<Record<string, unknown>>;
 }
 
-// Resolve the message text from either --message or --message-file.
-//
-// Commander enforces the mutual exclusion, so this only has to cover the cases
-// it cannot: neither flag given (--message can no longer be a requiredOption
-// once --message-file can supply the same value), and a file that exists but
-// carries nothing worth sending. Both must fail before any Slack call, so a
-// bad invocation never half-posts.
-export async function resolveMessageText(options: {
-  message?: string;
-  messageFile?: string;
-}): Promise<string> {
-  if (options.messageFile !== undefined) {
-    const path = options.messageFile;
-    if (!path) {
-      throw new InvalidInputError('--message-file path cannot be empty');
-    }
-
-    let text: string;
-    try {
-      text = await readFile(path, 'utf8');
-    } catch (err: any) {
-      throw new InvalidInputError(`Cannot read message file ${path}: ${err.message}`);
-    }
-
-    if (!text.trim()) {
-      throw new InvalidInputError(`Message file ${path} is empty`);
-    }
-    return text;
-  }
-
-  if (options.message === undefined) {
-    throw new InvalidInputError('Either --message or --message-file is required');
-  }
-  return options.message;
-}
-
 // Look up the message's shareable link, for spreading into the --json payload.
 //
 // The message is already delivered by the time this runs, so a permalink
@@ -354,7 +325,7 @@ export function createMessagesCommand(): Command {
     .option('--recipient-id <id>', 'Channel/user ID, Slack URL, #channel, @handle or email')
     .option('--message <text>', 'Message text content')
     .addOption(
-      new Option('--message-file <path>', 'Read the message text from a UTF-8 file')
+      new Option('--message-file <path>', 'Read the message text from a UTF-8 file, or stdin with -')
         .conflicts('message')
     )
     .option('--thread-ts <timestamp>', 'Thread to reply in (1234567890.123456 or p1234567890123456)')
@@ -483,7 +454,7 @@ export function createMessagesCommand(): Command {
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
     .option('--message <text>', 'New message text content')
     .addOption(
-      new Option('--message-file <path>', 'Read the new message text from a UTF-8 file')
+      new Option('--message-file <path>', 'Read the new message text from a UTF-8 file, or stdin with -')
         .conflicts('message')
     )
     .option('--workspace <id|name>', 'Workspace to use')
@@ -574,7 +545,7 @@ export function createMessagesCommand(): Command {
     .option('--recipient-id <id>', 'Channel/user ID, Slack URL, #channel, @handle or email')
     .option('--message <text>', 'Message text content')
     .addOption(
-      new Option('--message-file <path>', 'Read the message text from a UTF-8 file')
+      new Option('--message-file <path>', 'Read the message text from a UTF-8 file, or stdin with -')
         .conflicts('message')
     )
     .option('--thread-ts <timestamp>', 'Thread to draft a reply in (1234567890.123456 or p1234567890123456)')

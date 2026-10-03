@@ -68,6 +68,12 @@ function answer(method: string, params: Record<string, unknown>): unknown {
       return { ok: true, users: groupMembers };
     case 'drafts.list':
       return { ok: true, drafts: [DRAFT] };
+    case 'conversations.list':
+      return { ok: true, channels: [{ id: 'C0123456789', name: 'deploys' }] };
+    case 'users.list':
+      return { ok: true, members: [{ id: 'U0123456789', name: 'alice' }] };
+    case 'users.lookupByEmail':
+      return { ok: true, user: { id: 'U0123456789' } };
     default:
       throw new Error(`unexpected read ${method}`);
   }
@@ -203,6 +209,33 @@ describe('--dry-run', () => {
     const preview = await runJson(['messages', 'send', '--recipient-id', 'U0123456789', '--message', 'hi']);
     expect(preview.target).toEqual({ kind: 'user', id: 'U0123456789', name: '@alice' });
     expect(methods).toEqual(['users.info']);
+  });
+
+  // Names (#327) are resolved before the dry-run branch, so the preview shows
+  // the ID the write would use. Resolving is a read; opening a DM is not done.
+  it.each([
+    [['messages', 'send', '--recipient-id', '#deploys', '--message', 'hi'], { kind: 'channel', id: 'C0123456789', name: '#deploys' }],
+    [['messages', 'send', '--recipient-id', '@alice', '--message', 'hi'], { kind: 'user', id: 'U0123456789', name: '@alice' }],
+    [['messages', 'draft', '--recipient-id', 'alice@example.com', '--message', 'hi'], { kind: 'user', id: 'U0123456789', name: '@alice' }],
+    [['messages', 'edit', '--channel-id', 'deploys', '--timestamp', '1712345678.000100', '--message', 'hi'],
+      { kind: 'message', id: 'C0123456789', name: '#deploys', ts: '1712345678.000100' }],
+    [['conversations', 'members', 'add', '#deploys', '@alice'], { kind: 'channel', id: 'C0123456789', name: '#deploys' }],
+    [['conversations', 'leave', 'deploys'], { kind: 'channel', id: 'C0123456789', name: '#deploys' }],
+  ])('%j previews the resolved ID', async (argv, target) => {
+    const preview = await runJson(argv);
+    expect(preview.target).toEqual(target);
+    expect(methods).not.toContain('conversations.open');
+    expect(methods.every((method) => READ_METHODS.has(method))).toBe(true);
+  });
+
+  it('previews user group members given as handles and emails by ID', async () => {
+    const preview = await runJson(['usergroups', 'add', '@platform', '@alice', 'alice@example.com']);
+    expect(preview.payload).toMatchObject({ added: ['U0123456789'] });
+  });
+
+  it('fails the dry run on an unknown name, as the real command does', async () => {
+    const error = await failJson(['messages', 'send', '--recipient-id', '#nope', '--message', 'hi']);
+    expect(error.code).toBe('not_found');
   });
 
   it('works on an app token, and keeps the preview when the name lookup fails', async () => {

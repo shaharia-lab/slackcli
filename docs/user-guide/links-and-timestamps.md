@@ -53,7 +53,9 @@ Rules worth knowing:
 - **Exact matches only**, case-insensitive. Channels match on the channel name
   among public and private, non-archived channels the identity can see; users
   match on the Slack handle, not the display or real name. There is no partial
-  or fuzzy matching.
+  or fuzzy matching. An all-upper-case value of 7+ characters (`GENERAL`) has
+  the shape of a Slack ID and is used as one, not looked up; names are
+  lower-case in Slack, so write `general`.
 - **Never a guess.** A name that matches nothing exits 1 with `not_found` and a
   hint to run `slackcli search channels <query>` or `search people <query>`. A
   name that matches more than one thing exits 1 with `invalid_input` and lists

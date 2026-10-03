@@ -3,11 +3,9 @@ import { InvalidInputError, NotFoundError } from './cli-errors.ts';
 import { classifyError } from './command-errors.ts';
 import {
   type NameLookupClient,
-  needsLookup,
   parseNameReference,
-  resolveChannel,
+  lazyClient,
   resolveIdentifier,
-  resolveUser,
   resolveUserList,
 } from './name-resolver.ts';
 import { SlackUrlParseError } from './slack-url-parser.ts';
@@ -101,25 +99,20 @@ describe('parseNameReference', () => {
     ['alice@example.com', 'channel'],
   ] as const)('%p as %s is not a name', (input, expected) => {
     expect(parseNameReference(input, expected)).toBeNull();
-    expect(needsLookup(input, expected)).toBe(false);
-  });
-
-  it('treats undefined as nothing to look up', () => {
-    expect(needsLookup(undefined, 'channel')).toBe(false);
   });
 });
 
-describe('resolveChannel', () => {
+describe('resolveIdentifier: channels', () => {
   it('resolves an exact name with or without #, case-insensitively', async () => {
     for (const input of ['#general', 'general', 'General', '#General']) {
       const { client } = stubClient({ channelPages: [[RANDOM, GENERAL]] });
-      expect(await resolveChannel(client, input, '--channel')).toBe('C0000000001');
+      expect(await resolveIdentifier(client, input, input, 'channel', '--channel')).toBe('C0000000001');
     }
   });
 
   it('asks for public and private, non-archived channels in large pages', async () => {
     const { client, calls } = stubClient({ channelPages: [[GENERAL]] });
-    await resolveChannel(client, 'general', '--channel');
+    await resolveIdentifier(client, 'general', 'general', 'channel', '--channel');
     expect(calls).toEqual([{
       method: 'conversations.list',
       params: { types: 'public_channel,private_channel', exclude_archived: true, limit: 1000 },
@@ -128,19 +121,19 @@ describe('resolveChannel', () => {
 
   it('never matches a partial name', async () => {
     const { client } = stubClient({ channelPages: [[{ id: 'C0000000003', name: 'general-chat' }]] });
-    await expect(resolveChannel(client, 'general', '--channel')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(resolveIdentifier(client, 'general', 'general', 'channel', '--channel')).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('reads every page, following the cursor, and finds a match on a later page', async () => {
     const { client, calls } = stubClient({ channelPages: [[RANDOM], [], [GENERAL]] });
-    expect(await resolveChannel(client, '#general', '--channel')).toBe('C0000000001');
+    expect(await resolveIdentifier(client, '#general', '#general', 'channel', '--channel')).toBe('C0000000001');
     expect(calls.map((c) => c.params.cursor)).toEqual([undefined, 'c1', 'c2']);
   });
 
   it('reports an ambiguous name with every candidate ID, even across pages', async () => {
     const twin = { id: 'C0000000009', name: 'General' };
     const { client } = stubClient({ channelPages: [[GENERAL], [twin]] });
-    const err = await resolveChannel(client, 'general', '--channel').catch((e) => e);
+    const err = await resolveIdentifier(client, 'general', 'general', 'channel', '--channel').catch((e) => e);
     expect(err).toBeInstanceOf(InvalidInputError);
     expect(err.message).toContain('C0000000001');
     expect(err.message).toContain('C0000000009');
@@ -149,7 +142,7 @@ describe('resolveChannel', () => {
 
   it('reports an unknown name, naming the input and suggesting search channels', async () => {
     const { client } = stubClient({ channelPages: [[RANDOM]] });
-    const err = await resolveChannel(client, '#nope', '--recipient-id').catch((e) => e);
+    const err = await resolveIdentifier(client, '#nope', '#nope', 'channel', '--recipient-id').catch((e) => e);
     expect(err).toBeInstanceOf(NotFoundError);
     expect(err.message).toContain('--recipient-id');
     expect(err.message).toContain('"#nope"');
@@ -165,37 +158,42 @@ describe('resolveChannel', () => {
         return { channels: [], response_metadata: { next_cursor: 'same' } };
       },
     } as unknown as NameLookupClient;
-    await expect(resolveChannel(client, 'general', '--channel')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(resolveIdentifier(client, 'general', 'general', 'channel', '--channel')).rejects.toBeInstanceOf(NotFoundError);
     expect(calls).toBe(2);
   });
 
   it('copes with pages missing channels or metadata', async () => {
     const client = { async listConversations() { return {}; } } as unknown as NameLookupClient;
-    await expect(resolveChannel(client, 'general', '--channel')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(resolveIdentifier(client, 'general', 'general', 'channel', '--channel')).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('reports progress per page', async () => {
     const { client } = stubClient({ channelPages: [[RANDOM], [GENERAL]] });
     const seen: string[] = [];
-    await resolveChannel(client, 'general', '--channel', { onProgress: (m) => seen.push(m) });
+    await resolveIdentifier(client, 'general', 'general', 'channel', '--channel', { onProgress: (m) => seen.push(m) });
     expect(seen).toEqual(['Looking up channel name (page 1)...', 'Looking up channel name (page 2)...']);
   });
 
-  it('returns an ID or URL as normalizeIdentifier would, with no call', async () => {
+  it('returns an ID or URL as given, and an ID without its # or @, with no call', async () => {
     const { client, calls } = stubClient();
-    expect(await resolveChannel(client, 'C0123456789', '--channel')).toBe('C0123456789');
-    expect(await resolveChannel(client, '#C0123456789', '--channel')).toBe('C0123456789');
-    expect(await resolveChannel(client, 'https://acme.slack.com/archives/C0123456789', '--channel')).toBe('C0123456789');
+    expect(await resolveIdentifier(client, 'C0123456789', 'C0123456789', 'channel', '--channel')).toBe('C0123456789');
+    expect(await resolveIdentifier(client, '#C0123456789', '#C0123456789', 'channel', '--channel')).toBe('C0123456789');
+    expect(await resolveIdentifier(client, ' <#C0123456789> ', '#C0123456789', 'channel', '--channel')).toBe('C0123456789');
+    expect(await resolveIdentifier(
+      client, 'https://acme.slack.com/archives/C0123456789', 'C0123456789', 'channel', '--channel',
+    )).toBe('C0123456789');
     expect(calls).toEqual([]);
-    await expect(resolveChannel(client, 'U0123456789', '--channel')).rejects.toBeInstanceOf(SlackUrlParseError);
+    // A prefixed ID of the wrong kind is reported, not sent.
+    await expect(resolveIdentifier(client, '@U0123456789', '@U0123456789', 'channel', '--channel'))
+      .rejects.toBeInstanceOf(SlackUrlParseError);
   });
 });
 
-describe('resolveUser', () => {
+describe('resolveIdentifier: users', () => {
   it('resolves an exact handle with or without @, case-insensitively', async () => {
     for (const input of ['@alice', 'alice', '@Alice']) {
       const { client } = stubClient({ userPages: [[BOB, ALICE]] });
-      expect(await resolveUser(client, input, '<user>')).toBe('U0000000001');
+      expect(await resolveIdentifier(client, input, input, 'user', '<user>')).toBe('U0000000001');
     }
   });
 
@@ -203,25 +201,25 @@ describe('resolveUser', () => {
     const { client } = stubClient({
       userPages: [[{ id: 'U0000000003', name: 'asmith', real_name: 'alice', profile: { display_name: 'alice' } }]],
     });
-    await expect(resolveUser(client, '@alice', '<user>')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(resolveIdentifier(client, '@alice', '@alice', 'user', '<user>')).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('prefers the active account when a handle survives on a deactivated one', async () => {
     const gone = { id: 'U0000000009', name: 'alice', deleted: true };
     const { client } = stubClient({ userPages: [[gone], [ALICE]] });
-    expect(await resolveUser(client, '@alice', '<user>')).toBe('U0000000001');
+    expect(await resolveIdentifier(client, '@alice', '@alice', 'user', '<user>')).toBe('U0000000001');
   });
 
   it('still resolves a handle held only by a deactivated account', async () => {
     const gone = { id: 'U0000000009', name: 'alice', deleted: true };
     const { client } = stubClient({ userPages: [[gone]] });
-    expect(await resolveUser(client, '@alice', '<user>')).toBe('U0000000009');
+    expect(await resolveIdentifier(client, '@alice', '@alice', 'user', '<user>')).toBe('U0000000009');
   });
 
   it('reports two active accounts with one handle as ambiguous', async () => {
     const twin = { id: 'U0000000008', name: 'alice' };
     const { client } = stubClient({ userPages: [[ALICE, twin]] });
-    const err = await resolveUser(client, '@alice', '<user>').catch((e) => e);
+    const err = await resolveIdentifier(client, '@alice', '@alice', 'user', '<user>').catch((e) => e);
     expect(err).toBeInstanceOf(InvalidInputError);
     expect(err.message).toContain('U0000000001');
     expect(err.message).toContain('U0000000008');
@@ -229,7 +227,7 @@ describe('resolveUser', () => {
 
   it('reports an unknown handle suggesting search people', async () => {
     const { client } = stubClient({ userPages: [[BOB]] });
-    const err = await resolveUser(client, '@nobody', '<user>').catch((e) => e);
+    const err = await resolveIdentifier(client, '@nobody', '@nobody', 'user', '<user>').catch((e) => e);
     expect(err).toBeInstanceOf(NotFoundError);
     expect(err.message).toContain('"@nobody"');
     expect(err.hint).toContain('slackcli search people');
@@ -237,32 +235,32 @@ describe('resolveUser', () => {
 
   it('looks an email up with one users.lookupByEmail call', async () => {
     const { client, calls } = stubClient({ emails: { 'alice@example.com': 'U0000000001' } });
-    expect(await resolveUser(client, 'alice@example.com', '<user>')).toBe('U0000000001');
+    expect(await resolveIdentifier(client, 'alice@example.com', 'alice@example.com', 'user', '<user>')).toBe('U0000000001');
     expect(calls).toEqual([{ method: 'users.lookupByEmail', params: { email: 'alice@example.com' } }]);
   });
 
   it('reports an unknown email as not found', async () => {
     const { client } = stubClient();
-    const err = await resolveUser(client, 'ghost@example.com', '<user>').catch((e) => e);
+    const err = await resolveIdentifier(client, 'ghost@example.com', 'ghost@example.com', 'user', '<user>').catch((e) => e);
     expect(err).toBeInstanceOf(NotFoundError);
     expect(err.message).toContain('ghost@example.com');
   });
 
   it('reports a lookup that returns no user as not found', async () => {
     const client = { async lookupUserByEmail() { return { ok: true }; } } as unknown as NameLookupClient;
-    await expect(resolveUser(client, 'ghost@example.com', '<user>')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(resolveIdentifier(client, 'ghost@example.com', 'ghost@example.com', 'user', '<user>')).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('names the users:read.email scope when an app token lacks it, keeping the Slack code', async () => {
     const { client } = stubClient({ emailError: 'missing_scope' });
-    const err = await resolveUser(client, 'alice@example.com', '<user>').catch((e) => e);
+    const err = await resolveIdentifier(client, 'alice@example.com', 'alice@example.com', 'user', '<user>').catch((e) => e);
     expect(err.message).toContain('users:read.email');
     expect(classifyError(err)).toMatchObject({ code: 'permission_denied', slack_error: 'missing_scope' });
   });
 
   it('passes any other Slack failure through unchanged', async () => {
     const { client } = stubClient({ emailError: 'ratelimited' });
-    const err = await resolveUser(client, 'alice@example.com', '<user>').catch((e) => e);
+    const err = await resolveIdentifier(client, 'alice@example.com', 'alice@example.com', 'user', '<user>').catch((e) => e);
     expect(err.message).toBe('Slack API error: ratelimited');
   });
 });
@@ -275,8 +273,8 @@ describe('resolveIdentifier', () => {
     expect(await resolveIdentifier(lazy, 'C0123456789', 'C0123456789', 'channel', '--channel')).toBe('C0123456789');
     expect(await resolveIdentifier(lazy, 'https://acme.slack.com/archives/C0123456789', 'C0123456789', 'channel', '--channel')).toBe('C0123456789');
     expect(await resolveIdentifier(lazy, undefined, 'C0123456789', 'channel-or-user', '--recipient-id')).toBe('C0123456789');
-    // Pre-existing pass-through: an @-prefixed ID is returned as the parser left it.
-    expect(await resolveIdentifier(lazy, '@U0123456789', '@U0123456789', 'channel-or-user', '--recipient-id')).toBe('@U0123456789');
+    expect(await resolveIdentifier(lazy, '@U0123456789', '@U0123456789', 'channel-or-user', '--recipient-id')).toBe('U0123456789');
+    expect(await resolveIdentifier(lazy, '@U0123456789', '@U0123456789', 'user', '<user>')).toBe('U0123456789');
     expect(calls).toEqual([]);
     expect(created).toBe(0);
   });
@@ -327,6 +325,8 @@ describe('resolveIdentifier', () => {
       const err = await resolveIdentifier(client, 'nobody', 'nobody', 'channel-or-user', '--recipient-id').catch((e) => e);
       expect(err).toBeInstanceOf(NotFoundError);
       expect(err.message).toContain('no channel or user named "nobody"');
+      expect(err.hint).toContain('slackcli search channels');
+      expect(err.hint).toContain('slackcli search people');
     });
 
     it('reports two users with one bare name as ambiguous', async () => {
@@ -373,5 +373,17 @@ describe('resolveUserList', () => {
     const err = await resolveUserList(client, ['@alice', '@ghost'], '<users...>').catch((e) => e);
     expect(err).toBeInstanceOf(NotFoundError);
     expect(err.message).toContain('"@ghost"');
+  });
+});
+
+describe('lazyClient', () => {
+  it('creates the client once, on first use, and exposes it afterwards', async () => {
+    let created = 0;
+    const lazy = lazyClient(async () => { created += 1; return stubClient().client; });
+    expect(lazy.created()).toBeUndefined();
+    const first = await lazy.get();
+    expect(await lazy.get()).toBe(first);
+    expect(lazy.created()).toBe(first);
+    expect(created).toBe(1);
   });
 });

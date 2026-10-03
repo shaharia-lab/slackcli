@@ -20,7 +20,7 @@ import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
-import { resolveIdentifier, resolveUserList } from '../lib/name-resolver.ts';
+import { lazyClient, resolveIdentifier, resolveUserList } from '../lib/name-resolver.ts';
 
 // Help text shared by several commands below.
 const CHANNEL_ARG_NOTE =
@@ -268,14 +268,10 @@ async function resolveMembershipTargets(
   options: { workspace?: string },
 ): Promise<{ channelId: string; workspace: string | undefined; ids: string[]; client?: SlackClient }> {
   const parsed = resolveChannelArg(channelArg);
-  let client: SlackClient | undefined;
-  const lazyClient = async (): Promise<SlackClient> => {
-    client ??= await getAuthenticatedClient(options.workspace);
-    return client;
-  };
-  const channelId = await resolveIdentifier(lazyClient, channelArg, parsed.channelId, 'channel', '<channel>');
-  const ids = await resolveUserList(lazyClient, splitUserRefs(users), '<users...>');
-  return { channelId, workspace: parsed.workspace, ids, client };
+  const client = lazyClient(() => getAuthenticatedClient(options.workspace));
+  const channelId = await resolveIdentifier(client.get, channelArg, parsed.channelId, 'channel', '<channel>');
+  const ids = await resolveUserList(client.get, splitUserRefs(users), '<users...>');
+  return { channelId, workspace: parsed.workspace, ids, client: client.created() };
 }
 
 // True when a Slack error is the enterprise-grid member-enumeration block.

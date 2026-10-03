@@ -296,6 +296,22 @@ describe('name resolution in commands', () => {
     expect(stub.methods()).toEqual(['getUserInfo']);
   });
 
+  it('users info @<ID> fetches the ID without the @ and without a lookup', async () => {
+    const stub = await run(['users', 'info', '@U0123456789', '--json']);
+    expect(stub.calls).toEqual([{ method: 'getUserInfo', args: ['U0123456789'] }]);
+  });
+
+  it('messages send --recipient-id=@<ID> opens the DM with the bare ID and no lookup', async () => {
+    const stub = await run(['messages', 'send', '--recipient-id=@U0123456789', '--message', 'hi', '--json']);
+    expect(stub.methods()).toEqual(['openConversation', 'postMessage', 'getPermalink']);
+    expect(stub.calls[0].args[0]).toBe('U0123456789');
+  });
+
+  it('conversations read #<ID> reads the bare ID', async () => {
+    const stub = await run(['conversations', 'read', '#C0123456789', '--json']);
+    expect(stub.calls).toEqual([expect.objectContaining({ method: 'getConversationHistory', args: ['C0123456789', expect.anything()] })]);
+  });
+
   it('users info reports an unknown email as not found', async () => {
     await run(['users', 'info', 'ghost@example.com', '--json']);
     expect(lastError().code).toBe('not_found');

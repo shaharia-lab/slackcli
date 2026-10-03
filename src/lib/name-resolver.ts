@@ -2,8 +2,8 @@
  * Resolve channel names (`#general`, `general`) and user handles (`@alice`) or
  * email addresses to Slack IDs, for every argument that accepts an ID.
  *
- * IDs and Slack URLs never reach a lookup: {@link needsLookup} is pure, and a
- * caller only touches the client when it says a name was given. A lookup is
+ * IDs and Slack URLs never reach a lookup: {@link parseNameReference} is pure,
+ * and the client is only touched when it says a name was given. A lookup is
  * exact (case-insensitive on the name), and a name that matches nothing or
  * more than one thing is an error — the CLI never guesses where to post.
  */
@@ -103,11 +103,6 @@ export function parseNameReference(input: string, expected: ExpectedKind): NameR
   if (expected === 'channel') return { kind: 'channel', name: value };
   if (expected === 'user') return { kind: 'user', handle: value };
   return { kind: 'channel-or-user', name: value };
-}
-
-/** True when the input is a name that needs a Slack lookup. Pure; never calls Slack. */
-export function needsLookup(input: string | undefined, expected: ExpectedKind): boolean {
-  return input !== undefined && parseNameReference(input, expected) !== null;
 }
 
 /**
@@ -240,12 +235,15 @@ async function findUserByEmail(client: NameLookupClient, email: string, flag: st
   }
 }
 
+const SEARCH_HINT: Record<'channel' | 'user' | 'channel or user', string> = {
+  channel: 'Run "slackcli search channels <query>" to find it, then pass its ID.',
+  user: 'Run "slackcli search people <query>" to find it, then pass its ID.',
+  'channel or user':
+    'Run "slackcli search channels <query>" or "slackcli search people <query>" to find it, then pass its ID.',
+};
+
 function notFound(flag: string, input: string, what: 'channel' | 'user' | 'channel or user'): NotFoundError {
-  const search = what === 'user' ? 'search people' : 'search channels';
-  return new NotFoundError(
-    `${flag}: no ${what} named "${input}".`,
-    `Run "slackcli ${search} <query>" to find it, then pass its ID.`,
-  );
+  return new NotFoundError(`${flag}: no ${what} named "${input}".`, SEARCH_HINT[what]);
 }
 
 function ambiguous(flag: string, input: string, candidates: Candidate[], hint?: string): InvalidInputError {
@@ -262,36 +260,13 @@ function single(flag: string, input: string, candidates: Candidate[], what: 'cha
   return candidates[0].id;
 }
 
-/** Resolve a channel name (`#general` or `general`) to its ID. */
-export async function resolveChannel(
-  source: NameLookupClientSource,
-  input: string,
-  flag: string,
-  options: ResolveOptions = {},
-): Promise<string> {
-  return resolveName(source, input, 'channel', flag, options);
-}
-
-/** Resolve a user handle (`@alice` or `alice`) or an email address to a user ID. */
-export async function resolveUser(
-  source: NameLookupClientSource,
-  input: string,
-  flag: string,
-  options: ResolveOptions = {},
-): Promise<string> {
-  return resolveName(source, input, 'user', flag, options);
-}
-
 async function resolveName(
   source: NameLookupClientSource,
   input: string,
-  expected: ExpectedKind,
+  ref: NameReference,
   flag: string,
   options: ResolveOptions,
 ): Promise<string> {
-  const ref = parseNameReference(input, expected);
-  if (!ref) return normalizeIdentifier(stripIdPrefix(input), expected, flag);
-
   const client = await clientFrom(source);
   const shown = clean(input);
   logger.debug('Resolving {kind} name', { kind: ref.kind, flag });
@@ -329,7 +304,9 @@ async function resolveName(
  * The ID a command should use for one argument. `raw` is what the user typed
  * (undefined when another flag, such as --permalink, supplied the target) and
  * `id` is what the URL/ID parser already made of it. Only a name triggers a
- * lookup; an ID or URL returns `id` untouched, without calling the client.
+ * lookup. An ID or URL returns `id` untouched, and an ID written with a
+ * prefix (`@U0123456789`, `#C0123456789`) is used without it; neither calls
+ * the client.
  */
 export async function resolveIdentifier(
   source: NameLookupClientSource,
@@ -339,8 +316,29 @@ export async function resolveIdentifier(
   flag: string,
   options: ResolveOptions = {},
 ): Promise<string> {
-  if (!needsLookup(raw, expected)) return id;
-  return resolveName(source, raw as string, expected, flag, options);
+  if (raw === undefined) return id;
+  const ref = parseNameReference(raw, expected);
+  if (ref) return resolveName(source, raw, ref, flag, options);
+  const unprefixed = stripIdPrefix(raw);
+  return unprefixed === clean(raw) ? id : normalizeIdentifier(unprefixed, expected, flag);
+}
+
+/**
+ * A client created on first use and then reused: pass `get` as the lookup
+ * source, and read `created()` afterwards to reuse the client (undefined when
+ * no lookup needed one).
+ */
+export function lazyClient<T extends NameLookupClient>(
+  create: () => Promise<T>,
+): { get: () => Promise<T>; created: () => T | undefined } {
+  let client: T | undefined;
+  return {
+    get: async () => {
+      client ??= await create();
+      return client;
+    },
+    created: () => client,
+  };
 }
 
 /**

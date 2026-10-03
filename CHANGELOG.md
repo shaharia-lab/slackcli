@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Covers `messages send`/`draft`/`edit`/`react`, `conversations read`/`get`/`members list|add|remove`/`join`/`leave`, `canvas list|read --channel`, `users info`, and the user lists of `usergroups add`/`remove`
   - IDs and Slack URLs make no extra API call; an unknown name exits 1 with `not_found`, a name that matches more than one thing exits 1 with `invalid_input` listing the candidate IDs, and nothing is sent or changed in either case
   - A bare `--recipient-id` name that is both a channel and a user is refused; write `#name` or `@name`
+  - An ID written with a prefix (`@U0123456789`, `#C0123456789`) is now used without it, where it used to reach Slack as typed and fail
   - `--json` output carries the resolved ID (`channel_id`, `added`, …); quote a `#` in a shell (`"#general"` or `--flag=#general`)
   - The Claude Code plugin skill passes names directly instead of searching first
 - **Structured JSON errors with `--json`**: a failing command run with `--json` now ends stderr with one single-line object, `{"error":{"code","message","hint"?,"retryable","slack_error"?}}`, writes nothing to stdout and exits `1`, so scripts and AI agents can branch on the failure instead of parsing text (#326)

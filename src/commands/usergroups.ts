@@ -19,7 +19,7 @@ import {
   removeUsergroupMembers,
   resolveUsergroup,
 } from '../lib/usergroups.ts';
-import { resolveUserList } from '../lib/name-resolver.ts';
+import { lazyClient, resolveUserList } from '../lib/name-resolver.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackUsergroup } from '../types/index.ts';
 
@@ -227,12 +227,9 @@ async function resolveMemberIds(
   users: string[],
   options: { workspace?: string },
 ): Promise<{ ids: string[]; client?: SlackClient }> {
-  let client: SlackClient | undefined;
-  const ids = await resolveUserList(async () => {
-    client ??= await getAuthenticatedClient(options.workspace);
-    return client;
-  }, splitUserRefs(users), '<users...>');
-  return { ids, client };
+  const client = lazyClient(() => getAuthenticatedClient(options.workspace));
+  const ids = await resolveUserList(client.get, splitUserRefs(users), '<users...>');
+  return { ids, client: client.created() };
 }
 
 // Confirmation gate for a mutating command. Three cases, built on the existing

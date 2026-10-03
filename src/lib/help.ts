@@ -40,7 +40,8 @@ export const CONFIRM_NOTE =
 /** Name resolution for channel arguments (#327). */
 export const CHANNEL_NAME_NOTE =
   'A channel name works too: #general or general (exact, case-insensitive; public or private ' +
-  'channels you can see). It costs a conversations.list lookup; an ID or link does not. Quote ' +
+  'channels you can see; an all-upper-case value such as GENERAL is read as an ID). It costs a ' +
+  'conversations.list lookup; an ID or link does not. Quote ' +
   'a # in a shell ("#general" or --flag=#general), or the shell reads the rest as a comment.';
 
 /** Name resolution for user arguments (#327). */

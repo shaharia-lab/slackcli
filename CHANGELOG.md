@@ -7,13 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Browser-session workspaces no longer fail on the first rate limit**: a `HTTP error! status: 429` from Slack is now retried after the `Retry-After` delay, as it already was for app tokens, instead of failing the command (#315)
-  - Every call is retried on a 429, including sends: Slack rejected the request, so it cannot be applied twice
-  - Read-only calls are also retried after a Slack 5xx or a dropped connection, with exponential backoff; sends and other changes are not, since the first attempt may already have gone through
-  - At most 3 retries, 60 s per wait and 2 minutes of waiting per call; a waiting call does not hold up other calls
-- **Drafts now render mentions, channels, broadcasts and links**: `messages draft` converted only formatting markers into `rich_text` blocks, so `<@U…>`, `<!subteam^S…>`, `<#C…>`, `<!here>` / `<!channel>` / `<!everyone>` and `<https://…|label>` showed up as literal text in the composer. They now become user, usergroup, channel, broadcast and link elements (labels on mentions and channels are dropped, link labels are kept), can carry bold/italic/strike, and an `_` inside a URL no longer opens an italic span. Unrecognised `<…>` text stays literal (#299)
-- **`auth login-auto` no longer fails with "The browser started but exposed no page to attach to" while the browser window flashes open and shut**: the page-target lookup now polls for up to 5s instead of probing once, covering the gap between Chrome writing `DevToolsActivePort` and registering its initial tab in `/json/list` (measured ~200–300 ms; previously the one-shot probe missed 5/5 launches on a fast machine) (#274)
+## [0.14.0] - 2026-10-03
 
 ### Added
 - **Message text from standard input with `--message-file -`**: `messages send`, `edit` and `draft` read the text from a pipe or heredoc, so multi-line text, code, quotes, backticks and `$` need no shell quoting and no temporary file (#329)
@@ -72,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Corrupt `workspaces.json`**: the load error is now a one-line warning (`Error loading workspaces: <parse error>`) instead of a raw error dump, and quoted fragments of the file are no longer echoed to the terminal (#280)
 
 ### Fixed
+- **Browser-session workspaces no longer fail on the first rate limit**: a `HTTP error! status: 429` from Slack is now retried after the `Retry-After` delay, as it already was for app tokens, instead of failing the command (#315)
+  - Every call is retried on a 429, including sends: Slack rejected the request, so it cannot be applied twice
+  - Read-only calls are also retried after a Slack 5xx or a dropped connection, with exponential backoff; sends and other changes are not, since the first attempt may already have gone through
+  - At most 3 retries, 60 s per wait and 2 minutes of waiting per call; a waiting call does not hold up other calls
+- **Drafts now render mentions, channels, broadcasts and links**: `messages draft` converted only formatting markers into `rich_text` blocks, so `<@U…>`, `<!subteam^S…>`, `<#C…>`, `<!here>` / `<!channel>` / `<!everyone>` and `<https://…|label>` showed up as literal text in the composer. They now become user, usergroup, channel, broadcast and link elements (labels on mentions and channels are dropped, link labels are kept), can carry bold/italic/strike, and an `_` inside a URL no longer opens an italic span. Unrecognised `<…>` text stays literal (#299)
+- **`auth login-auto` no longer fails with "The browser started but exposed no page to attach to" while the browser window flashes open and shut**: the page-target lookup now polls for up to 5s instead of probing once, covering the gap between Chrome writing `DevToolsActivePort` and registering its initial tab in `/json/list` (measured ~200–300 ms; previously the one-shot probe missed 5/5 launches on a fast machine) (#274)
 - **`slackcli update` on Homebrew installs**: no longer replaces the Homebrew-managed binary (which left brew's record out of sync); it prints `Installed via Homebrew — run: brew upgrade slackcli` and exits without downloading, and `update check` now names `brew upgrade slackcli` there too. `update` and `update check` no longer end with a stale "Update available" notice, and a successful self-update refreshes the update cache with the installed version (#276)
 - **Background update check**: no longer delays a finished command on a slow or hanging network. The check now gives up after 1.5 seconds (10 seconds for `update` / `update check`), a failed check waits an hour before retrying instead of retrying on every command, and the "Update available" notice shows a newly found release in the same run rather than one run later (#282)
 

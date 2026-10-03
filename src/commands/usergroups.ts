@@ -240,7 +240,7 @@ async function previewMembershipChange(
     onProgress: (msg) => { spinner.text = msg; },
   });
   spinner.stop();
-  emitDryRun(await buildPreview(client, action, groupTarget(group), { ...plan, team: options.team }), options.json);
+  emitDryRun(await buildPreview(client, action, groupTarget(group), { ...plan, team: options.team || undefined }), options.json);
 }
 
 // Split a comma/space-separated list of user references (IDs, @handles,
@@ -397,12 +397,13 @@ export function createUsergroupsCommand(): Command {
         if (options.dryRun) {
           spinner.stop();
           emitDryRun(
+            // createUsergroup() leaves out an empty value, so the preview does too.
             await buildPreview(client, 'create user group', { kind: 'usergroup', name }, {
               name,
-              handle: options.handle,
-              description: options.description,
-              channels: options.channels,
-              team: options.team,
+              handle: options.handle || undefined,
+              description: options.description || undefined,
+              channels: options.channels || undefined,
+              team: options.team || undefined,
             }),
             options.json,
           );
@@ -463,7 +464,7 @@ export function createUsergroupsCommand(): Command {
               name: options.name,
               handle: options.handle,
               description: options.description,
-              team: options.team,
+              team: options.team || undefined,
             }),
             options.json,
           );
@@ -600,7 +601,7 @@ export function createUsergroupsCommand(): Command {
         if (!group) return;
         if (options.dryRun) {
           spinner.stop();
-          emitDryRun(await buildPreview(client, 'enable user group', groupTarget(group), { team: options.team }), options.json);
+          emitDryRun(await buildPreview(client, 'enable user group', groupTarget(group), { team: options.team || undefined }), options.json);
           return;
         }
         const response = await client.enableUsergroup(group.id, { team_id: options.team });
@@ -634,7 +635,7 @@ export function createUsergroupsCommand(): Command {
         if (!group) return;
         if (options.dryRun) {
           spinner.stop();
-          emitDryRun(await buildPreview(client, 'disable user group', groupTarget(group), { team: options.team }), options.json);
+          emitDryRun(await buildPreview(client, 'disable user group', groupTarget(group), { team: options.team || undefined }), options.json);
           return;
         }
         const response = await client.disableUsergroup(group.id, { team_id: options.team });

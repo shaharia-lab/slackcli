@@ -268,6 +268,11 @@ describe('--dry-run', () => {
     ])).payload).toEqual({ name: 'Platform Team', handle: 'platform', description: 'Owns it', channels: 'C0123456789' });
     expect(methods).toEqual([]);
 
+    // Empty values are not sent by the write, so the preview leaves them out.
+    stdout = '';
+    expect((await runJson(['usergroups', 'create', 'Platform', '--handle', '', '--description', '', '--channels', '', '--team', ''])).payload)
+      .toEqual({ name: 'Platform' });
+
     stdout = '';
     expect((await runJson(['usergroups', 'update', 'S0123456789', '--description', 'New'])).payload)
       .toEqual({ description: 'New' });

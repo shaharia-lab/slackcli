@@ -767,7 +767,7 @@ export function createConversationsCommand(): Command {
         if (options.dryRun) {
           spinner.stop();
           emitDryRun(
-            await buildPreview(client, 'add channel members', { kind: 'channel', id: channelId }, { add: ids, team: options.team }, { lookupName: true }),
+            await buildPreview(client, 'add channel members', { kind: 'channel', id: channelId }, { add: ids, team: options.team || undefined }, { lookupName: true }),
             options.json,
           );
           return;
@@ -813,7 +813,7 @@ export function createConversationsCommand(): Command {
         if (options.dryRun) {
           spinner.stop();
           emitDryRun(
-            await buildPreview(client, 'remove channel members', { kind: 'channel', id: channelId }, { remove: ids, team: options.team }, { lookupName: true }),
+            await buildPreview(client, 'remove channel members', { kind: 'channel', id: channelId }, { remove: ids, team: options.team || undefined }, { lookupName: true }),
             options.json,
           );
           return;

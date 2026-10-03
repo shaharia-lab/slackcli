@@ -604,6 +604,11 @@ export class SlackClient {
     return { ok: true, users };
   }
 
+  // Look a user up by email address (standard tokens need users:read.email)
+  async lookupUserByEmail(email: string): Promise<any> {
+    return this.request('users.lookupByEmail', { email });
+  }
+
   // Open a conversation (DM)
   async openConversation(users: string): Promise<any> {
     return this.request('conversations.open', { users });

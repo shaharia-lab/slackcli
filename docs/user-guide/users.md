@@ -1,6 +1,6 @@
 # Users
 
-`slackcli users` looks up people by ID and lists workspace users with their
+`slackcli users` looks up people by ID, handle or email and lists workspace users with their
 account status. Every subcommand accepts `--workspace <id|name>` and `--json`.
 
 `search people` finds users by name or email; `users` is for looking one up by
@@ -11,15 +11,20 @@ Looking up and listing users requires the `users:read` scope (plus
 `--resolve-fields` additionally needs `users.profile:read`. Browser-session
 authentication uses the existing browser cookie and token.
 
-## `users info <id>`
+## `users info <user>`
 
 ```bash
 slackcli users info U012HH99H63
 slackcli users info U012HH99H63 --json
 slackcli users info U012HH99H63 --resolve-fields
+slackcli users info @alice
+slackcli users info alice@example.com --json
 ```
 
 Shows name, handle, ID, email, title, account status, timezone, and admin flag.
+`<user>` is a user ID, an `@handle` (exact Slack handle) or an email address;
+a handle or email is looked up first (an email needs `users:read.email` on an
+app token). See [channel names and user handles](links-and-timestamps.md#channel-names-and-user-handles).
 
 The **account status** comes from `deleted`, which is the one deactivation
 signal Slack always returns. A deactivated user has `tz`, `tz_label`,

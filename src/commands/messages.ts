@@ -10,10 +10,11 @@ import {
   workspaceMismatchWarning,
 } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
-import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError } from '../lib/cli-errors.ts';
+import { resolveIdentifier } from '../lib/name-resolver.ts';
 
 // Help text shared by several commands below.
 const THREAD_TS_NOTE =
@@ -25,9 +26,11 @@ const MESSAGE_TARGET_TEXT =
 const MESSAGE_TEXT_NOTE =
   'One of --message or --message-file is required; they are mutually exclusive.';
 const RECIPIENT_NOTE =
-  '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM) or a Slack URL.';
+  '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM), a Slack URL, ' +
+  'a channel name (#general) or a user (@alice, alice@example.com). A bare name must match ' +
+  'only a channel or only a user; if both exist, add # or @.';
 const MESSAGE_ID_FORMATS_NOTE =
-  '--channel-id takes a channel ID or a Slack URL; --timestamp takes 1712345678.123456 or p1712345678123456.';
+  '--channel-id takes a channel ID, a Slack URL or a channel name; --timestamp takes 1712345678.123456 or p1712345678123456.';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -45,14 +48,17 @@ const HELP = {
       'To leave an unsent message for a human to review, use "messages draft" instead.',
     examples: [
       'slackcli messages send --recipient-id C0123456789 --message "Deploy done"',
+      'slackcli messages send --recipient-id="#general" --message "Deploy done"',
       'slackcli messages send --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message "Fixed"',
       'slackcli messages send --recipient-id U0123456789 --message-file ./note.md --json',
     ],
     json:
       '{ channel_id, ts, permalink? } for a post; { channel_id, file_id } with --file. ' +
-      'permalink is omitted when its lookup fails.',
+      'permalink is omitted when its lookup fails. channel_id is always the resolved ID.',
     notes: [
       RECIPIENT_NOTE,
+      CHANNEL_NAME_NOTE,
+      USER_NAME_NOTE,
       THREAD_TS_NOTE,
       '--permalink replaces --recipient-id and --thread-ts: a message link replies in its thread, ' +
         'a channel link posts to the channel.',
@@ -73,6 +79,7 @@ const HELP = {
     ],
     notes: [
       MESSAGE_ID_FORMATS_NOTE,
+      CHANNEL_NAME_NOTE,
       PERMALINK_MESSAGE_NOTE,
       '--emoji is the name without colons; custom workspace emoji work too.',
       'Acts immediately, with no confirmation prompt.',
@@ -90,6 +97,7 @@ const HELP = {
     json: '{ channel_id, ts } of the edited message.',
     notes: [
       MESSAGE_ID_FORMATS_NOTE,
+      CHANNEL_NAME_NOTE,
       PERMALINK_MESSAGE_NOTE,
       MESSAGE_TEXT_NOTE,
       'Edits immediately, with no confirmation prompt.',
@@ -123,6 +131,8 @@ const HELP = {
     browserOnly: true,
     notes: [
       RECIPIENT_NOTE,
+      CHANNEL_NAME_NOTE,
+      USER_NAME_NOTE,
       THREAD_TS_NOTE,
       '--permalink replaces --recipient-id and --thread-ts: a message link drafts a reply in its thread, ' +
         'a channel link drafts in the channel.',
@@ -271,12 +281,27 @@ function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | un
   if (message) warning(message);
 }
 
+// --recipient-id may be a channel name or a user handle/email, --channel-id a
+// channel name; resolve either to an ID (no Slack call for an ID or a link).
+function resolveTargetArg(
+  client: SlackClient,
+  raw: string | undefined,
+  id: string,
+  flag: '--recipient-id' | '--channel-id',
+  spinner: ReturnType<typeof ora>,
+): Promise<string> {
+  const expected = flag === '--recipient-id' ? 'channel-or-user' : 'channel';
+  return resolveIdentifier(client, raw, id, expected, flag, {
+    onProgress: (text) => { spinner.text = text; },
+  });
+}
+
 export function createMessagesCommand(): Command {
   const messages = describeCommand(new Command('messages'), HELP.group);
 
   // Send message
   describeCommand(messages.command('send'), HELP.send)
-    .option('--recipient-id <id>', 'Channel ID, User ID, or Slack URL')
+    .option('--recipient-id <id>', 'Channel/user ID, Slack URL, #channel, @handle or email')
     .option('--message <text>', 'Message text content')
     .addOption(
       new Option('--message-file <path>', 'Read the message text from a UTF-8 file')
@@ -306,7 +331,7 @@ export function createMessagesCommand(): Command {
         warnOnWorkspaceMismatch(client, target.workspace);
 
         // Check if recipient is a user ID (starts with U) and needs DM opened
-        let channelId = target.channelId;
+        let channelId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
         if (channelId.startsWith('U')) {
           spinner.text = 'Opening direct message...';
           const dmResponse = await client.openConversation(channelId);
@@ -357,7 +382,7 @@ export function createMessagesCommand(): Command {
 
   // Add reaction to message
   describeCommand(messages.command('react'), HELP.react)
-    .option('--channel-id <id>', 'Channel ID or URL where the message is')
+    .option('--channel-id <id>', 'Channel ID, URL or name where the message is')
     .option('--timestamp <ts>', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
     .requiredOption('--emoji <name>', 'Emoji name (e.g., thumbsup, heart, fire)')
@@ -373,8 +398,9 @@ export function createMessagesCommand(): Command {
 
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, target.workspace);
+        const channelId = await resolveTargetArg(client, options.channelId, target.channelId, '--channel-id', spinner);
 
-        await client.addReaction(target.channelId, target.timestamp, options.emoji);
+        await client.addReaction(channelId, target.timestamp, options.emoji);
 
         spinner.succeed('Reaction added successfully!');
         success(`Added :${options.emoji}: to message ${target.timestamp}`);
@@ -385,7 +411,7 @@ export function createMessagesCommand(): Command {
 
   // Edit an existing message
   describeCommand(messages.command('edit'), HELP.edit)
-    .option('--channel-id <id>', 'Channel ID or URL where the message is')
+    .option('--channel-id <id>', 'Channel ID, URL or name where the message is')
     .option('--timestamp <ts>', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
     .option('--message <text>', 'New message text content')
@@ -407,16 +433,17 @@ export function createMessagesCommand(): Command {
 
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, target.workspace);
+        const channelId = await resolveTargetArg(client, options.channelId, target.channelId, '--channel-id', spinner);
 
         const response = await client.updateMessage(
-          target.channelId,
+          channelId,
           target.timestamp,
           message,
         );
 
         spinner.succeed('Message updated successfully!');
         if (options.json) {
-          writeJson({ channel_id: target.channelId, ts: response.ts });
+          writeJson({ channel_id: channelId, ts: response.ts });
         } else {
           success(`Message timestamp: ${response.ts}`);
         }
@@ -461,7 +488,7 @@ export function createMessagesCommand(): Command {
 
   // Create draft message
   describeCommand(messages.command('draft'), HELP.draft)
-    .option('--recipient-id <id>', 'Channel ID, User ID, or Slack URL')
+    .option('--recipient-id <id>', 'Channel/user ID, Slack URL, #channel, @handle or email')
     .option('--message <text>', 'Message text content')
     .addOption(
       new Option('--message-file <path>', 'Read the message text from a UTF-8 file')
@@ -485,7 +512,7 @@ export function createMessagesCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, target.workspace);
 
-        let channelId = target.channelId;
+        let channelId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
         if (channelId.startsWith('U')) {
           spinner.text = 'Opening direct message...';
           const dmResponse = await client.openConversation(channelId);

@@ -7,7 +7,7 @@ import {
   formatUsergroupList,
   writeJson,
 } from '../lib/formatter.ts';
-import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { isInteractiveTerminal } from '../lib/interactive-input.ts';
 import { ConfirmationRequiredError, InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 import { failCommand } from '../lib/command-errors.ts';
@@ -19,6 +19,8 @@ import {
   removeUsergroupMembers,
   resolveUsergroup,
 } from '../lib/usergroups.ts';
+import { resolveUserList } from '../lib/name-resolver.ts';
+import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackUsergroup } from '../types/index.ts';
 
 // Help text shared by several commands below.
@@ -31,7 +33,7 @@ const TEAM_READ_NOTE =
 const GROUP_REF_NOTE =
   '<group> is the group ID (S0123456789), its @handle (with or without @) or its exact name (case-insensitive). Slack URLs are not accepted.';
 const USER_IDS_NOTE =
-  '<users...> are user IDs (U0123456789), space- or comma-separated; a leading @ is dropped, but handles and emails are not resolved.';
+  '<users...> are user IDs (U0123456789), @handles or email addresses, space- or comma-separated; a leading @ on an ID is dropped.';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -126,6 +128,7 @@ const HELP = {
     notes: [
       GROUP_REF_NOTE,
       USER_IDS_NOTE,
+      USER_NAME_NOTE,
       'Users already in the group change nothing: reported as a no-op, no write.',
       TEAM_WRITE_NOTE,
     ],
@@ -146,6 +149,7 @@ const HELP = {
     notes: [
       GROUP_REF_NOTE,
       USER_IDS_NOTE,
+      USER_NAME_NOTE,
       'Refuses (exit 1) to remove the last member: Slack does not allow an empty group.',
       TEAM_WRITE_NOTE,
     ],
@@ -207,12 +211,28 @@ async function requireGroup(
   return group;
 }
 
-// Split a comma/space-separated list of user IDs into a clean array.
-export function parseUserIds(raw: string[]): string[] {
+// Split a comma/space-separated list of user references (IDs, @handles,
+// emails) into a clean array, keeping each one as typed. A bare "@" is dropped.
+export function splitUserRefs(raw: string[]): string[] {
   return raw
     .flatMap((token) => token.split(/[\s,]+/))
-    .map((s) => s.trim().replace(/^@/, ''))
-    .filter(Boolean);
+    .map((s) => s.trim())
+    .filter((s) => s.replace(/^@/, ''));
+}
+
+// Resolve <users...> to IDs before a membership write's confirmation prompt.
+// A client is created only when a handle or email needs a lookup, so a list of
+// IDs keeps the no-auth confirmation refusal it always had.
+async function resolveMemberIds(
+  users: string[],
+  options: { workspace?: string },
+): Promise<{ ids: string[]; client?: SlackClient }> {
+  let client: SlackClient | undefined;
+  const ids = await resolveUserList(async () => {
+    client ??= await getAuthenticatedClient(options.workspace);
+    return client;
+  }, splitUserRefs(users), '<users...>');
+  return { ids, client };
 }
 
 // Confirmation gate for a mutating command. Three cases, built on the existing
@@ -408,19 +428,26 @@ export function createUsergroupsCommand(): Command {
   // ─── add ─────────────────────────────────────────────────────────────────
   describeCommand(usergroups.command('add'), HELP.add)
     .argument('<group>', 'Group ID, @handle, or exact name')
-    .argument('<users...>', 'One or more user IDs (comma- or space-separated)')
+    .argument('<users...>', 'User IDs, @handles or emails (comma- or space-separated)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, users, options) => {
-      const ids = parseUserIds(users);
+      let resolved: Awaited<ReturnType<typeof resolveMemberIds>>;
+      try {
+        resolved = await resolveMemberIds(users, options);
+      } catch (err: any) {
+        failCommand(err, { json: options.json, context: 'Failed to add members' });
+        return;
+      }
+      const { ids } = resolved;
       if (!(await confirmWrite(`Add ${ids.length} user(s) to "${ref}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Adding members...').start();
       try {
-        const client = await getAuthenticatedClient(options.workspace);
+        const client = resolved.client ?? await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
         const result = await addUsergroupMembers(client, group.id, ids, {
@@ -446,19 +473,26 @@ export function createUsergroupsCommand(): Command {
   // ─── remove ──────────────────────────────────────────────────────────────
   describeCommand(usergroups.command('remove'), HELP.remove)
     .argument('<group>', 'Group ID, @handle, or exact name')
-    .argument('<users...>', 'One or more user IDs (comma- or space-separated)')
+    .argument('<users...>', 'User IDs, @handles or emails (comma- or space-separated)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, users, options) => {
-      const ids = parseUserIds(users);
+      let resolved: Awaited<ReturnType<typeof resolveMemberIds>>;
+      try {
+        resolved = await resolveMemberIds(users, options);
+      } catch (err: any) {
+        failCommand(err, { json: options.json, context: 'Failed to remove members' });
+        return;
+      }
+      const { ids } = resolved;
       if (!(await confirmWrite(`Remove ${ids.length} user(s) from "${ref}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Removing members...').start();
       try {
-        const client = await getAuthenticatedClient(options.workspace);
+        const client = resolved.client ?? await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
         const result = await removeUsergroupMembers(client, group.id, ids, {

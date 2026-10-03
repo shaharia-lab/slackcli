@@ -2,11 +2,12 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { writeJson } from '../lib/formatter.ts';
-import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 import { statusOf, listUsersByStatus, type UserStatusFilter } from '../lib/users.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
+import { resolveIdentifier } from '../lib/name-resolver.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -17,7 +18,7 @@ const HELP = {
       'someone by name or email, use "slackcli search people".',
   },
   info: {
-    summary: 'Show one user by ID',
+    summary: 'Show one user by ID, @handle or email',
     description:
       'Show one user: name, handle, email, title, account status (deactivated or not), admin ' +
       'flag and timezone. Use "users list" to enumerate users, "search people" to find one by name.',
@@ -25,12 +26,16 @@ const HELP = {
       'slackcli users info U0123456789',
       'slackcli users info U0123456789 --resolve-fields',
       'slackcli users info U0123456789 --json',
+      'slackcli users info @alice',
+      'slackcli users info alice@example.com --json',
     ],
     json:
       'the raw Slack user object { id, name, real_name, deleted, is_admin, is_bot, tz, tz_label, ' +
       'tz_offset, profile, ... }, plus resolved_fields { <label>: <value> } with --resolve-fields.',
     notes: [
-      '<user> must be a user ID (U... or W...); handles, emails and Slack URLs are not accepted.',
+      '<user> is a user ID (U... or W...), an @handle or an email address; Slack URLs are not accepted. ' +
+        'An ID is used as given; a handle or email is looked up first.',
+      USER_NAME_NOTE,
       'A deactivated user (deleted: true) comes back without tz and is_admin: the text shows Admin: false and TZ: (none); with --json the keys are absent.',
       'email needs the users:read.email scope on an app token; --resolve-fields needs users.profile:read.',
     ],
@@ -70,7 +75,7 @@ export function createUsersCommand(): Command {
 
   // users info <id>
   describeCommand(users.command('info'), HELP.info)
-    .argument('<user>', 'User ID (e.g. U0123456789)')
+    .argument('<user>', 'User ID (e.g. U0123456789), @handle or email')
     .option('--resolve-fields', RESOLVE_FIELDS_HELP, false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
@@ -79,7 +84,11 @@ export function createUsersCommand(): Command {
 
       try {
         const client = await getAuthenticatedClient(options.workspace);
-        const response = await client.getUserInfo(user);
+        // A handle (@alice) or email is looked up; an ID is used as given.
+        const userId = await resolveIdentifier(client, user, user, 'user', '<user>', {
+          onProgress: (text) => { spinner.text = text; },
+        });
+        const response = await client.getUserInfo(userId);
 
         if (!response.ok || !response.user) {
           failCommand(new NotFoundError(response.error || 'Unknown error'), {

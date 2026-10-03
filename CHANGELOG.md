@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`auth login-auto` no longer fails with "The browser started but exposed no page to attach to" while the browser window flashes open and shut**: the page-target lookup now polls for up to 5s instead of probing once, covering the gap between Chrome writing `DevToolsActivePort` and registering its initial tab in `/json/list` (measured ~200–300 ms; previously the one-shot probe missed 5/5 launches on a fast machine) (#274)
 
 ### Added
+- **Channel names and user handles wherever an ID is accepted**: `--recipient-id="#general"`, `conversations read general`, `--recipient-id=@alice` and `users info alice@example.com` now resolve to the channel or user ID, so a task no longer starts with a `search channels` call (#327)
+  - Channels: `#name` or the bare name, matched exactly (case-insensitive) against the public and private, non-archived channels the identity can see
+  - Users: `@handle` (exact Slack handle) or an email address (`users.lookupByEmail`, which needs the `users:read.email` scope on an app token)
+  - Covers `messages send`/`draft`/`edit`/`react`, `conversations read`/`get`/`members list|add|remove`/`join`/`leave`, `canvas list|read --channel`, `users info`, and the user lists of `usergroups add`/`remove`
+  - IDs and Slack URLs make no extra API call; an unknown name exits 1 with `not_found`, a name that matches more than one thing exits 1 with `invalid_input` listing the candidate IDs, and nothing is sent or changed in either case
+  - A bare `--recipient-id` name that is both a channel and a user is refused; write `#name` or `@name`
+  - `--json` output carries the resolved ID (`channel_id`, `added`, …); quote a `#` in a shell (`"#general"` or `--flag=#general`)
+  - The Claude Code plugin skill passes names directly instead of searching first
 - **Structured JSON errors with `--json`**: a failing command run with `--json` now ends stderr with one single-line object, `{"error":{"code","message","hint"?,"retryable","slack_error"?}}`, writes nothing to stdout and exits `1`, so scripts and AI agents can branch on the failure instead of parsing text (#326)
   - `code` is one of `auth_failed`, `not_found`, `permission_denied`, `rate_limited`, `invalid_input`, `network`, `confirmation_required`, `unsupported_auth_type`, `unknown`; `slack_error` is Slack's own code verbatim; `retryable` is `true` only for `rate_limited` and `network`. See "Errors under `--json`" in the scripting guide
   - The spinner's failure line is no longer printed in `--json` mode, so a consumer that read the error text from stderr under `--json` must read the JSON object instead. Without `--json`, output and exit codes are unchanged

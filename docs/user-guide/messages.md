@@ -29,7 +29,7 @@ slackcli messages send --recipient-id=C1234567890 --message-file=./release-notes
 
 | Option | Purpose |
 |---|---|
-| `--recipient-id <id>` | Channel ID, user ID, or Slack URL |
+| `--recipient-id <id>` | Channel ID, user ID, Slack URL, `"#channel"`, `@handle` or email ([names](links-and-timestamps.md#channel-names-and-user-handles)) |
 | `--message <text>` | Message text. **Required** unless `--message-file` is given |
 | `--message-file <path>` | Read the message text from a UTF-8 file; cannot be combined with `--message` |
 | `--thread-ts <ts>` | Post as a reply in this thread |

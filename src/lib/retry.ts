@@ -43,6 +43,7 @@ export const READ_METHODS: ReadonlySet<string> = new Set([
   'usergroups.users.list',
   'users.info',
   'users.list',
+  'users.lookupByEmail',
 ]);
 
 export interface RetryOptions {

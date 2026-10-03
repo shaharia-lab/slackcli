@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import * as readline from 'node:readline';
-import { confirmWrite, createUsergroupsCommand, parseUserIds } from './usergroups.ts';
+import { confirmWrite, createUsergroupsCommand, splitUserRefs } from './usergroups.ts';
 
 function subcommand(name: string) {
   return createUsergroupsCommand().commands.find((command) => command.name() === name);
@@ -30,15 +30,15 @@ describe('usergroups command', () => {
   });
 });
 
-describe('parseUserIds', () => {
+describe('splitUserRefs', () => {
   it('splits on commas and whitespace', () => {
-    expect(parseUserIds(['U1,U2 U3', 'U4'])).toEqual(['U1', 'U2', 'U3', 'U4']);
+    expect(splitUserRefs(['U1,U2 U3', 'U4'])).toEqual(['U1', 'U2', 'U3', 'U4']);
   });
-  it('strips a leading @ and drops empties', () => {
-    expect(parseUserIds(['@U1', '', ' , ', 'U2'])).toEqual(['U1', 'U2']);
+  it('keeps a leading @ (a handle is resolved later) and drops empties and a bare @', () => {
+    expect(splitUserRefs(['@U1', '', ' , ', '@', 'U2', '@alice'])).toEqual(['@U1', 'U2', '@alice']);
   });
   it('returns an empty array for no ids', () => {
-    expect(parseUserIds([''])).toEqual([]);
+    expect(splitUserRefs([''])).toEqual([]);
   });
 });
 

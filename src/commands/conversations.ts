@@ -3,11 +3,11 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
-import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
 import { processReadPage, resolveSelfIdentity } from '../lib/poll.ts';
-import { confirmWrite, parseUserIds } from './usergroups.ts';
+import { confirmWrite, splitUserRefs } from './usergroups.ts';
 import {
   normalizeTimestamp,
   parseSlackLink,
@@ -20,10 +20,13 @@ import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
+import { lazyClient, resolveIdentifier, resolveUserList } from '../lib/name-resolver.ts';
 
 // Help text shared by several commands below.
 const CHANNEL_ARG_NOTE =
-  '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>).';
+  '<channel> accepts a channel ID, a Slack channel link (/archives/<channel>) or a channel name.';
+const USER_REFS_NOTE =
+  '<users...> are user IDs, @handles or email addresses, comma- or space-separated; a leading @ on an ID is ignored.';
 const TEAM_NOTE =
   '--team <workspace-id> (T0123456789) scopes the call to one workspace of an Enterprise Grid org.';
 
@@ -62,6 +65,7 @@ const HELP = {
       'of one thread (one page, parent included; has_more says when it was cut off). Use "conversations get" for a single message. Safe to poll: pass next_oldest back as --oldest.',
     examples: [
       'slackcli conversations read C0123456789 --limit 20',
+      'slackcli conversations read general --limit 20 --json',
       'slackcli conversations read C0123456789 --thread-ts 1712345678.123456',
       'slackcli conversations read --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --json',
       'slackcli conversations read C0123456789 --oldest 1712345678.123456 --exclude-self --json',
@@ -70,8 +74,9 @@ const HELP = {
       '{ channel_id, message_count, next_oldest, has_more, messages: [{ ts, thread_ts, user, text, type, ' +
       'reply_count, reactions, bot_id, blocks, attachments, files? }], users: [{ id, name, real_name, email }] }.',
     notes: [
-      'Give either <channel-id> (a channel ID or Slack URL), optionally with --thread-ts, or --permalink alone; ' +
-        'combining --permalink with either is an error.',
+      'Give either <channel-id> (a channel ID, Slack URL or channel name), optionally with --thread-ts, or ' +
+        '--permalink alone; combining --permalink with either is an error.',
+      CHANNEL_NAME_NOTE,
       '--permalink with a channel link reads the channel; with a message link it reads that message\'s thread ' +
         '(the parent thread when the link points at a reply).',
       'Timestamps (--thread-ts, --oldest, --latest): 1712345678.123456, p1712345678123456, 1712345678123456, ' +
@@ -95,7 +100,8 @@ const HELP = {
       'users: [{ id, name, real_name, email }] }.',
     notes: [
       'Give <channel-id> and <timestamp>, or --permalink alone; combining them is an error. ' +
-        '<channel-id> accepts a channel ID or a Slack URL.',
+        '<channel-id> accepts a channel ID, a Slack URL or a channel name.',
+      CHANNEL_NAME_NOTE,
       'Browser auth finds top-level messages and thread replies. An app token (xoxb/xoxp) finds only top-level ' +
         'messages; for a reply, use "conversations read <channel> --thread-ts <parent>".',
       'Exits 1 with "Message not found" when nothing matches.',
@@ -142,6 +148,7 @@ const HELP = {
       '{ channel_id, member_count, members: [user IDs], next_cursor? } — next_cursor is present only when more members remain.',
     notes: [
       CHANNEL_ARG_NOTE,
+      CHANNEL_NAME_NOTE,
       '--limit counts members returned: it pages until it has that many or runs out. Pass next_cursor back as --cursor for more.',
       'On an Enterprise Grid org, Slack may block this with enterprise_is_restricted; the command exits 1.',
     ],
@@ -159,8 +166,10 @@ const HELP = {
     json: '{ channel_id, added: [user IDs] }.',
     confirms: true,
     notes: [
-      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>). <users...> are user IDs, ' +
-        'comma- or space-separated; a leading @ is ignored.',
+      CHANNEL_ARG_NOTE,
+      USER_REFS_NOTE,
+      CHANNEL_NAME_NOTE,
+      USER_NAME_NOTE,
       TEAM_NOTE,
     ],
   },
@@ -177,8 +186,10 @@ const HELP = {
     json: '{ channel_id, removed: [user IDs], failed: [{ user, error }] }.',
     confirms: true,
     notes: [
-      '<channel> accepts a channel ID or a Slack channel link (/archives/<channel>). <users...> are user IDs, ' +
-        'comma- or space-separated; a leading @ is ignored.',
+      CHANNEL_ARG_NOTE,
+      USER_REFS_NOTE,
+      CHANNEL_NAME_NOTE,
+      USER_NAME_NOTE,
       TEAM_NOTE,
     ],
   },
@@ -194,6 +205,7 @@ const HELP = {
     notes: [
       'Acts immediately, with no confirmation prompt. Joining a channel you are already in is a no-op.',
       CHANNEL_ARG_NOTE,
+      CHANNEL_NAME_NOTE,
     ],
   },
   leave: {
@@ -209,6 +221,7 @@ const HELP = {
     confirms: true,
     notes: [
       CHANNEL_ARG_NOTE,
+      CHANNEL_NAME_NOTE,
       'Leaving a channel you are not in is reported as a no-op, not an error.',
     ],
   },
@@ -230,6 +243,51 @@ function resolveChannelArg(input: string): { channelId: string; workspace: strin
     return { channelId: parsed.channelId, workspace: parsed.workspace };
   }
   return { channelId: input, workspace: undefined };
+}
+
+// A channel argument may also be a channel name (#general or general). Resolve
+// it to an ID; an ID or a link makes no Slack call.
+function resolveChannelName(
+  client: SlackClient,
+  raw: string | undefined,
+  id: string,
+  spinner: ReturnType<typeof ora>,
+): Promise<string> {
+  return resolveIdentifier(client, raw, id, 'channel', '<channel>', {
+    onProgress: (text) => { spinner.text = text; },
+  });
+}
+
+type MembershipTargets = { channelId: string; workspace: string | undefined; ids: string[]; client?: SlackClient };
+
+// Resolve the <channel> and <users...> of a membership write before its
+// confirmation prompt, so the prompt and the call name the same IDs. A client
+// is created here only when a name needs a lookup; otherwise the write path
+// (and its no-auth confirmation refusal) is unchanged. On failure it reports
+// the error and returns undefined, so the caller just returns. `usersVerb`
+// (add/remove) makes an empty <users...> an error.
+async function membershipTargetsOrFail(
+  channelArg: string,
+  users: string[],
+  options: { workspace?: string; json?: boolean },
+  context: string,
+  usersVerb?: string,
+): Promise<MembershipTargets | undefined> {
+  const refs = splitUserRefs(users);
+  if (usersVerb && refs.length === 0) {
+    failCommand(new InvalidInputError(`No user IDs given — pass at least one user ID to ${usersVerb}.`), { json: options.json });
+    return undefined;
+  }
+  try {
+    const parsed = resolveChannelArg(channelArg);
+    const client = lazyClient(() => getAuthenticatedClient(options.workspace));
+    const channelId = await resolveIdentifier(client.get, channelArg, parsed.channelId, 'channel', '<channel>');
+    const ids = await resolveUserList(client.get, refs, '<users...>');
+    return { channelId, workspace: parsed.workspace, ids, client: client.created() };
+  } catch (err: any) {
+    failCommand(err, { json: options.json, context });
+    return undefined;
+  }
 }
 
 // True when a Slack error is the enterprise-grid member-enumeration block.
@@ -331,7 +389,7 @@ export function createConversationsCommand(): Command {
 
   // Read conversation history
   describeCommand(conversations.command('read'), HELP.read)
-    .argument('[channel-id]', 'Channel ID or Slack URL to read from')
+    .argument('[channel-id]', 'Channel ID, Slack URL or channel name to read from')
     .option('--thread-ts <timestamp>', 'Read this thread (parent message timestamp) instead of the channel')
     .option('--permalink <url>', 'Slack link; reads that channel, or that message\'s thread (replaces <channel-id> and --thread-ts)')
     .option('--exclude-replies', 'Exclude threaded replies (only top-level messages)', false)
@@ -349,12 +407,12 @@ export function createConversationsCommand(): Command {
           { permalink: options.permalink, channelId: channelIdArg, threadTs: options.threadTs },
           { channel: '<channel-id>', timestamp: '--thread-ts' }
         );
-        const channelId = target.channelId;
         const oldest = options.oldest ? normalizeTimestamp(options.oldest, '--oldest') : undefined;
         const latest = options.latest ? normalizeTimestamp(options.latest, '--latest') : undefined;
 
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, target.workspace);
+        const channelId = await resolveChannelName(client, channelIdArg, target.channelId, spinner);
 
         let response: any;
 
@@ -459,7 +517,7 @@ export function createConversationsCommand(): Command {
 
   // Get a single message by channel + timestamp
   describeCommand(conversations.command('get'), HELP.get)
-    .argument('[channel-id]', 'Channel ID or Slack URL')
+    .argument('[channel-id]', 'Channel ID, Slack URL or channel name')
     .argument('[timestamp]', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces <channel-id> and <timestamp>)')
     .option('--workspace <id|name>', 'Workspace to use')
@@ -472,10 +530,9 @@ export function createConversationsCommand(): Command {
           { permalink: options.permalink, channelId: channelIdArg, timestamp: timestampArg },
           { channel: '<channel-id>', timestamp: '<timestamp>' }
         );
-        const channelId = target.channelId;
-
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, target.workspace);
+        const channelId = await resolveChannelName(client, channelIdArg, target.channelId, spinner);
 
         const msg = await fetchMessage(client, channelId, target.timestamp);
 
@@ -592,7 +649,7 @@ export function createConversationsCommand(): Command {
 
   // List the members of a channel/conversation
   describeCommand(members.command('list'), HELP.membersList)
-    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .argument('<channel>', 'Channel ID, Slack link (/archives/<channel>) or channel name')
     .option('--limit <number>', 'Maximum number of members to return', '100')
     .option('--cursor <cursor>', 'Pagination cursor for next page of results')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
@@ -607,10 +664,11 @@ export function createConversationsCommand(): Command {
       const spinner = ora('Fetching members...').start();
 
       try {
-        const { channelId, workspace } = resolveChannelArg(channelArg);
+        const parsed = resolveChannelArg(channelArg);
 
         const client = await getAuthenticatedClient(options.workspace);
-        warnOnWorkspaceMismatch(client, workspace);
+        warnOnWorkspaceMismatch(client, parsed.workspace);
+        const channelId = await resolveChannelName(client, channelArg, parsed.channelId, spinner);
 
         // Page until we have `limit` members or run out of pages, so --limit
         // reflects members RETURNED (consistent with the CLI's other --limit flags).
@@ -679,26 +737,23 @@ export function createConversationsCommand(): Command {
   // invite the valid ids and skip invalid ones; not exposed here to keep the
   // write PR minimal — a follow-up can add it if users want best-effort invite.)
   describeCommand(members.command('add'), HELP.membersAdd)
-    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
-    .argument('<users...>', 'One or more user IDs (comma- or space-separated); agent/app IDs work too')
+    .argument('<channel>', 'Channel ID, Slack link (/archives/<channel>) or channel name')
+    .argument('<users...>', 'User IDs, @handles or emails (comma- or space-separated); agent/app IDs work too')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--team <workspace-id>', 'Target workspace T-id (enterprise org scoping)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, users, options) => {
-      const ids = parseUserIds(users);
-      if (ids.length === 0) {
-        failCommand(new InvalidInputError('No user IDs given — pass at least one user ID to add.'), { json: options.json });
-        return;
-      }
-      const { channelId, workspace } = resolveChannelArg(channelArg);
+      const targets = await membershipTargetsOrFail(channelArg, users, options, 'Failed to add members', 'add');
+      if (!targets) return;
+      const { channelId, workspace, ids } = targets;
       if (!(await confirmWrite(`Add ${ids.length} user(s) to ${channelId}?`, options.yes, options.json))) {
         return;
       }
 
       const spinner = ora('Adding members...').start();
       try {
-        const client = await getAuthenticatedClient(options.workspace);
+        const client = targets.client ?? await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspace);
 
         await client.inviteToConversation(channelId, ids.join(','), { team: options.team });
@@ -718,26 +773,23 @@ export function createConversationsCommand(): Command {
   // succeeded and which failed rather than aborting the whole batch on the
   // first error (a best-effort remove, since a later id may still be removable).
   describeCommand(members.command('remove'), HELP.membersRemove)
-    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
-    .argument('<users...>', 'One or more user IDs (comma- or space-separated)')
+    .argument('<channel>', 'Channel ID, Slack link (/archives/<channel>) or channel name')
+    .argument('<users...>', 'User IDs, @handles or emails (comma- or space-separated)')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--team <workspace-id>', 'Target workspace T-id (enterprise org scoping)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, users, options) => {
-      const ids = parseUserIds(users);
-      if (ids.length === 0) {
-        failCommand(new InvalidInputError('No user IDs given — pass at least one user ID to remove.'), { json: options.json });
-        return;
-      }
-      const { channelId, workspace } = resolveChannelArg(channelArg);
+      const targets = await membershipTargetsOrFail(channelArg, users, options, 'Failed to remove members', 'remove');
+      if (!targets) return;
+      const { channelId, workspace, ids } = targets;
       if (!(await confirmWrite(`Remove ${ids.length} user(s) from ${channelId}?`, options.yes, options.json))) {
         return;
       }
 
       const spinner = ora('Removing members...').start();
       try {
-        const client = await getAuthenticatedClient(options.workspace);
+        const client = targets.client ?? await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspace);
 
         const removed: string[] = [];
@@ -784,15 +836,16 @@ export function createConversationsCommand(): Command {
   // your own membership, and it is idempotent: joining a channel you are in
   // returns the channel with no error).
   describeCommand(conversations.command('join'), HELP.join)
-    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .argument('<channel>', 'Channel ID, Slack link (/archives/<channel>) or channel name')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, options) => {
-      const { channelId, workspace } = resolveChannelArg(channelArg);
       const spinner = ora('Joining channel...').start();
       try {
+        const parsed = resolveChannelArg(channelArg);
         const client = await getAuthenticatedClient(options.workspace);
-        warnOnWorkspaceMismatch(client, workspace);
+        warnOnWorkspaceMismatch(client, parsed.workspace);
+        const channelId = await resolveChannelName(client, channelArg, parsed.channelId, spinner);
 
         const response = await client.joinConversation(channelId);
 
@@ -810,18 +863,20 @@ export function createConversationsCommand(): Command {
   // a self-op. Slack returns { not_in_channel: true } when you were already
   // out; that is a no-op success, not an error.
   describeCommand(conversations.command('leave'), HELP.leave)
-    .argument('<channel>', 'Channel ID or Slack link (/archives/<channel>)')
+    .argument('<channel>', 'Channel ID, Slack link (/archives/<channel>) or channel name')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, options) => {
-      const { channelId, workspace } = resolveChannelArg(channelArg);
+      const targets = await membershipTargetsOrFail(channelArg, [], options, 'Failed to leave channel');
+      if (!targets) return;
+      const { channelId, workspace } = targets;
       if (!(await confirmWrite(`Leave ${channelId}?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Leaving channel...').start();
       try {
-        const client = await getAuthenticatedClient(options.workspace);
+        const client = targets.client ?? await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspace);
 
         const response = await client.leaveConversation(channelId);

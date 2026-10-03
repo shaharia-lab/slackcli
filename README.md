@@ -148,8 +148,8 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 
 > [!TIP]
 > Anywhere SlackCLI wants a channel ID or a timestamp, you can paste a **Slack link**
-> instead. Copy a permalink out of the Slack app and hand it straight to the CLI —
-> see [links & timestamps](docs/user-guide/links-and-timestamps.md).
+> instead, and channels and users can be named directly (`"#general"`, `@alice`,
+> `alice@example.com`) — see [links & timestamps](docs/user-guide/links-and-timestamps.md).
 
 ---
 

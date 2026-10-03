@@ -8,6 +8,7 @@ import { SlackClient, SlackTransportError } from './slack-client.ts';
 import { AUTH_ERROR_CODES, SlackAuthError } from './auth-errors.ts';
 import { configureLogging } from './logger.ts';
 import { RateLimiter, SLACK_MIN_REQUEST_INTERVAL_MS } from './rate-limiter.ts';
+import { isReadMethod } from './retry.ts';
 
 class TestSlackClient extends SlackClient {
   public readonly calls: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -1658,5 +1659,26 @@ describe('SlackClient standard-path transport failures', () => {
     expect(sdkRetryConfig(new SlackClient(config, { sdkRetries: 0 }))).toEqual({ retries: 0 });
     // The SDK default (ten retries) stays in place for every other command.
     expect(sdkRetryConfig(new SlackClient(config)).retries).toBe(10);
+  });
+});
+
+describe('SlackClient.lookupUserByEmail', () => {
+  it('calls users.lookupByEmail with the address, through request()', async () => {
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+    const request = spyOn(client, 'request').mockResolvedValue({ ok: true, user: { id: 'U1' } });
+
+    await expect(client.lookupUserByEmail('alice@example.com')).resolves.toEqual({ ok: true, user: { id: 'U1' } });
+    expect(request).toHaveBeenCalledWith('users.lookupByEmail', { email: 'alice@example.com' });
+  });
+
+  it('is a read method, so a 5xx or network failure is retried', () => {
+    expect(isReadMethod('users.lookupByEmail')).toBe(true);
   });
 });

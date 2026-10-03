@@ -74,8 +74,11 @@ one; the command refuses a no-op.
 
 ### `usergroups add <group> <users...>` / `remove <group> <users...>`
 
-Adds or removes members. User IDs (`U…`) may be space- or comma-separated, with
-or without a leading `@`; handles and emails are not resolved to IDs.
+Adds or removes members, given as user IDs (`U…`, with or without a leading
+`@`), `@handle`s or email addresses, space- or comma-separated. Handles and
+emails are resolved to IDs before the confirmation prompt; an unknown or
+ambiguous one stops the command before anything is written (see
+[channel names and user handles](links-and-timestamps.md#channel-names-and-user-handles)).
 
 Slack's underlying `usergroups.users.update` replaces the group's **entire**
 member list — there is no incremental add/remove endpoint. SlackCLI makes

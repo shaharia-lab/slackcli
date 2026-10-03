@@ -15,7 +15,7 @@ slackcli canvas list --json
 | Option | Default | Purpose |
 |---|---|---|
 | `--limit <number>` | `20` | How many to return (1–1000) |
-| `--channel <id>` | — | Channel ID or URL whose shared canvases to list |
+| `--channel <id>` | — | Channel ID, URL or name (`"#general"`) whose shared canvases to list |
 | `--workspace <id\|name>` | — | Workspace to use |
 | `--json` | off | JSON output |
 

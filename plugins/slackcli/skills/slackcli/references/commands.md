@@ -39,7 +39,7 @@ thread reply need browser auth.
 
 ```
 conversations list [--types=public_channel,private_channel,mpim,im] [--limit=100] [--exclude-archived] [--cursor=C] [--json]
-conversations read <channel|url> [--limit=100] [--thread-ts=TS] [--exclude-replies] [--oldest=UNIX] [--latest=UNIX] [--json]
+conversations read <channel|#name|url> [--limit=100] [--thread-ts=TS] [--exclude-replies] [--oldest=UNIX] [--latest=UNIX] [--json]
 conversations read --permalink=URL [--json]        # that message's thread
 conversations get <channel> <ts> | --permalink=URL [--json]
 conversations unread [--types=channels|dms|groups] [--json]
@@ -53,7 +53,7 @@ Standard token: `get` resolves top-level messages only; use `read --thread-ts=<p
 ## messages
 
 ```
-messages send --recipient-id=<C…|U…|url> (--message=T | --message-file=F) [--thread-ts=TS] [--file=PATH] [--blocks=JSON|@file] [--json]
+messages send --recipient-id=<C…|U…|url|"#name"|@handle|email> (--message=T | --message-file=F) [--thread-ts=TS] [--file=PATH] [--blocks=JSON|@file] [--json]
 messages send --permalink=URL --message=T          # reply in that thread
 messages edit (--channel-id=C --timestamp=TS | --permalink=URL) (--message=T | --message-file=F) [--json]
 messages react (--channel-id=C --timestamp=TS | --permalink=URL) --emoji=NAME
@@ -63,7 +63,9 @@ messages delete-draft Dr… [--yes] [--json]                                   #
 messages list-drafts [--limit=100] [--json]                                  # browser auth only
 ```
 
-`U…` recipient opens a DM. `--file` and `--blocks` are exclusive. `--emoji` without
+`U…`, `@handle` or email recipient opens a DM. Any channel or user argument takes
+`"#name"` / `name` / `@handle` / email (exact match; quote `#`); a bare name that is
+both a channel and a user is refused. `--file` and `--blocks` are exclusive. `--emoji` without
 colons. Only the authenticated identity's messages can be edited.
 JSON: `send` → `{channel_id, ts, permalink?}` (`permalink` omitted if lookup fails);
 with `--file` → `{channel_id, file_id}`. `edit` → `{channel_id, ts}`. `draft` → `{channel_id, draft_id}`.

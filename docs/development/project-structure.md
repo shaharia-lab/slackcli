@@ -62,6 +62,7 @@ They hold no Slack API knowledge.
 | `curl-parser.ts` | Extracts tokens from a DevTools cURL command. |
 | `curl-input.ts` | Resolves `auth parse-curl`'s input source (argument → `--from-clipboard` → piped stdin → interactive prompt) into a typed result; clipboard, stdin and TTY are injectable for tests. |
 | `slack-url-parser.ts` | Slack URL / permalink / timestamp normalisation. |
+| `name-resolver.ts` | Channel names (`#general`) and user handles / emails → IDs. `parseNameReference()` is pure, so an ID or URL never reaches Slack; `resolveIdentifier()` is the per-argument entry point commands call after `slack-url-parser.ts` (it also drops the `@`/`#` from a prefixed ID), and `resolveUserList()` resolves a `<users...>` list with one shared `users.list` scan. Exact, case-insensitive matches only; nothing found throws `NotFoundError`, several matches `InvalidInputError`. `lazyClient()` lets write commands create a client only when a lookup needs one, so their no-auth confirmation refusal is unchanged. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks (drafts). |
 | `drafts.ts` | Validates draft-list limits, extracts text from `rich_text`, and projects undocumented responses into the public command contract. |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |

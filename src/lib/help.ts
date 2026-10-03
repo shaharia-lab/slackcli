@@ -37,6 +37,18 @@ export const CONFIRM_NOTE =
   'Asks for confirmation (y/N on stderr) in a terminal. --yes skips the prompt. ' +
   'Without a terminal on stdin and without --yes it refuses and exits 1 without making the change.';
 
+/** Name resolution for channel arguments (#327). */
+export const CHANNEL_NAME_NOTE =
+  'A channel name works too: #general or general (exact, case-insensitive; public or private ' +
+  'channels you can see; an all-upper-case value such as GENERAL is read as an ID). It costs a ' +
+  'conversations.list lookup; an ID or link does not. Quote ' +
+  'a # in a shell ("#general" or --flag=#general), or the shell reads the rest as a comment.';
+
+/** Name resolution for user arguments (#327). */
+export const USER_NAME_NOTE =
+  'A user can be given as @handle (exact Slack handle, case-insensitive) or an email address; ' +
+  'email lookup needs the users:read.email scope on an app token. Unknown or ambiguous names exit 1.';
+
 export const USAGE_ERROR_HINT = (commandPath: string) =>
   `(run "${commandPath} --help" for usage and examples)`;
 

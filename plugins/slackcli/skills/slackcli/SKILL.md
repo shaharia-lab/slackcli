@@ -80,9 +80,12 @@ Read [references/commands.md](references/commands.md) before choosing commands.
 `slackcli <group> <cmd> --help` is authoritative for the installed version.
 
 - `--json` whenever you process output (stdout is JSON only; rest is stderr).
-- Resolve names to IDs first: `search channels`, `search people`,
-  `conversations list`. Pasted Slack URLs work anywhere an ID does;
-  `--permalink` targets one message or its thread.
+- Pass names directly: `--recipient-id="#general"`, `@alice` or
+  `alice@example.com` work wherever an ID does (quote the `#`). Exact match
+  only; `not_found` / `invalid_input` (ambiguous, lists IDs) mean search
+  (`search channels`, `search people`) and use the ID. Reuse the `channel_id`
+  from `--json` output. Pasted Slack URLs also work; `--permalink` targets one
+  message or its thread.
 - Confirm before anything visible to others: send, edit, react, draft, upload,
   any `usergroups` write. Show target and text, get a yes, then run. Add
   `--yes` to `usergroups` writes only after that confirmation.

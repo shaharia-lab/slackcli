@@ -12,8 +12,9 @@ import {
 } from '../lib/canvas-read.ts';
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
+import { resolveIdentifier } from '../lib/name-resolver.ts';
 import type { SlackCanvas } from '../types/index.ts';
-import { describeCommand, type CommandHelp } from '../lib/help.ts';
+import { CHANNEL_NAME_NOTE, describeCommand, type CommandHelp } from '../lib/help.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError } from '../lib/cli-errors.ts';
 
@@ -39,7 +40,8 @@ const HELP = {
       '{ canvas_count, canvases: [{ id, title, created, edit_timestamp, user, editors, size, permalink }] }. ' +
       'With no canvases nothing is written to stdout (exit 0).',
     notes: [
-      '--channel takes a channel ID or a Slack URL.',
+      '--channel takes a channel ID, a Slack URL or a channel name.',
+      CHANNEL_NAME_NOTE,
       '--limit must be 1-1000 (default 20).',
     ],
   },
@@ -56,7 +58,8 @@ const HELP = {
     json:
       '{ id, title, created, edit_timestamp, user, editors, size, permalink, markdown }.',
     notes: [
-      '[canvas-id] takes a canvas file ID (F...) or a Slack URL; --channel takes a channel ID or a Slack URL.',
+      '[canvas-id] takes a canvas file ID (F...) or a Slack URL; --channel takes a channel ID, a Slack URL or a channel name.',
+      CHANNEL_NAME_NOTE,
       'Give [canvas-id] or --channel; when both are given the canvas ID wins.',
       '--raw prints the source HTML and takes precedence over --json (stdout is then HTML, not JSON).',
       'A channel without a canvas is reported on stderr with exit 0 and no stdout. An unknown canvas ID exits 1 with Slack\'s error.',
@@ -88,13 +91,27 @@ function reportCanvasReadFailure(spinner: Ora, err: any, json: boolean): void {
   failCommand(err, { json, spinner, context: 'Failed to read canvas' });
 }
 
+// --channel takes a channel ID, a link or a channel name. `id` is what the
+// URL/ID parser made of it; only a name is looked up.
+async function resolveChannelOption(
+  client: SlackClient,
+  raw: string | undefined,
+  id: string | undefined,
+  spinner: Ora,
+): Promise<string | undefined> {
+  if (raw === undefined || id === undefined) return undefined;
+  return resolveIdentifier(client, raw, id, 'channel', '--channel', {
+    onProgress: (text) => { spinner.text = text; },
+  });
+}
+
 export function createCanvasCommand(): Command {
   const canvas = describeCommand(new Command('canvas'), HELP.group);
 
   // List canvases
   describeCommand(canvas.command('list'), HELP.list)
     .option('--limit <number>', 'Number of canvases to return', '20')
-    .option('--channel <id>', 'Channel ID or URL whose shared canvases to list')
+    .option('--channel <id>', 'Channel ID, URL or name whose shared canvases to list')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
@@ -111,12 +128,13 @@ export function createCanvasCommand(): Command {
           return;
         }
 
-        const channel = options.channel
+        const channelInput = options.channel
           ? normalizeIdentifier(options.channel, 'channel', '--channel')
           : undefined;
 
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspaceOf(options.channel));
+        const channel = await resolveChannelOption(client, options.channel, channelInput, spinner);
 
         const response = await client.listCanvases({
           limit,
@@ -158,7 +176,7 @@ export function createCanvasCommand(): Command {
   // Read canvas content
   describeCommand(canvas.command('read'), HELP.read)
     .argument('[canvas-id]', 'Canvas file ID or URL (e.g., F1234567890)')
-    .option('--channel <id>', 'Channel ID or URL whose canvas to read')
+    .option('--channel <id>', 'Channel ID, URL or name whose canvas to read')
     .option('--raw', 'Output raw HTML instead of markdown', false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
@@ -172,12 +190,13 @@ export function createCanvasCommand(): Command {
         const canvasId = canvasIdArg
           ? normalizeIdentifier(canvasIdArg, 'file', '<canvas-id>')
           : undefined;
-        const channel = options.channel
+        const channelInput = options.channel
           ? normalizeIdentifier(options.channel, 'channel', '--channel')
           : undefined;
 
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspaceOf(canvasIdArg) ?? workspaceOf(options.channel));
+        const channel = await resolveChannelOption(client, options.channel, channelInput, spinner);
 
         const fileId = await resolveCanvasId(client, { canvasId, channel }, onProgress);
         const { file, html } = await fetchCanvasHtml(client, fileId, onProgress);

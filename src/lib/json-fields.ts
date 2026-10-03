@@ -44,14 +44,14 @@ export type FieldsCommand = keyof typeof FIELDS_LIST_KEYS;
 /** A parsed field list: each entry is one path, split on dots. */
 export type FieldPaths = string[][];
 
-// A path segment is a JSON key as Slack writes them: letters, digits, `_`, `-`.
-const SEGMENT = /^[A-Za-z0-9_-]+$/;
-
 /**
- * Parse a `--fields` value: comma-separated, each entry trimmed, duplicates
- * dropped (first occurrence wins the position). Throws InvalidInputError on an
- * empty list, an empty entry or segment (`a,,b`, `a.`, `.a`), or a character
- * a key cannot contain.
+ * Parse a `--fields` value: comma-separated, each entry and each dot-separated
+ * segment trimmed, duplicates dropped (first occurrence wins the position). A
+ * segment is any key without a comma or dot, so a label the CLI prints itself
+ * (`fields.Start Date` under --resolve-fields) can be selected. Throws
+ * InvalidInputError on an empty list or an empty entry or segment (`a,,b`,
+ * `a.`, `.a`). A key that itself contains a comma or dot cannot be named;
+ * select its parent instead.
  */
 export function parseFields(input: string): FieldPaths {
   const entries = input.split(',').map((entry) => entry.trim());
@@ -61,15 +61,16 @@ export function parseFields(input: string): FieldPaths {
   const seen = new Set<string>();
   const paths: FieldPaths = [];
   for (const entry of entries) {
-    const segments = entry.split('.');
-    if (entry === '' || segments.some((segment) => !SEGMENT.test(segment))) {
+    const segments = entry.split('.').map((segment) => segment.trim());
+    if (segments.includes('')) {
       throw new InvalidInputError(
-        `Invalid --fields entry "${entry}": use comma-separated names of letters, digits, _ or -, ` +
-          'with dots for nested fields (e.g. ts,user,profile.email)',
+        `Invalid --fields entry "${entry}": use comma-separated field names, with dots for nested ` +
+          'fields and no empty names (e.g. ts,user,profile.email)',
       );
     }
-    if (seen.has(entry)) continue;
-    seen.add(entry);
+    const key = segments.join('.');
+    if (seen.has(key)) continue;
+    seen.add(key);
     paths.push(segments);
   }
   return paths;

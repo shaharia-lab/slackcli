@@ -68,6 +68,9 @@ slackcli users info U0123456789 --json --fields id,real_name,profile.email
 - Comma-separated field names; a dot path selects a nested value and keeps its
   nesting (`profile.email` gives `{ "profile": { "email": "…" } }`). Through an
   array, a dot path selects from each element (`reactions.name`).
+- A name is matched exactly and may contain spaces, as the labels printed by
+  `--resolve-fields` do: `--fields "id,fields.Start Date"`. A key that itself
+  contains a comma or a dot cannot be named; ask for its parent (`fields`).
 - It applies to each item of the command's main list, or to the record itself
   for a command that prints one record. Every other top-level key — counts,
   `next_cursor`, `next_oldest`, `has_more`, the resolved `users` array — is kept

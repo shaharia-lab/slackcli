@@ -48,6 +48,7 @@ const MESSAGES = [
 const ANSWERS: Record<string, unknown> = {
   getConversationHistory: { ok: true, messages: MESSAGES, has_more: false },
   getConversationReplies: { ok: true, messages: MESSAGES, has_more: false },
+  listMessages: { ok: true, messages: { C0123456789: [MESSAGES[1]] } },
   getUsersInfo: { ok: true, users: [USER] },
   getUserInfo: { ok: true, user: USER },
   listConversations: {
@@ -64,6 +65,43 @@ const ANSWERS: Record<string, unknown> = {
     ok: true,
     usergroups: [{ id: 'S0123456789', handle: 'platform', name: 'Platform', user_count: 2, prefs: { channels: [] } }],
   },
+  getConversationInfo: { ok: true, channel: { id: 'C0123456789', name: 'general' } },
+  getFileInfo: {
+    ok: true,
+    file: {
+      id: 'F0123456789',
+      name: 'notes.txt',
+      title: 'Notes',
+      mimetype: 'text/plain',
+      filetype: 'text',
+      size: 5,
+      url_private: 'https://files.slack.com/files-pri/T0123456789-F0123456789/notes.txt',
+      permalink: 'https://acme.slack.com/files/U0123456789/F0123456789/notes.txt',
+    },
+  },
+  downloadFile: '<h1>Notes</h1><p>hello</p>',
+  listCanvases: { ok: true, files: [{ id: 'F0123456789', title: 'Notes', created: 1712345678, size: 5, permalink: 'p' }] },
+  listEmoji: { ok: true, emoji: { party: 'https://emoji.example.com/party.png', fiesta: 'alias:party' } },
+  getUnreadCounts: { ok: true, channels: [{ id: 'C0123456789', has_unreads: true, mention_count: 2 }] },
+  listSavedItems: {
+    ok: true,
+    items: [{ type: 'message', channel: 'C0123456789', message: { ts: '1712345678.000100', user: 'U0123456789', text: 'saved' } }],
+  },
+  listDrafts: {
+    ok: true,
+    drafts: [{
+      id: 'Dr0123456789',
+      date_created: 1712345678,
+      destinations: [{ channel_id: 'C0123456789' }],
+      blocks: [{ type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'hi' }] }] }],
+    }],
+  },
+  searchModules: {
+    ok: true,
+    items: [{ id: 'U0123456789', name: 'alice', real_name: 'Alice', profile: { email: 'alice@example.com' } }],
+    pagination: { total_count: 1 },
+  },
+  listUsergroupUsers: { ok: true, users: ['U0123456789'] },
   searchMessages: {
     ok: true,
     messages: {
@@ -79,6 +117,7 @@ function stubClient(): unknown {
     get: (_target, prop) => {
       if (prop === 'then') return undefined;
       if (prop === 'workspaceHost') return 'acme.slack.com';
+      if (prop === 'authType') return 'browser';
       return async () => structuredClone(ANSWERS[prop as string] ?? { ok: true });
     },
   });
@@ -138,11 +177,17 @@ describe('--fields, in process', () => {
     expect(Object.keys(out)).toEqual(Object.keys(full));
   });
 
-  it('prints the same bytes without --fields as the unprojected payload', async () => {
+  it('without --fields prints the full payload, pretty-printed as before', async () => {
     await run(['conversations', 'read', 'C0123456789', '--json']);
     const parsed = JSON.parse(stdout);
     expect(stdout).toBe(`${JSON.stringify(parsed, null, 2)}\n`);
-    expect(parsed.messages[2]).toMatchObject({ blocks: [{ type: 'rich_text' }] });
+    expect(parsed.messages[2]).toEqual({
+      ts: '1712345678.000300',
+      user: 'U0123456789',
+      text: 'third',
+      type: 'message',
+      blocks: [{ type: 'rich_text' }],
+    });
   });
 
   it('users info projects the record itself, keeping nesting for dot paths', async () => {
@@ -199,6 +244,60 @@ describe('--fields, in process', () => {
     'users info': ['U0123456789'],
   };
   const commands = Object.keys(FIELDS_LIST_KEYS).map((path) => [path, [...path.split(' '), ...(COMMAND_ARGS[path] ?? [])]] as const);
+
+  // One real field of each command's items (or record). A list key in
+  // FIELDS_LIST_KEYS that does not match what the command prints would leave
+  // the payload unprojected, and fail here.
+  const PROBE: Record<keyof typeof FIELDS_LIST_KEYS, string> = {
+    'canvas list': 'id',
+    'canvas read': 'markdown',
+    'conversations get': 'ts',
+    'conversations list': 'id',
+    'conversations read': 'ts',
+    'conversations unread': 'id',
+    'emoji get': 'name',
+    'emoji list': 'name',
+    'files info': 'id',
+    'files read': 'content',
+    'messages list-drafts': 'draft_id',
+    'saved list': 'type',
+    'search channels': 'id',
+    'search messages': 'ts',
+    'search people': 'id',
+    'team info': 'id',
+    'usergroups list': 'id',
+    'usergroups read': 'id',
+    'users info': 'id',
+    'users list': 'id',
+  };
+
+  it.each(commands)('%s prints only the requested field of its items', async (path, argv) => {
+    const field = PROBE[path as keyof typeof FIELDS_LIST_KEYS];
+    const full = await run([...argv, '--json']);
+    stdout = '';
+    const out = await run([...argv, '--json', '--fields', field]);
+
+    const listKey = FIELDS_LIST_KEYS[path as keyof typeof FIELDS_LIST_KEYS];
+    if (listKey === null) {
+      expect(Object.keys(full).length).toBeGreaterThan(1);
+      expect(Object.keys(out)).toEqual([field]);
+      expect(out[field]).toEqual(full[field]);
+      return;
+    }
+    expect(Object.keys(out)).toEqual(Object.keys(full));
+    const items = [out[listKey]].flat();
+    const fullItems = [full[listKey]].flat();
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBe(fullItems.length);
+    items.forEach((item: Record<string, unknown>, i: number) => {
+      expect(Object.keys(fullItems[i]).length).toBeGreaterThan(1);
+      expect(item).toEqual({ [field]: fullItems[i][field] });
+    });
+    // Everything outside the list is what it was.
+    for (const key of Object.keys(full)) {
+      if (key !== listKey) expect(out[key]).toEqual(full[key]);
+    }
+  });
 
   async function runFailing(argv: string[], extra: string[]) {
     const [group, ...rest] = argv;

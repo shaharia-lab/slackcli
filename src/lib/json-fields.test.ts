@@ -11,6 +11,18 @@ describe('parseFields', () => {
     expect(parseFields('user,ts,user, ts')).toEqual([['user'], ['ts']]);
   });
 
+  it('accepts a key with spaces or punctuation, as --resolve-fields labels have', () => {
+    expect(parseFields('id,fields.Start Date, fields . T-shirt size/EU ')).toEqual([
+      ['id'],
+      ['fields', 'Start Date'],
+      ['fields', 'T-shirt size/EU'],
+    ]);
+  });
+
+  it('treats the same path written with different spacing as one', () => {
+    expect(parseFields('a.b, a . b')).toEqual([['a', 'b']]);
+  });
+
   it('accepts digits, underscores and hyphens', () => {
     expect(parseFields('thread_ts,x-1,a.b_2')).toEqual([['thread_ts'], ['x-1'], ['a', 'b_2']]);
   });
@@ -20,7 +32,7 @@ describe('parseFields', () => {
     expect(() => parseFields(input)).toThrow('--fields needs at least one field name');
   });
 
-  it.each(['ts,,user', 'ts,', ',ts', 'profile.', '.email', 'a..b', 'a b', 'a/b', 'text*', 'a.b c'])(
+  it.each(['ts,,user', 'ts,', ',ts', 'profile.', '.email', 'a..b', 'a. .b', 'ts, ,user'])(
     'rejects the malformed list %j',
     (input) => {
       expect(() => parseFields(input)).toThrow(InvalidInputError);
@@ -113,6 +125,14 @@ describe('projectFields', () => {
     expect(projectFields(user, parseFields('id,profile.email'), null)).toEqual({ id: 'U1', profile: { email: 'a@example.com' } });
     expect(projectFields(user, parseFields('profile.fields.X.value'), null)).toEqual({
       profile: { fields: { X: { value: 'v' } } },
+    });
+  });
+
+  it('selects a key that contains spaces', () => {
+    const row = { id: 'U1', fields: { 'Start Date': '2026-01-01', Team: 'Platform' } };
+    expect(projectFields(row, parseFields('id,fields.Start Date'), null)).toEqual({
+      id: 'U1',
+      fields: { 'Start Date': '2026-01-01' },
     });
   });
 

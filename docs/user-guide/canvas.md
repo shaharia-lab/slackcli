@@ -50,7 +50,8 @@ slackcli canvas read F1234567890 --json
 | `--fields <list>` | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 `--raw` takes precedence over `--json`: with both, stdout carries the HTML, not
-JSON.
+JSON. `--fields` then has nothing to select from and is ignored (it is still
+validated).
 
 Canvas IDs are file IDs: `F` followed by alphanumerics. Either give one or use
 `--channel` (the canvas ID wins when both are given). A channel with no canvas

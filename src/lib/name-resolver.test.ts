@@ -70,6 +70,10 @@ describe('parseNameReference', () => {
     ['#general', 'channel-or-user', { kind: 'channel', name: 'general' }],
     ['@alice', 'channel-or-user', { kind: 'user', handle: 'alice' }],
     ['alice@example.com', 'channel-or-user', { kind: 'email', email: 'alice@example.com' }],
+    // Whitespace between the prefix and the name is dropped.
+    ['# general', 'channel', { kind: 'channel', name: 'general' }],
+    ['@ alice', 'user', { kind: 'user', handle: 'alice' }],
+    ['<@alice>', 'channel-or-user', { kind: 'user', handle: 'alice' }],
   ] as const)('%p as %s -> %j', (input, expected, result) => {
     expect(parseNameReference(input, expected)).toEqual(result as any);
   });
@@ -97,6 +101,15 @@ describe('parseNameReference', () => {
     ['#general', 'user'],
     ['@alice', 'channel'],
     ['alice@example.com', 'channel'],
+    // An ID stays an ID with whitespace after its prefix, and for either kind.
+    ['@ U0123456789', 'user'],
+    ['#C0123456789', 'channel-or-user'],
+    ['@U0123456789', 'channel-or-user'],
+    ['#   ', 'channel-or-user'],
+    // File arguments never take a name, whatever the form.
+    ['#general', 'file'],
+    ['@alice', 'file'],
+    ['alice@example.com', 'file'],
   ] as const)('%p as %s is not a name', (input, expected) => {
     expect(parseNameReference(input, expected)).toBeNull();
   });

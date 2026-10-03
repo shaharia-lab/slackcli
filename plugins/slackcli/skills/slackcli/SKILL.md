@@ -96,7 +96,11 @@ Read [references/commands.md](references/commands.md) before choosing commands.
   permissions, so the real write can still be refused.
 - Keep handles: `messages send --json` returns `channel_id`, `ts`, usually
   `permalink`. Use them for edit/react/reply and give the permalink to the user.
-- Long text: `--message-file`. Slack mrkdwn only (no `#` headings, no `[text](url)`).
+- Multi-line text, code, quotes, backticks or `$`: pipe it, never quote it into
+  `--message`. `printf '%s' "$TEXT" | slackcli messages send --recipient-id=C… --message-file -`,
+  or a heredoc with a quoted delimiter (`--message-file - <<'MSG'`). Works on
+  `send`, `edit` and `draft`; no temp file needed. Slack mrkdwn only (no `#`
+  headings, no `[text](url)`).
 - Slow is throttling (2 calls in flight, 200 ms apart), not a hang. Narrow
   with `--types`/`--limit` instead of retrying.
 - Auth errors mid-task: back to phase 2. Drafts and reply lookup by timestamp

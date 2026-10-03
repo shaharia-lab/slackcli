@@ -314,6 +314,7 @@ slackcli messages send --permalink="$LINK" --message="On it"      # replies in-t
 slackcli messages send --recipient-id=C123 --file=./report.pdf --message="Latest numbers"
 slackcli messages send --recipient-id=C123 --blocks=@blocks.json
 slackcli messages send --recipient-id=C123 --message-file=./release-notes.md
+printf '%s' "$REPORT" | slackcli messages send --recipient-id=C123 --message-file -   # text from stdin
 slackcli messages send --recipient-id=C123 --message="Done" --json   # {channel_id, ts, permalink}
 slackcli messages react --permalink="$LINK" --emoji=+1
 slackcli messages edit --channel-id=C123 --timestamp=1234567890.123456 --message="Corrected"

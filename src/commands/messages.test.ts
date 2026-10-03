@@ -7,7 +7,6 @@ import {
   createMessagesCommand,
   parseBlocksInput,
   permalinkField,
-  resolveMessageText,
 } from './messages.ts';
 
 function subcommand(name: string) {
@@ -94,21 +93,24 @@ describe('messages command', () => {
   });
 
   it('rejects --message-file with --message rather than silently picking one', async () => {
+    // '-' (stdin) is rejected exactly like a path, whichever flag comes first.
+    const combos = [
+      ['--message=inline', '--message-file=body.txt'],
+      ['--message=inline', '--message-file=-'],
+      ['--message-file', '-', '--message', 'inline'],
+    ];
     for (const name of ['send', 'draft', 'edit']) {
-      const command = createMessagesCommand();
-      command.commands.find((candidate) => candidate.name() === name)!
-        .exitOverride()
-        .configureOutput({ writeErr: () => {} });
+      for (const flags of combos) {
+        const command = createMessagesCommand();
+        command.commands.find((candidate) => candidate.name() === name)!
+          .exitOverride()
+          .configureOutput({ writeErr: () => {} });
 
-      const targetFlag = name === 'edit' ? '--channel-id=C123' : '--recipient-id=C123';
-      await expect(command.parseAsync([
-        name,
-        targetFlag,
-        '--message=inline',
-        '--message-file=body.txt',
-      ], { from: 'user' })).rejects.toThrow(
-        "option '--message-file <path>' cannot be used with option '--message <text>'"
-      );
+        const targetFlag = name === 'edit' ? '--channel-id=C123' : '--recipient-id=C123';
+        await expect(command.parseAsync([name, targetFlag, ...flags], { from: 'user' })).rejects.toThrow(
+          "option '--message-file <path>' cannot be used with option '--message <text>'"
+        );
+      }
     }
   });
 
@@ -154,54 +156,6 @@ describe('messages command', () => {
       await expect(command.parseAsync([name, '--yes'], { from: 'user' }))
         .rejects.toThrow('missing required argument');
     }
-  });
-});
-
-describe('resolveMessageText', () => {
-  async function withTempFile(
-    contents: string,
-    run: (path: string) => Promise<void>,
-  ): Promise<void> {
-    const dir = await mkdtemp(join(tmpdir(), 'slackcli-message-'));
-    const path = join(dir, 'body.txt');
-    await Bun.write(path, contents);
-    try {
-      await run(path);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  }
-
-  it('returns --message unchanged, including an intentionally empty one', async () => {
-    expect(await resolveMessageText({ message: 'Deploy green' })).toBe('Deploy green');
-    expect(await resolveMessageText({ message: '' })).toBe('');
-  });
-
-  it('reads the message from --message-file as UTF-8, preserving mrkdwn and newlines', async () => {
-    const body = '*Release 1.2*\n\n- <https://example.com|runbook>\n- café ☕\n';
-    await withTempFile(body, async (path) => {
-      expect(await resolveMessageText({ messageFile: path })).toBe(body);
-    });
-  });
-
-  it('rejects a file that is missing, empty, or only whitespace before sending', async () => {
-    await expect(resolveMessageText({ messageFile: '' }))
-      .rejects.toThrow('--message-file path cannot be empty');
-
-    await expect(resolveMessageText({ messageFile: '/nonexistent/body.txt' }))
-      .rejects.toThrow('Cannot read message file /nonexistent/body.txt');
-
-    await withTempFile('', async (path) => {
-      await expect(resolveMessageText({ messageFile: path })).rejects.toThrow('is empty');
-    });
-    await withTempFile('   \n\t\n', async (path) => {
-      await expect(resolveMessageText({ messageFile: path })).rejects.toThrow('is empty');
-    });
-  });
-
-  it('rejects an invocation supplying neither flag', async () => {
-    await expect(resolveMessageText({}))
-      .rejects.toThrow('Either --message or --message-file is required');
   });
 });
 

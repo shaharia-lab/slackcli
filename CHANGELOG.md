@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`auth login-auto` no longer fails with "The browser started but exposed no page to attach to" while the browser window flashes open and shut**: the page-target lookup now polls for up to 5s instead of probing once, covering the gap between Chrome writing `DevToolsActivePort` and registering its initial tab in `/json/list` (measured ~200–300 ms; previously the one-shot probe missed 5/5 launches on a fast machine) (#274)
 
 ### Added
+- **Message text from standard input with `--message-file -`**: `messages send`, `edit` and `draft` read the text from a pipe or heredoc, so multi-line text, code, quotes, backticks and `$` need no shell quoting and no temporary file (#329)
+  - `printf '%s' "$REPORT" | slackcli messages send --recipient-id C0123456789 --message-file -`; one trailing newline (the one `echo` or a heredoc adds) is dropped, everything else is sent as is
+  - Fails before any Slack call, with `invalid_input`, when standard input is a terminal (it never waits for typing), is empty or whitespace-only, is larger than 1 MB, or is still open after 5 minutes
+  - Only `-` means standard input; `./-` still reads a file named `-`, and `--message` with `--message-file -` is rejected as with a path
+  - The Claude Code plugin skill now pipes multi-line text instead of quoting it
 - **Channel names and user handles wherever an ID is accepted**: `--recipient-id="#general"`, `conversations read general`, `--recipient-id=@alice` and `users info alice@example.com` now resolve to the channel or user ID, so a task no longer starts with a `search channels` call (#327)
   - Channels: `#name` or the bare name, matched exactly (case-insensitive) against the public and private, non-archived channels the identity can see
   - Users: `@handle` (exact Slack handle) or an email address (`users.lookupByEmail`, which needs the `users:read.email` scope on an app token)

@@ -140,6 +140,20 @@ reports it clearly and exits non-zero (scoping to a team does **not** lift it).
 Member *management* (`add`/`remove`) and self ops (`join`/`leave`) are
 documented below; this command is read-only.
 
+## Previewing a change (`--dry-run`)
+
+`members add`, `members remove`, `join` and `leave` take `--dry-run`: the
+channel and user IDs are resolved and checked, and the command prints what
+it would do without doing it and without prompting. The preview lists the
+users that would be added or removed.
+
+```bash
+slackcli conversations members add C1234567890 U1 U2 --dry-run
+slackcli conversations leave C1234567890 --dry-run --json
+```
+
+See [`--dry-run`](scripting.md#--dry-run) for the preview format.
+
 ## `conversations members add`
 
 ```bash

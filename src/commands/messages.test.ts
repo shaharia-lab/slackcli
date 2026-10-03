@@ -141,7 +141,7 @@ describe('messages command', () => {
       expect(command).toBeDefined();
       expect(helpOf(command!)?.browserOnly).toBe(true);
       expect(command?.registeredArguments[0]?.required).toBe(true);
-      expect(longOptions(name)).toEqual(['--yes', '--workspace', '--json']);
+      expect(longOptions(name)).toEqual(['--yes', '--workspace', '--json', '--dry-run']);
     }
   });
 

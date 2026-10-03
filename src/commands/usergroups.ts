@@ -11,17 +11,19 @@ import { describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.t
 import { isInteractiveTerminal } from '../lib/interactive-input.ts';
 import { ConfirmationRequiredError, InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 import { failCommand } from '../lib/command-errors.ts';
+import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
 import {
   addUsergroupMembers,
   fetchUsergroupMembers,
   fetchUsergroups,
   normalizeUsergroups,
+  planMembershipChange,
   removeUsergroupMembers,
   resolveUsergroup,
 } from '../lib/usergroups.ts';
 import { lazyClient, resolveUserList } from '../lib/name-resolver.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
-import type { SlackUsergroup } from '../types/index.ts';
+import type { DryRunTarget, SlackUsergroup } from '../types/index.ts';
 
 // Help text shared by several commands below.
 const GROUP_SHAPE =
@@ -91,6 +93,7 @@ const HELP = {
     ],
     json: `${GROUP_SHAPE} — the group as created.`,
     confirms: true,
+    dryRun: true,
     notes: [
       '--channels takes channel IDs (C0123456789), comma-separated. Add members afterwards with "usergroups add".',
       TEAM_WRITE_NOTE,
@@ -107,6 +110,7 @@ const HELP = {
     ],
     json: `${GROUP_SHAPE} — the group after the change.`,
     confirms: true,
+    dryRun: true,
     notes: [
       GROUP_REF_NOTE,
       TEAM_WRITE_NOTE,
@@ -120,11 +124,13 @@ const HELP = {
     examples: [
       'slackcli usergroups add @platform U0123456789 --yes',
       'slackcli usergroups add S0123456789 U0123456789,U0123456780 --yes --json',
+      'slackcli usergroups add @platform U0123456789 --dry-run',
     ],
     json:
       '{ usergroup, added, removed, next, noop } — group ID, IDs added, IDs removed (empty), ' +
       'the member list after the write, and noop true when nothing changed.',
     confirms: true,
+    dryRun: true,
     notes: [
       GROUP_REF_NOTE,
       USER_IDS_NOTE,
@@ -146,6 +152,7 @@ const HELP = {
       '{ usergroup, added, removed, next, noop } — group ID, IDs added (empty), IDs removed, ' +
       'the member list after the write, and noop true when nothing changed.',
     confirms: true,
+    dryRun: true,
     notes: [
       GROUP_REF_NOTE,
       USER_IDS_NOTE,
@@ -163,6 +170,7 @@ const HELP = {
     ],
     json: `${GROUP_SHAPE} — the group after the change.`,
     confirms: true,
+    dryRun: true,
     notes: [
       GROUP_REF_NOTE,
       TEAM_WRITE_NOTE,
@@ -179,6 +187,7 @@ const HELP = {
     ],
     json: `${GROUP_SHAPE} — the group after the change.`,
     confirms: true,
+    dryRun: true,
     notes: [
       GROUP_REF_NOTE,
       'A disabled group still resolves by handle or name, and shows in "usergroups list --include-disabled".',
@@ -209,6 +218,29 @@ async function requireGroup(
     return undefined;
   }
   return group;
+}
+
+// The dry-run target for a write on an existing group.
+function groupTarget(group: SlackUsergroup): DryRunTarget {
+  return { kind: 'usergroup', id: group.id, name: group.handle ? `${group.name} (@${group.handle})` : group.name };
+}
+
+// `usergroups add|remove --dry-run`: read the members and show the list the
+// write would send, refusing an empty group as the write does.
+async function previewMembershipChange(
+  client: SlackClient,
+  group: SlackUsergroup,
+  action: string,
+  change: { add?: string[]; remove?: string[] },
+  spinner: ReturnType<typeof ora>,
+  options: { team?: string; json?: boolean },
+): Promise<void> {
+  const plan = await planMembershipChange(client, group.id, change, {
+    teamId: options.team,
+    onProgress: (msg) => { spinner.text = msg; },
+  });
+  spinner.stop();
+  emitDryRun(await buildPreview(client, action, groupTarget(group), { ...plan, team: options.team }), options.json);
 }
 
 // Split a comma/space-separated list of user references (IDs, @handles,
@@ -354,13 +386,28 @@ export function createUsergroupsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (name, options) => {
-      if (!(await confirmWrite(`Create user group "${name}"?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Create user group "${name}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora(`Creating user group "${name}"...`).start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(client, 'create user group', { kind: 'usergroup', name }, {
+              name,
+              handle: options.handle,
+              description: options.description,
+              channels: options.channels,
+              team: options.team,
+            }),
+            options.json,
+          );
+          return;
+        }
         const response = await client.createUsergroup(name, {
           handle: options.handle,
           description: options.description,
@@ -391,6 +438,7 @@ export function createUsergroupsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (ref, options) => {
       if (options.name === undefined && options.handle === undefined && options.description === undefined) {
         failCommand(
@@ -399,7 +447,7 @@ export function createUsergroupsCommand(): Command {
         );
         return;
       }
-      if (!(await confirmWrite(`Update user group "${ref}"?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Update user group "${ref}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Updating user group...').start();
@@ -407,6 +455,20 @@ export function createUsergroupsCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(client, 'update user group', groupTarget(group), {
+              name: options.name,
+              handle: options.handle,
+              description: options.description,
+              team: options.team,
+            }),
+            options.json,
+          );
+          return;
+        }
 
         spinner.text = 'Applying update...';
         const response = await client.updateUsergroup(group.id, {
@@ -437,11 +499,12 @@ export function createUsergroupsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (ref, users, options) => {
       const resolved = await memberIdsOrFail(users, options, 'Failed to add members');
       if (!resolved) return;
       const { ids } = resolved;
-      if (!(await confirmWrite(`Add ${ids.length} user(s) to "${ref}"?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Add ${ids.length} user(s) to "${ref}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Adding members...').start();
@@ -449,6 +512,10 @@ export function createUsergroupsCommand(): Command {
         const client = resolved.client ?? await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
+        if (options.dryRun) {
+          await previewMembershipChange(client, group, 'add user group members', { add: ids }, spinner, options);
+          return;
+        }
         const result = await addUsergroupMembers(client, group.id, ids, {
           teamId: options.team,
           onProgress: (msg) => { spinner.text = msg; },
@@ -477,11 +544,12 @@ export function createUsergroupsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (ref, users, options) => {
       const resolved = await memberIdsOrFail(users, options, 'Failed to remove members');
       if (!resolved) return;
       const { ids } = resolved;
-      if (!(await confirmWrite(`Remove ${ids.length} user(s) from "${ref}"?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Remove ${ids.length} user(s) from "${ref}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Removing members...').start();
@@ -489,6 +557,10 @@ export function createUsergroupsCommand(): Command {
         const client = resolved.client ?? await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
+        if (options.dryRun) {
+          await previewMembershipChange(client, group, 'remove user group members', { remove: ids }, spinner, options);
+          return;
+        }
         const result = await removeUsergroupMembers(client, group.id, ids, {
           teamId: options.team,
           onProgress: (msg) => { spinner.text = msg; },
@@ -516,8 +588,9 @@ export function createUsergroupsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (ref, options) => {
-      if (!(await confirmWrite(`Enable user group "${ref}"?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Enable user group "${ref}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Enabling user group...').start();
@@ -525,6 +598,11 @@ export function createUsergroupsCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(await buildPreview(client, 'enable user group', groupTarget(group), { team: options.team }), options.json);
+          return;
+        }
         const response = await client.enableUsergroup(group.id, { team_id: options.team });
         const updated = normalizeUsergroups([response.usergroup])[0];
 
@@ -544,8 +622,9 @@ export function createUsergroupsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (required for writes on an enterprise org)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (ref, options) => {
-      if (!(await confirmWrite(`Disable user group "${ref}"?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Disable user group "${ref}"?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Disabling user group...').start();
@@ -553,6 +632,11 @@ export function createUsergroupsCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(await buildPreview(client, 'disable user group', groupTarget(group), { team: options.team }), options.json);
+          return;
+        }
         const response = await client.disableUsergroup(group.id, { team_id: options.team });
         const updated = normalizeUsergroups([response.usergroup])[0];
 

@@ -170,7 +170,8 @@ uses `describeCommand()` from `src/lib/help.ts`, never a bare `.description()`:
 - `json`: the top-level shape of the `--json` output, including paging fields.
   Required exactly when the command has `--json`.
 - `confirms: true` on a command with `--yes` (adds the standard confirmation
-  note); `browserOnly: true` on a command that needs browser session tokens.
+  note); `browserOnly: true` on a command that needs browser session tokens;
+  `dryRun: true` on a command with `--dry-run` (adds the standard dry-run note).
 - `notes`: accepted value formats, flags that replace or require each other,
   and auth-type differences. Keep the whole help to about one screen; depth
   belongs in `docs/user-guide/`.
@@ -208,6 +209,12 @@ review:
       warn on workspace mismatch.
 - [ ] Support `--workspace <id|name>`.
 - [ ] Support `--json` on any command that returns data.
+- [ ] A command that writes to Slack takes `--dry-run` (`DRY_RUN_FLAG` from
+      `src/lib/dry-run.ts`) and is listed in `SLACK_WRITES` in
+      `src/program.test.ts`. Branch after all resolution and validation and
+      before `confirmWrite()` and the write call: build the preview with
+      `buildPreview()`, print it with `emitDryRun()` and return. A dry run may
+      read, never write, and never prompts.
 - [ ] **Never call `process.exit()` after `writeJson()`** — set
       `process.exitCode` and return. See
       [architecture](architecture.md#output).

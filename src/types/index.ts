@@ -495,3 +495,36 @@ export interface EmojiListOptions {
 export interface EmojiGetOptions {
   workspace?: string;
 }
+
+// What a write command would do, printed by --dry-run instead of doing it
+// (#328). The shape is the --json contract; `formatDryRun()` renders it as
+// text. It never holds a token.
+export interface DryRunWorkspace {
+  name: string;
+  id: string;
+  // The profile key the workspace is stored under (its workspace ID when no
+  // profile name was given at login).
+  profile: string;
+}
+
+export interface DryRunTarget {
+  // channel | user | message | draft | usergroup
+  kind: string;
+  // Absent only when the write creates the target (usergroups create).
+  id?: string;
+  // Looked up for display when Slack answers; omitted when it does not.
+  name?: string;
+  // The message a write acts on (messages edit, messages react).
+  ts?: string;
+  // The thread a message or draft goes into.
+  thread_ts?: string;
+}
+
+export interface DryRunPreview {
+  dry_run: true;
+  action: string;
+  workspace: DryRunWorkspace;
+  target: DryRunTarget;
+  // The content or change exactly as it would be sent; command-specific.
+  payload: Record<string, unknown>;
+}

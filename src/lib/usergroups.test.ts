@@ -5,6 +5,7 @@ import {
   fetchUsergroupMembers,
   isUsergroupEnabled,
   normalizeUsergroups,
+  planMembershipChange,
   removeUsergroupMembers,
   resolveUsergroup,
 } from './usergroups.ts';
@@ -193,5 +194,38 @@ describe('addUsergroupMembers / removeUsergroupMembers (read-modify-write)', () 
     await expect(removeUsergroupMembers(client, 'S1', ['U1'])).rejects.toThrow(/last member/);
     // Typed, so a --json run reports invalid_input rather than unknown (#326).
     await expect(removeUsergroupMembers(client, 'S1', ['U1'])).rejects.toBeInstanceOf(InvalidInputError);
+  });
+});
+
+describe('planMembershipChange (the --dry-run read, #328)', () => {
+  test('returns the list a write would send, and writes nothing', async () => {
+    const { client, calls } = fakeClient({
+      'usergroups.users.list': () => ({ ok: true, users: ['U1', 'U2'] }),
+    });
+    const r = await planMembershipChange(client, 'S1', { add: ['U3', 'U1'] });
+    expect(r).toEqual({ added: ['U3'], removed: [], next: ['U1', 'U2', 'U3'], noop: false });
+    expect(calls.map((c) => c.method)).toEqual(['usergroups.users.list']);
+  });
+
+  test('reports a no-op with the unchanged list', async () => {
+    const { client } = fakeClient({
+      'usergroups.users.list': () => ({ ok: true, users: ['U1'] }),
+    });
+    expect(await planMembershipChange(client, 'S1', { remove: ['U7'] }))
+      .toEqual({ added: [], removed: [], next: ['U1'], noop: true });
+  });
+
+  test('refuses an empty group exactly as the write does', async () => {
+    const { client, calls } = fakeClient({
+      'usergroups.users.list': () => ({ ok: true, users: ['U1'] }),
+    });
+    await expect(planMembershipChange(client, 'S1', { remove: ['U1'] })).rejects.toBeInstanceOf(InvalidInputError);
+    expect(calls.some((c) => c.method === 'usergroups.users.update')).toBe(false);
+  });
+
+  test('treats a missing users list as an empty group', async () => {
+    const { client } = fakeClient({ 'usergroups.users.list': () => ({ ok: true }) });
+    expect(await planMembershipChange(client, 'S1', { add: ['U1'] }))
+      .toEqual({ added: ['U1'], removed: [], next: ['U1'], noop: false });
   });
 });

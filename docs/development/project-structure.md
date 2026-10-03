@@ -82,7 +82,8 @@ They hold no Slack API knowledge.
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types. |
 | `formatter.ts` | Chalk-coloured renderers, status helpers, and `writeJson()`. |
-| `help.ts` | The `--help` layout: `describeCommand()` (summary, description, `Examples`, `Notes`, standard notes for `--json`, browser-only and confirmation), the root command tree and footer, and the `--help` pointer after usage errors. |
+| `dry-run.ts` | `--dry-run` on the Slack writes: the `DRY_RUN_FLAG` option, `buildPreview()` (workspace identity, target with a best-effort `#channel` / `@user` name lookup, payload without undefined fields) and `emitDryRun()` (one JSON object under `--json`, else `formatDryRun()`'s text; logs the action and a field count only). |
+| `help.ts` | The `--help` layout: `describeCommand()` (summary, description, `Examples`, `Notes`, standard notes for `--json`, browser-only, confirmation and `--dry-run`), the root command tree and footer, and the `--help` pointer after usage errors. |
 | `clipboard.ts` | Cross-platform clipboard read (`pbpaste` / PowerShell / `xclip` / `xsel`). |
 | `interactive-input.ts` | Multi-line terminal input (double-Enter or Ctrl-D). |
 | `updater.ts` | Self-update via GitHub releases, with SHA-256 verification. |

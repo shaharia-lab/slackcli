@@ -89,6 +89,11 @@ Read [references/commands.md](references/commands.md) before choosing commands.
 - Confirm before anything visible to others: send, edit, react, draft, upload,
   any `usergroups` write. Show target and text, get a yes, then run. Add
   `--yes` to `usergroups` writes only after that confirmation.
+- Unsure of the target or text? Run the same command with `--dry-run --json`
+  first: it resolves and validates everything, writes nothing, never prompts,
+  and returns `{dry_run, action, workspace, target, payload}`. Show that to the
+  user, then drop `--dry-run` to run it. A dry run cannot check Slack
+  permissions, so the real write can still be refused.
 - Keep handles: `messages send --json` returns `channel_id`, `ts`, usually
   `permalink`. Use them for edit/react/reply and give the permalink to the user.
 - Long text: `--message-file`. Slack mrkdwn only (no `#` headings, no `[text](url)`).

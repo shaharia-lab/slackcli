@@ -4,6 +4,7 @@ import type {
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
   SlackTeam, SlackUsergroup, UsergroupMember,
   CustomEmoji, DraftSummary, IdentityResult, ProfileCheck,
+  DryRunPreview, DryRunTarget,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
 
@@ -654,4 +655,47 @@ export function formatEmoji(emoji: CustomEmoji): string {
     }
   }
   return output;
+}
+
+// A dry-run preview as text (#328): fixed header lines, then one labelled line
+// per payload field. Multi-line text keeps its line breaks, indented under the
+// label, so what is shown is exactly what would be sent.
+export function formatDryRun(preview: DryRunPreview): string {
+  const rows: Array<[string, string]> = [
+    ['Workspace', `${preview.workspace.name} (${preview.workspace.profile})`],
+    ['Action', preview.action],
+    ['Target', formatDryRunTarget(preview.target)],
+  ];
+  if (preview.target.thread_ts) rows.push(['Thread', preview.target.thread_ts]);
+  for (const [key, value] of Object.entries(preview.payload)) {
+    rows.push([dryRunLabel(key), formatDryRunValue(value)]);
+  }
+
+  const width = Math.max(...rows.map(([label]) => label.length)) + 1;
+  const indent = ' '.repeat(2 + width + 1);
+  const lines = rows.map(([label, value]) =>
+    `  ${`${label}:`.padEnd(width)} ${value.split('\n').join(`\n${indent}`)}`);
+  return [chalk.bold('Dry run: nothing was sent.'), ...lines].join('\n');
+}
+
+function formatDryRunTarget(target: DryRunTarget): string {
+  let text = target.id ?? '(new)';
+  if (target.name) text = target.id ? `${text} (${target.name})` : target.name;
+  if (target.kind === 'user') text += ', direct message';
+  if (target.kind === 'draft') text = `draft ${text}`;
+  if (target.ts) text += `, message ${target.ts}`;
+  return text;
+}
+
+function dryRunLabel(key: string): string {
+  const words = key.replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function formatDryRunValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return value.length > 0 ? value.join(', ') : '(none)';
+  }
+  return JSON.stringify(value);
 }

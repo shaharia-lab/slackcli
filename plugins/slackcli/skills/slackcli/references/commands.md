@@ -16,6 +16,10 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
   `p1234567890123456`, `1234567890123456`, `1234567890.123456`.
 - `--permalink <url>` replaces channel + timestamp on `messages send|react|edit|draft`,
   `conversations read|get`. A reply link targets the parent thread.
+- `--dry-run` on every Slack write (`messages send|edit|react|draft|send-draft|delete-draft`,
+  `conversations members add|remove`, `join`, `leave`, every `usergroups` write):
+  resolves and validates, writes nothing, never prompts or needs `--yes`, exits 0.
+  With `--json`: `{dry_run: true, action, workspace: {name,id,profile}, target: {kind,id?,name?,ts?,thread_ts?}, payload}`.
 - Exit `0` success (empty result is success), `1` failure.
 - Text is Slack mrkdwn: `*bold*` `_italic_` `~strike~` `` `code` `` ```blocks```
   `<https://url|label>`. Standard Markdown only via `--blocks` with a `markdown` block.

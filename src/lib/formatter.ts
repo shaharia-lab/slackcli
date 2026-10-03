@@ -692,7 +692,7 @@ function formatDryRunTarget(target: DryRunTarget): string {
 }
 
 function dryRunLabel(key: string): string {
-  const words = key.replace(/_/g, ' ');
+  const words = key.replaceAll('_', ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

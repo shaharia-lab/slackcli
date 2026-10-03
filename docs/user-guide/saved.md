@@ -15,6 +15,7 @@ slackcli saved list --json
 | `--state <state>` | Filter by `saved`, `to_do`, or `completed` |
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output |
+| `--fields <list>` | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 SlackCLI pages through the whole list (or stops at `--limit`). `--limit` caps
 the items fetched, before `--state` filters them.

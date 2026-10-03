@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import {
   BROWSER_ONLY_NOTE,
   CONFIRM_NOTE,
+  FIELDS_NOTE,
   commandPath,
   describeCommand,
   formatHelpSections,
@@ -80,6 +81,18 @@ describe('formatHelpSections', () => {
       CONFIRM_NOTE,
       'own note',
     ]);
+  });
+
+  it('adds the --fields note after the other standard notes', () => {
+    const help = { summary: 's', json: '{ ok }', fields: 'each item of messages', notes: ['own note'] };
+    expect(helpNotes(help)).toEqual(['With --json, stdout is one JSON object: { ok }', FIELDS_NOTE('each item of messages'), 'own note']);
+  });
+
+  it('says the envelope is kept for a list, and not for a record', () => {
+    expect(FIELDS_NOTE('each item of messages')).toContain('keeps only the named fields of each item of messages');
+    expect(FIELDS_NOTE('each item of messages')).toContain('The other top-level keys are kept as they are.');
+    expect(FIELDS_NOTE('the user record')).not.toContain('top-level keys');
+    expect(FIELDS_NOTE('the user record')).toContain('needs --json');
   });
 
   it('separates sections with one blank line and wraps long notes', () => {

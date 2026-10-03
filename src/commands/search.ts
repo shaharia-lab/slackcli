@@ -8,6 +8,7 @@ import {
   formatPaginationHint,
   writeJson,
 } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
@@ -28,6 +29,7 @@ const HELP = {
   },
   messages: {
     summary: 'Search messages with Slack search operators',
+    fields: 'each item of matches',
     description:
       'Search messages across the conversations you can see, one page at a time (Slack ' +
       'search.messages). Use "conversations read" instead to read one channel in order.',
@@ -35,6 +37,7 @@ const HELP = {
       'slackcli search messages "deployment failed"',
       'slackcli search messages "release" --in engineering --from alice --sort score',
       'slackcli search messages "after:2026-07-01 has:link" --limit 50 --page 2 --json',
+      'slackcli search messages "deploy" --json --fields ts,user,text,channel.name,permalink',
     ],
     json:
       '{ query, total, page, pages, matches: [...] } — matches are Slack\'s raw search results ' +
@@ -50,6 +53,7 @@ const HELP = {
   },
   channels: {
     summary: 'Find channels by name or keyword',
+    fields: 'each item of channels',
     description:
       'Find channels by name or keyword. Use "conversations list" to page through every ' +
       'conversation instead, or "search messages" to search message text.',
@@ -71,6 +75,7 @@ const HELP = {
   },
   people: {
     summary: 'Find people by name, username or email',
+    fields: 'each item of people',
     description:
       'Find people by name, username or email. Use "users info" when you already have the user ' +
       'ID, or "users list" to enumerate users by account status.',
@@ -107,6 +112,7 @@ export function createSearchCommand(): Command {
     .option('--sort-dir <dir>', 'Sort direction: asc or desc', 'desc')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (query, options) => {
       // Append Slack search modifiers to query
       let fullQuery = query;
@@ -116,6 +122,7 @@ export function createSearchCommand(): Command {
       const spinner = ora(`Searching for "${fullQuery}"...`).start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
         const response = await client.searchMessages(fullQuery, {
@@ -137,13 +144,13 @@ export function createSearchCommand(): Command {
 
         if (options.json) {
           const pagination = response.messages?.pagination;
-          writeJson({
+          writeJson(applyFields('search messages', {
             query,
             total,
             page: pagination?.page || 1,
             pages: pagination?.page_count || 1,
             matches,
-          });
+          }, fields));
           return;
         }
 
@@ -164,10 +171,12 @@ export function createSearchCommand(): Command {
     .option('--limit <number>', 'Number of results', '20')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (query, options) => {
       const spinner = ora(`Searching channels for "${query}"...`).start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
         const limit = Number.parseInt(options.limit);
 
@@ -201,7 +210,7 @@ export function createSearchCommand(): Command {
         spinner.succeed(`Found ${total} matching channels (showing ${channels.length})`);
 
         if (options.json) {
-          writeJson({ query, total, channels });
+          writeJson(applyFields('search channels', { query, total, channels }, fields));
           return;
         }
 
@@ -223,10 +232,12 @@ export function createSearchCommand(): Command {
     )
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (query, options) => {
       const spinner = ora(`Searching people for "${query}"...`).start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
         const limit = Number.parseInt(options.limit);
 
@@ -276,7 +287,7 @@ export function createSearchCommand(): Command {
           const out = resolvedByPerson
             ? people.map((p: any, i: number) => ({ ...p, resolved_fields: resolvedByPerson![i] }))
             : people;
-          writeJson({ query, total, people: out });
+          writeJson(applyFields('search people', { query, total, people: out }, fields));
           return;
         }
 

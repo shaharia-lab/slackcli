@@ -1,7 +1,8 @@
 # Search Slack messages, channels and people
 
 `slackcli search` covers messages, channels, and people. Every subcommand
-accepts `--workspace <id|name>` and `--json`.
+accepts `--workspace <id|name>` and `--json`; with `--json`, [`--fields`](scripting.md#keeping-output-small---fields-and---limit)
+trims each result to the fields you name (`--fields ts,user,text,channel.name,permalink`).
 
 ## `search messages`
 

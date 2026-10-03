@@ -3,7 +3,9 @@
 `slackcli conversations` covers channels, DMs, and group DMs: listing them,
 reading history and threads, fetching one message, and seeing what is unread.
 
-Every subcommand accepts `--workspace <id|name>`.
+Every subcommand accepts `--workspace <id|name>`. `list`, `read`, `get` and
+`unread` take [`--fields`](scripting.md#keeping-output-small---fields-and---limit) with `--json`
+to print only the fields you name, e.g. `--json --fields ts,user,text`.
 
 ## `conversations list`
 
@@ -24,6 +26,7 @@ slackcli conversations list --json
 | `--exclude-archived` | off | Skip archived conversations |
 | `--cursor <cursor>` | — | Fetch the next page |
 | `--json` | off | JSON output with a resolved `users` array |
+| `--fields <list>` | all | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 DM entries are resolved to the other person's name. When more results exist, the
 exact `--cursor` command for the next page is printed (human output) or set on
@@ -65,6 +68,7 @@ slackcli conversations read C1234567890 --oldest="$CURSOR" --exclude-self --json
 | `--limit <number>` | `100` | How many messages |
 | `--oldest` / `--latest` | — | Time range bounds (`1234567890.123456`, `p1234567890123456`, or epoch seconds); only messages strictly newer than `--oldest` are shown |
 | `--json` | off | JSON output, including `ts` and `thread_ts` |
+| `--fields <list>` | all | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 Channel history comes back newest-first from Slack and is reversed so you read
 top to bottom. Thread replies are already chronological. `--json` also includes

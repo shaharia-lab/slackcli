@@ -54,6 +54,72 @@ slackcli canvas read F123 --json | jq -r '.markdown' > canvas.md
 `reply_count`, `reactions`, `bot_id`, `blocks`, `attachments`, and file metadata
 when a message has attachments.
 
+## Keeping output small: `--fields` and `--limit`
+
+Read commands print full Slack objects: block structures, edit metadata, team
+IDs, flags. For an AI agent every byte is tokens and context, so ask only for
+what you use. With `--json`, `--fields` keeps just the named fields:
+
+```bash
+slackcli conversations read C0123456789 --limit 50 --json --fields ts,user,text
+slackcli users info U0123456789 --json --fields id,real_name,profile.email
+```
+
+- Comma-separated field names; a dot path selects a nested value and keeps its
+  nesting (`profile.email` gives `{ "profile": { "email": "…" } }`). Through an
+  array, a dot path selects from each element (`reactions.name`).
+- A name is matched exactly and may contain spaces, as the labels printed by
+  `--resolve-fields` do: `--fields "id,fields.Start Date"`. A key that itself
+  contains a comma or a dot cannot be named; ask for its parent (`fields`).
+- It applies to each item of the command's main list, or to the record itself
+  for a command that prints one record. Every other top-level key — counts,
+  `next_cursor`, `next_oldest`, `has_more`, the resolved `users` array — is kept
+  as it is, so paging still works.
+- Fields are printed in the order you list them. A field an item does not have
+  is left out for that item, without an error; items are never dropped, so
+  check the spelling if you get back `{}`.
+- It needs `--json`. `--fields` without `--json`, an empty value, or a
+  malformed one (`ts,,user`, `profile.`) exits 1 with `invalid_input` before
+  any Slack call. Without `--fields`, output is exactly what it was.
+- Pair it with `--limit`: fewer items shrink output as much as fewer fields.
+
+Measured on a real workspace (bytes of stdout):
+
+| Command | Full `--json` | With `--fields` | Saved |
+| --- | ---: | ---: | ---: |
+| `conversations read <channel> --limit 50`, `--fields ts,user,text` | 95,601 | 16,346 | 83% |
+| `conversations list --limit 100`, `--fields id,name,is_member` | 8,625 | 3,204 | 63% |
+| `search messages <query> --limit 20`, `--fields ts,user,text,channel.name,permalink` | 110,198 | 10,526 | 90% |
+| `users list --limit 100`, `--fields id,name,email` | 2,108 | 1,092 | 48% |
+
+Useful field sets, and what each command projects:
+
+| Command | Projects | Useful `--fields` |
+| --- | --- | --- |
+| `conversations list` | each of `conversations` | `id,name,is_member` |
+| `conversations read` | each of `messages` | `ts,user,text` (add `thread_ts,reply_count` for threads) |
+| `conversations get` | `message` | `ts,user,text` |
+| `conversations unread` | each of `unread_channels` | `id,name,mention_count` |
+| `search messages` | each of `matches` | `ts,user,text,channel.name,permalink` |
+| `search channels` | each of `channels` | `id,name` |
+| `search people` | each of `people` | `id,name,real_name,profile.email` |
+| `users list` | each of `users` | `id,name,email` |
+| `users info` | the user record | `id,name,real_name,profile.email,tz` |
+| `usergroups list` | each of `usergroups` | `id,handle,name` |
+| `usergroups read` | the user group record | `id,handle,member_ids` |
+| `saved list` | each of `items` | `type,channel_id,message.ts,message.text` |
+| `canvas list` | each of `canvases` | `id,title,permalink` |
+| `canvas read` | the canvas record | `id,title,markdown` |
+| `files info` | the file record | `id,name,mimetype,size,permalink` |
+| `files read` | the file record | `id,name,content` |
+| `emoji list` | each of `emoji` | `name,url` |
+| `emoji get` | the emoji record | `name,url` |
+| `team info` | the workspace record | `id,name,domain` |
+| `messages list-drafts` | each of `drafts` | `draft_id,channel_id,text` |
+
+Each command's `--help` lists its full `--json` shape. `conversations members
+list` returns plain IDs, so it has no `--fields`.
+
 ## `--dry-run`
 
 Every command that changes something in Slack takes `--dry-run`:

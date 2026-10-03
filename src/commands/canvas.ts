@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import ora, { type Ora } from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatCanvasList, formatCanvasContent, warning, writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { canvasHtmlToMarkdown } from '../lib/canvas-parser.ts';
 import {
   applyCanvasMentions,
@@ -28,6 +29,7 @@ const HELP = {
   },
   list: {
     summary: 'List canvas documents',
+    fields: 'each item of canvases',
     description:
       'List canvases visible to you in the workspace, or only those shared in one channel with --channel. ' +
       'Use "canvas read" for a canvas\'s content.',
@@ -47,6 +49,7 @@ const HELP = {
   },
   read: {
     summary: 'Read a canvas as Markdown',
+    fields: 'the canvas record',
     description:
       'Download one canvas (up to 10 MB) and print it as Markdown, by canvas ID or URL, ' +
       'or the canvas attached to a channel or DM with --channel.',
@@ -114,10 +117,12 @@ export function createCanvasCommand(): Command {
     .option('--channel <id>', 'Channel ID, URL or name whose shared canvases to list')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching canvases...').start();
 
       try {
+        const fields = fieldsOption(options);
         const limit = Number.parseInt(options.limit);
         if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
           failCommand(new InvalidInputError('Limit must be a number between 1 and 1000'), {
@@ -151,7 +156,7 @@ export function createCanvasCommand(): Command {
         spinner.succeed(`Found ${files.length} canvases`);
 
         if (options.json) {
-          writeJson({
+          writeJson(applyFields('canvas list', {
             canvas_count: files.length,
             canvases: files.map(f => ({
               id: f.id,
@@ -163,7 +168,7 @@ export function createCanvasCommand(): Command {
               size: f.size,
               permalink: f.permalink,
             })),
-          });
+          }, fields));
           return;
         }
 
@@ -180,6 +185,7 @@ export function createCanvasCommand(): Command {
     .option('--raw', 'Output raw HTML instead of markdown', false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (canvasIdArg, options) => {
       const spinner = ora('Fetching canvas...').start();
       const onProgress = (message: string) => {
@@ -187,6 +193,7 @@ export function createCanvasCommand(): Command {
       };
 
       try {
+        const fields = fieldsOption(options);
         const canvasId = canvasIdArg
           ? normalizeIdentifier(canvasIdArg, 'file', '<canvas-id>')
           : undefined;
@@ -215,7 +222,7 @@ export function createCanvasCommand(): Command {
         spinner.succeed(title);
 
         if (options.json) {
-          writeJson({
+          writeJson(applyFields('canvas read', {
             id: file.id,
             title: file.title || file.name,
             created: file.created,
@@ -225,7 +232,7 @@ export function createCanvasCommand(): Command {
             size: file.size,
             permalink: file.permalink,
             markdown,
-          });
+          }, fields));
           return;
         }
 

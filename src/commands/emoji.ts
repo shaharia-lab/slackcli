@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { formatEmoji, formatEmojiList, writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { fetchCustomEmoji, getCustomEmoji, parseEmojiLimit } from '../lib/emoji.ts';
 import { failCommand } from '../lib/command-errors.ts';
@@ -17,6 +18,7 @@ const HELP = {
   },
   list: {
     summary: 'List the workspace\'s custom emoji',
+    fields: 'each item of emoji',
     description:
       'List every custom emoji in the workspace, sorted by name, originals and aliases. Use ' +
       '"emoji get" to look up one emoji by name.',
@@ -35,6 +37,7 @@ const HELP = {
   },
   get: {
     summary: 'Show details for a single custom emoji',
+    fields: 'the emoji record',
     description:
       'Show one custom emoji: an original with its image URL, or an alias with the emoji it ' +
       'points at. Use "emoji list" to browse them all.',
@@ -58,10 +61,12 @@ export function createEmojiCommand(): Command {
     .option('--no-aliases', 'Exclude alias emoji, showing only originals')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching custom emoji...').start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
         let emojiList = await fetchCustomEmoji(client, {
@@ -90,7 +95,7 @@ export function createEmojiCommand(): Command {
         spinner.succeed(`Found ${emojiList.length} custom emoji`);
 
         if (options.json) {
-          writeJson({ emoji_count: emojiList.length, emoji: emojiList });
+          writeJson(applyFields('emoji list', { emoji_count: emojiList.length, emoji: emojiList }, fields));
           return;
         }
 
@@ -104,10 +109,12 @@ export function createEmojiCommand(): Command {
     .argument('<name>', 'Emoji name, with or without surrounding colons')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (name, options) => {
       const spinner = ora('Fetching custom emoji...').start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
         const found = await getCustomEmoji(client, name, {
@@ -125,7 +132,7 @@ export function createEmojiCommand(): Command {
         spinner.succeed(`Found :${found.name}:`);
 
         if (options.json) {
-          writeJson(found);
+          writeJson(applyFields('emoji get', found, fields));
           return;
         }
 

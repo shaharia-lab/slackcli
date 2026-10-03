@@ -19,6 +19,7 @@ standard (`xoxb`/`xoxp`) and browser (`xoxd`/`xoxc`) tokens.
 | `--team <workspace-id>` | Target workspace T-id (enterprise org scoping) |
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output |
+| `--fields <list>` | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 On a Slack **Enterprise Grid**, `--team <T-id>` scopes the lookup to a specific
 member workspace; without it Slack returns the token's own workspace.

@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fails before any Slack call, with `invalid_input`, when standard input is a terminal (it never waits for typing), is empty or whitespace-only, is larger than 1 MB, or is still open after 5 minutes
   - Only `-` means standard input; `./-` still reads a file named `-`, and `--message` with `--message-file -` is rejected as with a path
   - The Claude Code plugin skill now pipes multi-line text instead of quoting it
+- **`--fields` trims `--json` output to the fields you ask for**: `conversations read C0123456789 --json --fields ts,user,text` prints each message with only those keys, so an agent pays for the data it uses instead of full Slack objects (#330)
+  - On the 20 read commands with `--json`; comma-separated names, dot paths for nested values (`profile.email`), printed in the order given
+  - Applies to each item of the command's main list, or to the record itself; counts, cursors and the resolved `users` array are kept, so paging still works
+  - Measured on a real workspace: `conversations read --limit 50` 95,601 → 16,346 bytes, `search messages --limit 20` 110,198 → 10,526
+  - Needs `--json`; an empty or malformed list exits 1 with `invalid_input` before any Slack call. Output without `--fields` is unchanged
+  - The Claude Code plugin skill and the scripting guide tell agents to request only the fields they need and to use `--limit`
 - **Channel names and user handles wherever an ID is accepted**: `--recipient-id="#general"`, `conversations read general`, `--recipient-id=@alice` and `users info alice@example.com` now resolve to the channel or user ID, so a task no longer starts with a `search channels` call (#327)
   - Channels: `#name` or the bare name, matched exactly (case-insensitive) against the public and private, non-archived channels the identity can see
   - Users: `@handle` (exact Slack handle) or an email address (`users.lookupByEmail`, which needs the `users:read.email` scope on an app token)

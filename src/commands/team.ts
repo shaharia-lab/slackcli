@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { formatTeamInfo, writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { SlackTeam } from '../types/index.ts';
 import { failCommand } from '../lib/command-errors.ts';
@@ -16,6 +17,7 @@ const HELP = {
   },
   info: {
     summary: 'Show workspace name, domain and ID',
+    fields: 'the workspace record',
     description:
       'Show the workspace name, ID, domain, URL, email domain and verification status (Slack ' +
       'team.info). Works with both auth types.',
@@ -39,10 +41,12 @@ export function createTeamCommand(): Command {
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--team <workspace-id>', 'Enterprise Grid only: member workspace T-id to look up')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching workspace info...').start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
         const response = await client.getTeamInfo({ team: options.team });
         const t = response.team ?? {};
@@ -60,7 +64,7 @@ export function createTeamCommand(): Command {
         spinner.succeed(`Workspace: ${info.name}`);
 
         if (options.json) {
-          writeJson(info);
+          writeJson(applyFields('team info', info, fields));
           return;
         }
 

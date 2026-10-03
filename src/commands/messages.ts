@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { fetchDrafts, loadActiveDraft, parseDraftLimit, sendDraft, validateSendableDraft } from '../lib/drafts.ts';
 import { error, formatDraftList, success, warning, writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import {
   type ResolvedThreadTarget,
   resolveMessageTarget,
@@ -125,6 +126,7 @@ const HELP = {
   },
   listDrafts: {
     summary: 'List your active (unsent) drafts',
+    fields: 'each item of drafts',
     description:
       'List the authenticated user\'s active drafts, ' +
       'excluding deleted and already-sent ones. Use it to find the draft ID for send-draft or delete-draft.',
@@ -512,10 +514,12 @@ export function createMessagesCommand(): Command {
     .option('--limit <number>', 'Maximum number of drafts to return', '100')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output drafts as JSON', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching active drafts...').start();
 
       try {
+        const fields = fieldsOption(options);
         const limit = parseDraftLimit(options.limit);
         const client = await getAuthenticatedClient(options.workspace);
         const drafts = await fetchDrafts(client, {
@@ -530,7 +534,7 @@ export function createMessagesCommand(): Command {
         }
 
         if (options.json) {
-          writeJson({ draft_count: drafts.length, drafts });
+          writeJson(applyFields('messages list-drafts', { draft_count: drafts.length, drafts }, fields));
           return;
         }
         if (drafts.length > 0) {

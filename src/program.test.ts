@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { Command } from 'commander';
 import { commandPath, helpOf, isRunnable } from './lib/help.ts';
+import { FIELDS_LIST_KEYS } from './lib/json-fields.ts';
 import { createProgram } from './program.ts';
 
 // The help rules from #324, checked for every command in the real tree. A new
@@ -36,6 +37,10 @@ const SLACK_WRITES = new Set([
   'slackcli usergroups enable',
   'slackcli usergroups disable',
 ]);
+
+// The read commands that take --fields (#330), from the one table that also
+// names each command's main list.
+const FIELDS_COMMANDS = new Set(Object.keys(FIELDS_LIST_KEYS).map((path) => `slackcli ${path}`));
 
 const SUMMARY_MAX = 48;
 
@@ -126,6 +131,21 @@ describe('command tree help (#324)', () => {
     // The Slack writes, and only they, take --dry-run and say so in help.
     expect({ path, dryRun: has(cmd, '--dry-run') }).toEqual({ path, dryRun: SLACK_WRITES.has(path) });
     expect(Boolean(help.dryRun)).toBe(SLACK_WRITES.has(path));
+    // The read commands, and only they, take --fields, and their help names
+    // what the fields select from.
+    expect({ path, fields: has(cmd, '--fields') }).toEqual({ path, fields: FIELDS_COMMANDS.has(path) });
+    expect(Boolean(help.fields)).toBe(FIELDS_COMMANDS.has(path));
+    if (help.fields) {
+      expect(has(cmd, '--json')).toBe(true);
+      const listKey = FIELDS_LIST_KEYS[path.replace(/^slackcli /, '') as keyof typeof FIELDS_LIST_KEYS];
+      if (listKey === null) expect(help.fields).toMatch(/ record$/);
+      else expect(help.fields).toEndWith(` ${listKey}`);
+    }
+  });
+
+  it('names only real commands in the --fields table', () => {
+    const paths = new Set(runnable.map(commandPath));
+    for (const path of FIELDS_COMMANDS) expect({ path, exists: paths.has(path) }).toEqual({ path, exists: true });
   });
 
   it('names every Slack write in the dry-run list', () => {

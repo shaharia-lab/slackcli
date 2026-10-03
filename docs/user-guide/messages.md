@@ -319,7 +319,8 @@ endpoint, which may change without notice. With a standard token it fails with
 `Draft listing requires browser authentication`.
 
 `--json` deliberately exposes a small, stable projection rather than Slack's
-raw internal draft objects:
+raw internal draft objects ([`--fields`](scripting.md#keeping-output-small---fields-and---limit)
+trims each draft further, e.g. `--fields draft_id,text`):
 
 ```json
 {

@@ -5,6 +5,7 @@ import { getAuthenticatedClient } from '../lib/auth.ts';
 import { fetchDrafts, loadActiveDraft, parseDraftLimit, sendDraft, validateSendableDraft } from '../lib/drafts.ts';
 import { error, formatDraftList, success, warning, writeJson } from '../lib/formatter.ts';
 import {
+  type ResolvedThreadTarget,
   resolveMessageTarget,
   resolveThreadTarget,
   workspaceMismatchWarning,
@@ -296,6 +297,31 @@ function resolveTargetArg(
   });
 }
 
+// The conversation a send or draft goes to: --recipient-id (an ID, link or
+// name) or --permalink, with a user's DM opened for them.
+async function openRecipient(
+  options: { permalink?: string; recipientId?: string; threadTs?: string; workspace?: string },
+  spinner: ReturnType<typeof ora>,
+): Promise<{ client: SlackClient; channelId: string; target: ResolvedThreadTarget }> {
+  const target = resolveThreadTarget(
+    { permalink: options.permalink, channelId: options.recipientId, threadTs: options.threadTs },
+    { channel: '--recipient-id', timestamp: '--thread-ts' },
+    'channel-or-user'
+  );
+
+  const client = await getAuthenticatedClient(options.workspace);
+  warnOnWorkspaceMismatch(client, target.workspace);
+
+  // A user ID (starts with U) needs its DM opened.
+  let channelId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
+  if (channelId.startsWith('U')) {
+    spinner.text = 'Opening direct message...';
+    const dmResponse = await client.openConversation(channelId);
+    channelId = dmResponse.channel.id;
+  }
+  return { client, channelId, target };
+}
+
 export function createMessagesCommand(): Command {
   const messages = describeCommand(new Command('messages'), HELP.group);
 
@@ -321,22 +347,7 @@ export function createMessagesCommand(): Command {
 
       try {
         const message = await resolveMessageText(options);
-        const target = resolveThreadTarget(
-          { permalink: options.permalink, channelId: options.recipientId, threadTs: options.threadTs },
-          { channel: '--recipient-id', timestamp: '--thread-ts' },
-          'channel-or-user'
-        );
-
-        const client = await getAuthenticatedClient(options.workspace);
-        warnOnWorkspaceMismatch(client, target.workspace);
-
-        // Check if recipient is a user ID (starts with U) and needs DM opened
-        let channelId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
-        if (channelId.startsWith('U')) {
-          spinner.text = 'Opening direct message...';
-          const dmResponse = await client.openConversation(channelId);
-          channelId = dmResponse.channel.id;
-        }
+        const { client, channelId, target } = await openRecipient(options, spinner);
 
         spinner.text = 'Sending message...';
         if (options.file) {
@@ -503,21 +514,7 @@ export function createMessagesCommand(): Command {
 
       try {
         const message = await resolveMessageText(options);
-        const target = resolveThreadTarget(
-          { permalink: options.permalink, channelId: options.recipientId, threadTs: options.threadTs },
-          { channel: '--recipient-id', timestamp: '--thread-ts' },
-          'channel-or-user'
-        );
-
-        const client = await getAuthenticatedClient(options.workspace);
-        warnOnWorkspaceMismatch(client, target.workspace);
-
-        let channelId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
-        if (channelId.startsWith('U')) {
-          spinner.text = 'Opening direct message...';
-          const dmResponse = await client.openConversation(channelId);
-          channelId = dmResponse.channel.id;
-        }
+        const { client, channelId, target } = await openRecipient(options, spinner);
 
         spinner.text = 'Creating draft...';
         const response = await client.createDraft(channelId, message, {

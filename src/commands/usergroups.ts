@@ -222,14 +222,21 @@ export function splitUserRefs(raw: string[]): string[] {
 
 // Resolve <users...> to IDs before a membership write's confirmation prompt.
 // A client is created only when a handle or email needs a lookup, so a list of
-// IDs keeps the no-auth confirmation refusal it always had.
-async function resolveMemberIds(
+// IDs keeps the no-auth confirmation refusal it always had. On failure it
+// reports the error and returns undefined, so the caller just returns.
+async function memberIdsOrFail(
   users: string[],
-  options: { workspace?: string },
-): Promise<{ ids: string[]; client?: SlackClient }> {
-  const client = lazyClient(() => getAuthenticatedClient(options.workspace));
-  const ids = await resolveUserList(client.get, splitUserRefs(users), '<users...>');
-  return { ids, client: client.created() };
+  options: { workspace?: string; json?: boolean },
+  context: string,
+): Promise<{ ids: string[]; client?: SlackClient } | undefined> {
+  try {
+    const client = lazyClient(() => getAuthenticatedClient(options.workspace));
+    const ids = await resolveUserList(client.get, splitUserRefs(users), '<users...>');
+    return { ids, client: client.created() };
+  } catch (err: any) {
+    failCommand(err, { json: options.json, context });
+    return undefined;
+  }
 }
 
 // Confirmation gate for a mutating command. Three cases, built on the existing
@@ -431,13 +438,8 @@ export function createUsergroupsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, users, options) => {
-      let resolved: Awaited<ReturnType<typeof resolveMemberIds>>;
-      try {
-        resolved = await resolveMemberIds(users, options);
-      } catch (err: any) {
-        failCommand(err, { json: options.json, context: 'Failed to add members' });
-        return;
-      }
+      const resolved = await memberIdsOrFail(users, options, 'Failed to add members');
+      if (!resolved) return;
       const { ids } = resolved;
       if (!(await confirmWrite(`Add ${ids.length} user(s) to "${ref}"?`, options.yes, options.json))) {
         return;
@@ -476,13 +478,8 @@ export function createUsergroupsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (ref, users, options) => {
-      let resolved: Awaited<ReturnType<typeof resolveMemberIds>>;
-      try {
-        resolved = await resolveMemberIds(users, options);
-      } catch (err: any) {
-        failCommand(err, { json: options.json, context: 'Failed to remove members' });
-        return;
-      }
+      const resolved = await memberIdsOrFail(users, options, 'Failed to remove members');
+      if (!resolved) return;
       const { ids } = resolved;
       if (!(await confirmWrite(`Remove ${ids.length} user(s) from "${ref}"?`, options.yes, options.json))) {
         return;

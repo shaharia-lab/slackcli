@@ -258,20 +258,36 @@ function resolveChannelName(
   });
 }
 
+type MembershipTargets = { channelId: string; workspace: string | undefined; ids: string[]; client?: SlackClient };
+
 // Resolve the <channel> and <users...> of a membership write before its
 // confirmation prompt, so the prompt and the call name the same IDs. A client
 // is created here only when a name needs a lookup; otherwise the write path
-// (and its no-auth confirmation refusal) is unchanged.
-async function resolveMembershipTargets(
+// (and its no-auth confirmation refusal) is unchanged. On failure it reports
+// the error and returns undefined, so the caller just returns. `usersVerb`
+// (add/remove) makes an empty <users...> an error.
+async function membershipTargetsOrFail(
   channelArg: string,
   users: string[],
-  options: { workspace?: string },
-): Promise<{ channelId: string; workspace: string | undefined; ids: string[]; client?: SlackClient }> {
-  const parsed = resolveChannelArg(channelArg);
-  const client = lazyClient(() => getAuthenticatedClient(options.workspace));
-  const channelId = await resolveIdentifier(client.get, channelArg, parsed.channelId, 'channel', '<channel>');
-  const ids = await resolveUserList(client.get, splitUserRefs(users), '<users...>');
-  return { channelId, workspace: parsed.workspace, ids, client: client.created() };
+  options: { workspace?: string; json?: boolean },
+  context: string,
+  usersVerb?: string,
+): Promise<MembershipTargets | undefined> {
+  const refs = splitUserRefs(users);
+  if (usersVerb && refs.length === 0) {
+    failCommand(new InvalidInputError(`No user IDs given — pass at least one user ID to ${usersVerb}.`), { json: options.json });
+    return undefined;
+  }
+  try {
+    const parsed = resolveChannelArg(channelArg);
+    const client = lazyClient(() => getAuthenticatedClient(options.workspace));
+    const channelId = await resolveIdentifier(client.get, channelArg, parsed.channelId, 'channel', '<channel>');
+    const ids = await resolveUserList(client.get, refs, '<users...>');
+    return { channelId, workspace: parsed.workspace, ids, client: client.created() };
+  } catch (err: any) {
+    failCommand(err, { json: options.json, context });
+    return undefined;
+  }
 }
 
 // True when a Slack error is the enterprise-grid member-enumeration block.
@@ -728,17 +744,8 @@ export function createConversationsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, users, options) => {
-      if (splitUserRefs(users).length === 0) {
-        failCommand(new InvalidInputError('No user IDs given — pass at least one user ID to add.'), { json: options.json });
-        return;
-      }
-      let targets: Awaited<ReturnType<typeof resolveMembershipTargets>>;
-      try {
-        targets = await resolveMembershipTargets(channelArg, users, options);
-      } catch (err: any) {
-        failCommand(err, { json: options.json, context: 'Failed to add members' });
-        return;
-      }
+      const targets = await membershipTargetsOrFail(channelArg, users, options, 'Failed to add members', 'add');
+      if (!targets) return;
       const { channelId, workspace, ids } = targets;
       if (!(await confirmWrite(`Add ${ids.length} user(s) to ${channelId}?`, options.yes, options.json))) {
         return;
@@ -773,17 +780,8 @@ export function createConversationsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, users, options) => {
-      if (splitUserRefs(users).length === 0) {
-        failCommand(new InvalidInputError('No user IDs given — pass at least one user ID to remove.'), { json: options.json });
-        return;
-      }
-      let targets: Awaited<ReturnType<typeof resolveMembershipTargets>>;
-      try {
-        targets = await resolveMembershipTargets(channelArg, users, options);
-      } catch (err: any) {
-        failCommand(err, { json: options.json, context: 'Failed to remove members' });
-        return;
-      }
+      const targets = await membershipTargetsOrFail(channelArg, users, options, 'Failed to remove members', 'remove');
+      if (!targets) return;
       const { channelId, workspace, ids } = targets;
       if (!(await confirmWrite(`Remove ${ids.length} user(s) from ${channelId}?`, options.yes, options.json))) {
         return;
@@ -870,13 +868,8 @@ export function createConversationsCommand(): Command {
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, options) => {
-      let targets: Awaited<ReturnType<typeof resolveMembershipTargets>>;
-      try {
-        targets = await resolveMembershipTargets(channelArg, [], options);
-      } catch (err: any) {
-        failCommand(err, { json: options.json, context: 'Failed to leave channel' });
-        return;
-      }
+      const targets = await membershipTargetsOrFail(channelArg, [], options, 'Failed to leave channel');
+      if (!targets) return;
       const { channelId, workspace } = targets;
       if (!(await confirmWrite(`Leave ${channelId}?`, options.yes, options.json))) {
         return;

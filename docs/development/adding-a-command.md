@@ -130,12 +130,24 @@ describeCommand(conversations.command('members'), HELP.members)
       }
       console.log('\n' + formatChannelMembers(members));
     } catch (err: any) {
-      spinner.fail('Failed to fetch members');
-      error(err.message);
-      process.exit(1);
+      // Text: spinner fails with the context, then the error line. --json: one
+      // {"error":{…}} line on stderr. Either way exit code 1, no process.exit().
+      failCommand(err, { json: options.json, spinner, context: 'Failed to fetch members' });
     }
   });
 ```
+
+Every failure path of a command with `--json` goes through `failCommand()`
+(`src/lib/command-errors.ts`), so that under `--json` it is reported as the
+structured error object documented in
+[scripting](../user-guide/scripting.md#errors-under---json). A failure the
+command detects itself throws (or passes) a typed error from
+`src/lib/cli-errors.ts` — `InvalidInputError`, `NotFoundError`,
+`UnsupportedAuthTypeError`, `ConfirmationRequiredError`, or `CliError` with a
+code — so `classifyError()` never has to read message text. Slack's own codes
+are mapped in `SLACK_CODE_MAP`; add a code there rather than matching a message.
+A write gate is `if (!(await confirmWrite(prompt, options.yes, options.json))) return;`:
+`confirmWrite()` has already reported the refusal and set the exit code.
 
 A new **group** (rather than a subcommand) also needs a
 `create<Group>Command()` factory, a `describeCommand()` call on the group, and
@@ -200,7 +212,8 @@ review:
       `process.exitCode` and return. See
       [architecture](architecture.md#output).
 - [ ] Spinner via `ora`; libs report progress through an `onProgress` callback.
-- [ ] Errors: `spinner.fail(...)`, `error(message)`, `process.exit(1)`.
+- [ ] Errors: `failCommand(err, { json: options.json, spinner, context })` and
+      return; CLI-detected failures use a typed error from `cli-errors.ts`.
 - [ ] Never print a token value.
 - [ ] `bun run type-check` and `bun test` pass; commits are signed.
 - [ ] The PR links a `ready-for-pr` issue and follows the PR template.

@@ -1,5 +1,6 @@
 import type { SlackClient } from './slack-client.ts';
 import type { SlackUsergroup, UsergroupMember } from '../types/index.ts';
+import { InvalidInputError } from './cli-errors.ts';
 
 type ProgressOptions = { onProgress?: (message: string) => void };
 type ScopeOptions = { teamId?: string };
@@ -186,7 +187,7 @@ async function mutateMembers(
   }
 
   if (result.next.length === 0) {
-    throw new Error(
+    throw new InvalidInputError(
       'Refusing to remove the last member: Slack does not allow a user group with no members. ' +
         'Disable the group instead (usergroups disable).',
     );

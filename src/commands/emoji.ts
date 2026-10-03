@@ -1,9 +1,11 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatEmoji, formatEmojiList, writeJson } from '../lib/formatter.ts';
+import { formatEmoji, formatEmojiList, writeJson } from '../lib/formatter.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { fetchCustomEmoji, getCustomEmoji, parseEmojiLimit } from '../lib/emoji.ts';
+import { failCommand } from '../lib/command-errors.ts';
+import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -74,9 +76,8 @@ export function createEmojiCommand(): Command {
         if (options.limit !== undefined) {
           const { limit, error: limitError } = parseEmojiLimit(options.limit);
           if (limitError !== undefined) {
-            spinner.fail('Invalid limit');
-            error(limitError);
-            process.exit(1);
+            failCommand(new InvalidInputError(limitError), { json: options.json, spinner, context: 'Invalid limit' });
+            return;
           }
           emojiList = emojiList.slice(0, limit);
         }
@@ -95,9 +96,7 @@ export function createEmojiCommand(): Command {
 
         console.log('\n' + formatEmojiList(emojiList));
       } catch (err: any) {
-        spinner.fail('Failed to fetch custom emoji');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch custom emoji' });
       }
     });
 
@@ -116,8 +115,11 @@ export function createEmojiCommand(): Command {
         });
 
         if (!found) {
-          spinner.fail(`No custom emoji named :${name.replace(/^:|:$/g, '')}:`);
-          process.exit(1);
+          failCommand(new NotFoundError(`No custom emoji named :${name.replace(/^:|:$/g, '')}:`), {
+            json: options.json,
+            spinner,
+          });
+          return;
         }
 
         spinner.succeed(`Found :${found.name}:`);
@@ -129,9 +131,7 @@ export function createEmojiCommand(): Command {
 
         console.log('\n' + formatEmoji(found));
       } catch (err: any) {
-        spinner.fail('Failed to fetch custom emoji');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch custom emoji' });
       }
     });
 

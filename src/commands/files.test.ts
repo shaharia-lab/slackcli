@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import * as authLib from '../lib/auth.ts';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
@@ -57,8 +58,12 @@ describe('confirmedOutputPath', () => {
     Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
   }
 
+  const savedExitCode = process.exitCode;
+
   afterEach(() => {
     Object.defineProperty(process.stdin, 'isTTY', { value: realIsTTY, configurable: true });
+    // A refused confirmation sets exit code 1; do not let it become the run's own.
+    process.exitCode = savedExitCode ?? 0;
   });
 
   it('downloads to a path inside the working directory without confirming', async () => {
@@ -221,5 +226,73 @@ describe('writeResponseToFile', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('files read --json failures (#326)', () => {
+  let stdout: string;
+  let stderr: string;
+  let savedExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    stdout = '';
+    stderr = '';
+    savedExitCode = process.exitCode;
+    process.exitCode = 0;
+    spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stdout += chunk.toString();
+      return true;
+    }) as typeof process.stdout.write);
+    spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderr += chunk.toString();
+      return true;
+    }) as typeof process.stderr.write);
+    spyOn(console, 'log').mockImplementation((...args: unknown[]) => { stdout += `${args.join(' ')}\n`; });
+    spyOn(console, 'error').mockImplementation((...args: unknown[]) => { stderr += `${args.join(' ')}\n`; });
+  });
+
+  afterEach(() => {
+    mock.restore();
+    process.exitCode = savedExitCode ?? 0;
+  });
+
+  async function read(info: unknown, content = '') {
+    spyOn(authLib, 'getAuthenticatedClient').mockResolvedValue({
+      workspaceHost: 'acme.slack.com',
+      getFileInfo: async () => info,
+      downloadFile: async () => content,
+    } as any);
+    await createFilesCommand().parseAsync(['read', 'F0123456789', '--json'], { from: 'user' });
+    const lines = stderr.trimEnd().split('\n');
+    return JSON.parse(lines[lines.length - 1]).error;
+  }
+
+  const file = { id: 'F0123456789', name: 'notes.txt', url_private: 'https://files.slack.com/F0123456789' };
+
+  it('reports a sign-in page as auth_failed', async () => {
+    const error = await read(
+      { ok: true, file: { ...file, mimetype: 'text/plain' } },
+      '<html><title>Sign in | Slack</title><body>Authentication required</body></html>',
+    );
+    expect(error).toEqual({
+      code: 'auth_failed',
+      message: 'The downloaded content is a Slack sign-in page. Your token may have expired.',
+      retryable: false,
+    });
+    expect(stdout).toBe('');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports a non-text file as invalid_input', async () => {
+    const error = await read({ ok: true, file: { ...file, mimetype: 'image/png' } });
+    expect(error.code).toBe('invalid_input');
+    expect(error.message).toContain('This file is not textual (image/png)');
+    expect(stdout).toBe('');
+  });
+
+  it('reports a response without a file as not_found', async () => {
+    const error = await read({ ok: true });
+    expect(error).toEqual({ code: 'not_found', message: 'File not found', retryable: false });
+    expect(stdout).toBe('');
   });
 });

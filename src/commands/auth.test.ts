@@ -2,7 +2,15 @@ import { describe, expect, it, mock, afterEach, beforeEach, spyOn } from 'bun:te
 import { createAuthCommand, resolveSecretBackend } from './auth.ts';
 import * as authLib from '../lib/auth.ts';
 import * as workspacesLib from '../lib/workspaces.ts';
+import { NotFoundError } from '../lib/cli-errors.ts';
 import type { IdentityResult, ProfileCheck } from '../types/index.ts';
+
+// A failing --json command's error object is the last line of stderr (#326);
+// a spinner's start line may come before it.
+function lastJsonLine(text: string): any {
+  const lines = text.trimEnd().split('\n');
+  return JSON.parse(lines[lines.length - 1]);
+}
 
 function subcommand(name: string) {
   return createAuthCommand().commands.find((command) => command.name() === name);
@@ -75,8 +83,12 @@ describe('auth command wiring', () => {
 });
 
 describe('migrate-secrets confirmation gate', () => {
+  const savedExitCode = process.exitCode;
+
   afterEach(() => {
     mock.restore();
+    // A refused confirmation sets exit code 1; do not let it become the run's own.
+    process.exitCode = savedExitCode ?? 0;
   });
 
   it('refuses to run unattended without --yes when stdin is not a TTY', async () => {
@@ -207,21 +219,24 @@ describe('auth whoami', () => {
     expect(exitCode).toBe(1);
   });
 
-  it('exits 1 with the error and nothing on stdout when no profile resolves', async () => {
+  it('reports a JSON error object and nothing on stdout when no profile resolves', async () => {
+    spyOn(authLib, 'checkIdentity').mockRejectedValue(new NotFoundError('Workspace not found: nope'));
+    await createAuthCommand().parseAsync(['whoami', '--workspace', 'nope', '--json'], { from: 'user' });
+    expect(process.exitCode).toBe(1);
+    expect(stdout).toBe('');
+    // The spinner's failure line is not printed; the error object ends stderr.
+    expect(stderr).not.toContain('Could not check identity');
+    expect(lastJsonLine(stderr)).toEqual({
+      error: { code: 'not_found', message: 'Workspace not found: nope', retryable: false },
+    });
+  });
+
+  it('keeps the text error when no profile resolves without --json', async () => {
     spyOn(authLib, 'checkIdentity').mockRejectedValue(new Error('Workspace not found: nope'));
-    const exitSpy = mock(() => { throw new Error('exit'); });
-    const originalExit = process.exit;
-    process.exit = exitSpy as never;
-    try {
-      await expect(
-        createAuthCommand().parseAsync(['whoami', '--workspace', 'nope', '--json'], { from: 'user' }),
-      ).rejects.toThrow('exit');
-      expect(exitSpy).toHaveBeenCalledWith(1);
-      expect(stderr).toContain('Workspace not found: nope');
-      expect(stdout).toBe('');
-    } finally {
-      process.exit = originalExit;
-    }
+    await createAuthCommand().parseAsync(['whoami', '--workspace', 'nope'], { from: 'user' });
+    expect(process.exitCode).toBe(1);
+    expect(stderr).toContain('Workspace not found: nope');
+    expect(stdout).toBe('');
   });
 });
 
@@ -369,14 +384,24 @@ describe('auth list', () => {
     expect(exitCode).toBe(0);
   });
 
-  it('exits 1 with the error and nothing on stdout when the config cannot be read', async () => {
+  it('reports a JSON error object and nothing on stdout when the config cannot be read', async () => {
+    spyOn(workspacesLib, 'getAllWorkspaceEntries').mockRejectedValue(new Error('workspaces.json is not valid JSON'));
+    await createAuthCommand().parseAsync(['list', '--check', '--json'], { from: 'user' });
+    expect(process.exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(lastJsonLine(stderr)).toEqual({
+      error: { code: 'unknown', message: 'workspaces.json is not valid JSON', retryable: false },
+    });
+  });
+
+  it('exits 1 with the text error when the config cannot be read without --json', async () => {
     spyOn(workspacesLib, 'getAllWorkspaceEntries').mockRejectedValue(new Error('workspaces.json is not valid JSON'));
     const exitSpy = mock(() => { throw new Error('exit'); });
     const originalExit = process.exit;
     process.exit = exitSpy as never;
     try {
       await expect(
-        createAuthCommand().parseAsync(['list', '--check', '--json'], { from: 'user' }),
+        createAuthCommand().parseAsync(['list', '--check'], { from: 'user' }),
       ).rejects.toThrow('exit');
       expect(exitSpy).toHaveBeenCalledWith(1);
       expect(stderr).toContain('workspaces.json is not valid JSON');

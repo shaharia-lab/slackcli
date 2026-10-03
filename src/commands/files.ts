@@ -10,6 +10,8 @@ import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackFile } from '../types/index.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
+import { failCommand } from '../lib/command-errors.ts';
+import { CliError, InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -90,7 +92,7 @@ function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | un
 }
 
 function fileFromResponse(response: { file?: SlackFile }): SlackFile {
-  if (!response.file) throw new Error('File not found');
+  if (!response.file) throw new NotFoundError('File not found');
   return response.file;
 }
 
@@ -247,9 +249,7 @@ export function createFilesCommand(): Command {
         }
         console.log('\n' + formatFileInfo(file));
       } catch (err: any) {
-        spinner.fail('Failed to fetch file metadata');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch file metadata' });
       }
     });
 
@@ -270,7 +270,7 @@ export function createFilesCommand(): Command {
         let result = extractedFileContent(file, options.raw);
         if (!result) {
           if (!isTextFile(file)) {
-            throw new Error(
+            throw new InvalidInputError(
               `This file is not textual (${file.mimetype || 'unknown MIME type'}). ` +
               'Use files download instead.',
             );
@@ -278,7 +278,7 @@ export function createFilesCommand(): Command {
           spinner.text = 'Downloading file content...';
           const content = await client.downloadFile(fileDownloadUrl(file), MAX_TEXT_FILE_SIZE);
           if (isAuthPage(content)) {
-            throw new Error('The downloaded content is a Slack sign-in page. Your token may have expired.');
+            throw new CliError('auth_failed', 'The downloaded content is a Slack sign-in page. Your token may have expired.');
           }
           result = { source: 'original', content };
         }
@@ -297,9 +297,7 @@ export function createFilesCommand(): Command {
         }
         process.stdout.write(result.content + (result.content.endsWith('\n') ? '' : '\n'));
       } catch (err: any) {
-        spinner.fail('Failed to read file');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to read file' });
       }
     });
 
@@ -329,7 +327,7 @@ export function createFilesCommand(): Command {
         const response = await client.fetchFile(fileDownloadUrl(file));
         if (await isAuthenticationResponse(response, file)) {
           await response.body?.cancel();
-          throw new Error('The downloaded content is a Slack sign-in page. Your token may have expired.');
+          throw new CliError('auth_failed', 'The downloaded content is a Slack sign-in page. Your token may have expired.');
         }
         const bytesWritten = await writeResponseToFile(response, outputPath);
 

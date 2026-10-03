@@ -27,6 +27,7 @@ import { isSlackWorkspaceUrl } from '../lib/browser-auth.ts';
 import { confirmWrite } from './usergroups.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { IdentityResult, SecretBackend } from '../types/index.ts';
+import { failCommand } from '../lib/command-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -299,6 +300,18 @@ function printLoginHint(parsed: ParsedCurlResult): void {
   console.log(`    --workspace-url="${parsed.workspaceUrl}"\n`);
 }
 
+// `auth list` keeps its own text failure (the error as the hint line); under
+// --json it is the standard error object.
+function reportListFailure(err: any, json: boolean, spinner: Ora | undefined): void {
+  if (json) {
+    failCommand(err, { json, spinner });
+    return;
+  }
+  spinner?.stop();
+  error('Failed to list workspaces', err.message);
+  process.exit(1);
+}
+
 export function createAuthCommand(): Command {
   const auth = describeCommand(new Command('auth'), HELP.group);
 
@@ -489,9 +502,7 @@ export function createAuthCommand(): Command {
           console.log(`${idx + 1}. ${formatWorkspace(config, isDefault, key, checkOf.get(key))}\n`);
         });
       } catch (err: any) {
-        spinner?.stop();
-        error('Failed to list workspaces', err.message);
-        process.exit(1);
+        reportListFailure(err, options.json, spinner);
       }
     });
 
@@ -506,9 +517,8 @@ export function createAuthCommand(): Command {
       try {
         identity = await checkIdentity(options.workspace);
       } catch (err: any) {
-        spinner.fail('Could not check identity');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Could not check identity' });
+        return;
       }
 
       if (identity.status === 'ok') {

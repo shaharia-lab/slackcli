@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import {
-  error,
   formatSearchMessages,
   formatChannelSearchResults,
   formatPeopleSearchResults,
@@ -12,6 +11,7 @@ import {
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
+import { failCommand } from '../lib/command-errors.ts';
 
 // Help text shared by several commands below.
 const EMPTY_RESULT_NOTE =
@@ -154,9 +154,7 @@ export function createSearchCommand(): Command {
           console.log(formatPaginationHint(pagination.page, pagination.page_count));
         }
       } catch (err: any) {
-        spinner.fail('Failed to search messages');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to search messages' });
       }
     });
 
@@ -209,9 +207,7 @@ export function createSearchCommand(): Command {
 
         console.log('\n' + formatChannelSearchResults(query, channels, total));
       } catch (err: any) {
-        spinner.fail('Failed to search channels');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to search channels' });
       }
     });
 
@@ -298,9 +294,7 @@ export function createSearchCommand(): Command {
           console.log('');
         }
       } catch (err: any) {
-        spinner.fail('Failed to search people');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to search people' });
       }
     });
 

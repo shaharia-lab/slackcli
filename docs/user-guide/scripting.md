@@ -56,8 +56,8 @@ when a message has attachments.
 
 ## Exit codes
 
-`0` on success, `1` on failure. Failures print a message to stderr — check the
-exit code rather than parsing that text.
+`0` on success, `1` on failure. Without `--json`, a failure prints a message to
+stderr; check the exit code rather than parsing that text.
 
 ```bash
 if ! slackcli messages send --recipient-id="$CHANNEL" --message="$TEXT"; then
@@ -65,6 +65,59 @@ if ! slackcli messages send --recipient-id="$CHANNEL" --message="$TEXT"; then
   exit 1
 fi
 ```
+
+## Errors under `--json`
+
+With `--json`, a failing command writes **one single-line JSON object as the
+last line of stderr**, writes nothing to stdout, and exits `1`. The spinner's
+failure line is left out, so that last line parses on its own:
+
+```json
+{"error":{"code":"auth_failed","message":"Authentication failed for profile \"acme\" (Acme Corp, browser auth): invalid_auth","hint":"slackcli auth login-auto --workspace-url https://acme.slack.com","retryable":false,"slack_error":"invalid_auth"}}
+```
+
+| Field | Meaning |
+|---|---|
+| `code` | One of the codes below. React to this, never to `message`. |
+| `message` | What went wrong, in words. Wording may change between releases. |
+| `hint` | What to do next, when there is something specific: often a command to run. Optional. |
+| `retryable` | `true` only for `rate_limited` and `network`: trying again unchanged can succeed. |
+| `slack_error` | Slack's own error code, verbatim, when Slack returned one (`channel_not_found`, `missing_scope`, …). Optional. |
+
+| `code` | When | What to do |
+|---|---|---|
+| `auth_failed` | Slack refused the stored credentials (`invalid_auth`, `token_expired`, `token_revoked`, `not_authed`, `account_inactive`), a download returned Slack's sign-in page, or no workspace is configured | Log in again; `hint` has the command |
+| `not_found` | The channel, user, message, file, draft, user group, profile or log run does not exist (`channel_not_found`, `user_not_found`, …) | Fix the ID or name |
+| `permission_denied` | The identity may not do this (`missing_scope`, `not_in_channel`, `restricted_action`, `enterprise_is_restricted`, …) | Join the channel, add the scope, or use another profile |
+| `rate_limited` | Slack throttled the call (HTTP 429, `ratelimited`) | Wait, then retry |
+| `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
+| `network` | Slack could not be reached, or answered with a 5xx | Retry |
+| `confirmation_required` | A write needs `--yes` when stdin is not a terminal, or the prompt was declined | Pass `--yes` once the write is confirmed |
+| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth; Slack's `not_allowed_token_type` | Use a profile of the other type |
+| `unknown` | Anything else | Read `message` |
+
+```bash
+out=$(slackcli conversations read "$CHANNEL" --json 2>err.txt) || {
+  err=$(tail -n 1 err.txt)
+  case "$(jq -r '.error.code' <<<"$err")" in
+    rate_limited|network) sleep 30 ;;                       # retry later
+    auth_failed) slackcli auth login-auto --headless ;;     # browser profiles
+    *) jq -r '.error.message' <<<"$err" >&2; exit 1 ;;
+  esac
+}
+```
+
+Only the last line is the error object: a spinner or a warning can come before
+it. An error object never carries a token, a message's text, a file's content or
+a search query. Usage errors that Commander raises before the command starts
+(an unknown option, a missing argument) are still plain text, with exit code
+`1`. Commands without `--json` (`auth login`, `files download`, `logs clear`, …)
+are unchanged. Two commands report a partial result on stdout with exit code
+`1` instead of an error object, because something did happen:
+`conversations members remove` (`failed` lists the users that were not removed)
+and `messages send-draft` (`cleanup_error` when the message posted but the draft
+could not be deleted). `auth whoami --json` and `auth list --check --json`
+likewise report a refused or unreachable profile as their own result on stdout.
 
 An empty result is *not* a failure: a search with no hits, or an unread list with
 nothing in it, exits `0`. Test the data, not the exit code:
@@ -233,14 +286,17 @@ done
   stderr gets log lines only with `-v`. Set `SLACKCLI_LOG_LEVEL=off` to skip the
   file, or `SLACKCLI_LOG_DIR` to move it, e.g. in a read-only container.
 - **The update notice.** SlackCLI may append a one-line "update available" notice
-  after a command. It goes to stderr and never contaminates `--json` on stdout.
+  after a command that succeeded. It goes to stderr and never contaminates
+  `--json` on stdout, and it is never printed after a failure, so a `--json`
+  error object stays the last line of stderr.
   Set `SLACKCLI_NO_UPDATE_NOTIFIER=1` to turn it and its daily request to GitHub
   off; it is off automatically when `CI` is set (`CI=true`, `CI=1`). See
   [Updating](installation.md#updating).
 - **`usergroups` writes need `--yes`.** `create`, `update`, `add`, `remove`,
   `enable`, and `disable` refuse to run with a non-zero exit when stdin is not a
   terminal and `--yes` is absent, so an unattended job must pass `--yes`
-  explicitly. See [User groups](usergroups.md).
+  explicitly. With `--json` the refusal is a `confirmation_required` error
+  object. See [User groups](usergroups.md).
 - **`files download` needs `--yes` to write outside the working directory.** An
   `--output` path that resolves inside the current directory is unaffected. One
   that escapes it (`../…`, an absolute path, or a symlinked directory) is

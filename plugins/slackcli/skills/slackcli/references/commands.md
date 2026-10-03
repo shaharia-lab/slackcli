@@ -6,7 +6,10 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 ## Everywhere
 
 - `--json`: every read command, plus `messages send|edit|draft` and `usergroups`
-  writes. JSON on stdout; spinners, warnings, errors on stderr.
+  writes. JSON on stdout; spinners, warnings, errors on stderr. A failure with
+  `--json` exits 1 and ends stderr with one line
+  `{"error":{"code","message","hint"?,"retryable","slack_error"?}}`: branch on
+  `code`, never on message text.
 - `--workspace <id|name>`: every Slack command. Accepts profile key, `--profile`
   name, `T…` ID, or workspace name. Ambiguous name: command stops, pass the profile.
 - IDs accept Slack URLs (channel, DM, user, canvas, file). Timestamps accept
@@ -124,14 +127,15 @@ slackcli canvas read F123 --json | jq -r .markdown > canvas.md
 
 ## Errors
 
-| Message | Action |
-|---|---|
-| `No workspace configured` | Authenticate (phase 2) |
-| `Workspace not found` / `matches multiple profiles` | `auth list`; pass the profile key |
-| `invalid_auth` `not_authed` `token_revoked`, sign-in page on canvas read | Browser: `auth login-auto --headless`; standard: re-login |
-| `not_allowed_token_type` on search | Needs `xoxp` or browser auth |
-| `not_in_channel` / missing scope | Join the channel or add the scope |
-| `Draft creation requires browser authentication` | Use a browser profile |
-| `Draft listing requires browser authentication` | Use a browser profile |
-| `target_team_must_be_specified_in_org_context` | Add `--team=T…` |
-| usergroups write refused | Confirm with user, add `--yes` |
+`error.code` with `--json` (`retryable` is true only for `rate_limited` and `network`):
+
+| `code` | Typical cause | Action |
+|---|---|---|
+| `auth_failed` | `No workspace configured`; `invalid_auth` `not_authed` `token_revoked`; sign-in page on canvas read | No workspace: authenticate (phase 2). Browser: `auth login-auto --headless`; standard: re-login. `hint` has the command |
+| `not_found` | `Workspace not found`, `channel_not_found`, unknown user group | `auth list` / fix the ID |
+| `invalid_input` | `matches multiple profiles`, bad flag value or link | `auth list` and pass the profile key / fix the input |
+| `unsupported_auth_type` | `not_allowed_token_type` on search; drafts on an app token | Needs `xoxp` or browser auth |
+| `permission_denied` | `not_in_channel`, `missing_scope` | Join the channel or add the scope |
+| `confirmation_required` | a write without `--yes` | Confirm with user, add `--yes` |
+| `rate_limited` / `network` | throttled / Slack unreachable | Wait and retry |
+| `unknown` | anything else, e.g. `target_team_must_be_specified_in_org_context` (`slack_error`) | Read `message`; for that one add `--team=T…` |

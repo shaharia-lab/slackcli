@@ -16,6 +16,7 @@ import {
   type SecretStore,
 } from './secret-store.ts';
 import { warning } from './formatter.ts';
+import { InvalidInputError, NotFoundError } from './cli-errors.ts';
 
 const logger = getLogger(['slackcli', 'workspaces']);
 
@@ -107,14 +108,15 @@ export interface ResolvedWorkspace {
 
 // A selector matched more than one stored profile. Surfaced instead of silently
 // picking one, so the caller can disambiguate with an explicit profile name.
-export class AmbiguousWorkspaceError extends Error {
+export class AmbiguousWorkspaceError extends InvalidInputError {
   public identifier: string;
   public keys: string[];
 
   constructor(identifier: string, keys: string[]) {
     super(
       `"${identifier}" matches multiple profiles: ${keys.join(', ')}. ` +
-      `Re-run with --workspace=<profile> (see "slackcli auth list").`
+      `Re-run with --workspace=<profile> (see "slackcli auth list").`,
+      'slackcli auth list',
     );
     this.name = 'AmbiguousWorkspaceError';
     this.identifier = identifier;
@@ -320,7 +322,7 @@ export async function dropWorkspace(
 ): Promise<void> {
   const resolved = resolveWorkspace(data, identifier);
   if (!resolved) {
-    throw new Error(`Workspace ${identifier} not found`);
+    throw new NotFoundError(`Workspace ${identifier} not found`);
   }
 
   await deleteCredentials(store, resolved.key, resolved.config.auth_type);
@@ -430,7 +432,7 @@ export async function migrateWorkspaceCredentials(
 ): Promise<MigrationResult> {
   const resolved = resolveWorkspace(data, identifier);
   if (!resolved) {
-    throw new Error(`Workspace ${identifier} not found`);
+    throw new NotFoundError(`Workspace ${identifier} not found`);
   }
 
   const key = resolved.key;
@@ -573,7 +575,7 @@ export async function setDefaultWorkspace(identifier: string): Promise<void> {
 
   const resolved = resolveWorkspace(data, identifier);
   if (!resolved) {
-    throw new Error(`Workspace ${identifier} not found`);
+    throw new NotFoundError(`Workspace ${identifier} not found`);
   }
 
   data.default_workspace = resolved.key;

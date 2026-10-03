@@ -15,6 +15,7 @@ import { createUsersCommand } from './commands/users.ts';
 import { installRootHelp, installUsageErrorHint } from './lib/help.ts';
 import { installUsageErrorLogging, startLogging } from './lib/logger.ts';
 import { installProcessErrorHandlers } from './lib/process-errors.ts';
+import { setJsonErrorMode } from './lib/command-errors.ts';
 import { getAppVersion } from './version.ts';
 
 /**
@@ -37,6 +38,8 @@ export function createProgram(): Command {
   program.hook('preAction', (_thisCommand, actionCommand) => {
     loggingStarted = true;
     startLogging({ verbose: Boolean(program.opts().verbose), actionCommand });
+    // Before the action, so even an error no command caught is reported as JSON.
+    setJsonErrorMode(actionCommand.opts().json === true);
     // After logging is configured, so an unhandled error lands in the log file.
     installProcessErrorHandlers();
   });

@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
+import { formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
@@ -18,6 +18,8 @@ import {
 } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
+import { failCommand } from '../lib/command-errors.ts';
+import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 
 // Help text shared by several commands below.
 const CHANNEL_ARG_NOTE =
@@ -323,9 +325,7 @@ export function createConversationsCommand(): Command {
           console.log(chalk.cyan(`  slackcli conversations list --cursor "${nextCursor}"\n`));
         }
       } catch (err: any) {
-        spinner.fail('Failed to fetch conversations');
-        error(err.message, 'Run "slackcli auth list" to check your authentication.');
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch conversations', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 
@@ -453,9 +453,7 @@ export function createConversationsCommand(): Command {
           console.log('\n' + formatConversationHistory(channelId, messages, users));
         }
       } catch (err: any) {
-        spinner.fail('Failed to fetch messages');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch messages' });
       }
     });
 
@@ -482,8 +480,8 @@ export function createConversationsCommand(): Command {
         const msg = await fetchMessage(client, channelId, target.timestamp);
 
         if (!msg) {
-          spinner.fail('Message not found');
-          process.exit(1);
+          failCommand(new NotFoundError('Message not found'), { json: options.json, spinner });
+          return;
         }
 
         // Fetch user info
@@ -538,9 +536,7 @@ export function createConversationsCommand(): Command {
           console.log('\n' + formatConversationHistory(channelId, [msg], users));
         }
       } catch (err: any) {
-        spinner.fail('Failed to fetch message');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch message' });
       }
     });
 
@@ -584,9 +580,7 @@ export function createConversationsCommand(): Command {
 
         console.log('\n' + formatUnreadChannels(channels));
       } catch (err: any) {
-        spinner.fail('Failed to fetch unread conversations');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch unread conversations' });
       }
     });
 
@@ -606,8 +600,8 @@ export function createConversationsCommand(): Command {
     .action(async (channelArg, options) => {
       const limit = Number.parseInt(options.limit, 10);
       if (!Number.isFinite(limit) || limit <= 0) {
-        error('--limit must be a positive integer');
-        process.exit(1);
+        failCommand(new InvalidInputError('--limit must be a positive integer'), { json: options.json });
+        return;
       }
 
       const spinner = ora('Fetching members...').start();
@@ -663,16 +657,16 @@ export function createConversationsCommand(): Command {
         // enterprise-policy-blocked (and --team does NOT lift it). Surface it
         // clearly with a non-zero exit rather than hiding the command or faking success.
         if (isEnterpriseRestricted(err)) {
-          spinner.fail('Member enumeration is restricted on this workspace');
-          error(
-            'Slack returned enterprise_is_restricted: listing channel members is blocked by this Enterprise Grid\'s policy.',
-            'This is an org-level restriction; scoping to a team does not lift it. Ask a workspace admin if you need member enumeration.',
-          );
-          process.exit(1);
+          failCommand(err, {
+            json: options.json,
+            spinner,
+            context: 'Member enumeration is restricted on this workspace',
+            message: 'Slack returned enterprise_is_restricted: listing channel members is blocked by this Enterprise Grid\'s policy.',
+            hint: 'This is an org-level restriction; scoping to a team does not lift it. Ask a workspace admin if you need member enumeration.',
+          });
+          return;
         }
-        spinner.fail('Failed to fetch members');
-        error(err.message, 'Run "slackcli auth list" to check your authentication.');
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch members', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 
@@ -694,12 +688,12 @@ export function createConversationsCommand(): Command {
     .action(async (channelArg, users, options) => {
       const ids = parseUserIds(users);
       if (ids.length === 0) {
-        error('No user IDs given — pass at least one user ID to add.');
-        process.exit(1);
+        failCommand(new InvalidInputError('No user IDs given — pass at least one user ID to add.'), { json: options.json });
+        return;
       }
       const { channelId, workspace } = resolveChannelArg(channelArg);
-      if (!(await confirmWrite(`Add ${ids.length} user(s) to ${channelId}?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Add ${ids.length} user(s) to ${channelId}?`, options.yes, options.json))) {
+        return;
       }
 
       const spinner = ora('Adding members...').start();
@@ -715,9 +709,7 @@ export function createConversationsCommand(): Command {
           writeJson({ channel_id: channelId, added: ids });
         }
       } catch (err: any) {
-        spinner.fail('Failed to add members');
-        error(err.message, 'Run "slackcli auth list" to check your authentication.');
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to add members', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 
@@ -735,12 +727,12 @@ export function createConversationsCommand(): Command {
     .action(async (channelArg, users, options) => {
       const ids = parseUserIds(users);
       if (ids.length === 0) {
-        error('No user IDs given — pass at least one user ID to remove.');
-        process.exit(1);
+        failCommand(new InvalidInputError('No user IDs given — pass at least one user ID to remove.'), { json: options.json });
+        return;
       }
       const { channelId, workspace } = resolveChannelArg(channelArg);
-      if (!(await confirmWrite(`Remove ${ids.length} user(s) from ${channelId}?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Remove ${ids.length} user(s) from ${channelId}?`, options.yes, options.json))) {
+        return;
       }
 
       const spinner = ora('Removing members...').start();
@@ -783,9 +775,7 @@ export function createConversationsCommand(): Command {
           return;
         }
       } catch (err: any) {
-        spinner.fail('Failed to remove members');
-        error(err.message, 'Run "slackcli auth list" to check your authentication.');
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to remove members', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 
@@ -812,9 +802,7 @@ export function createConversationsCommand(): Command {
           writeJson({ channel_id: channelId, channel: response.channel ?? null });
         }
       } catch (err: any) {
-        spinner.fail('Failed to join channel');
-        error(err.message, 'Run "slackcli auth list" to check your authentication.');
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to join channel', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 
@@ -828,8 +816,8 @@ export function createConversationsCommand(): Command {
     .option('--json', 'Output in JSON format', false)
     .action(async (channelArg, options) => {
       const { channelId, workspace } = resolveChannelArg(channelArg);
-      if (!(await confirmWrite(`Leave ${channelId}?`, options.yes))) {
-        process.exit(1);
+      if (!(await confirmWrite(`Leave ${channelId}?`, options.yes, options.json))) {
+        return;
       }
       const spinner = ora('Leaving channel...').start();
       try {
@@ -845,9 +833,7 @@ export function createConversationsCommand(): Command {
           writeJson({ channel_id: channelId, left: !alreadyOut, not_in_channel: alreadyOut });
         }
       } catch (err: any) {
-        spinner.fail('Failed to leave channel');
-        error(err.message, 'Run "slackcli auth list" to check your authentication.');
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to leave channel', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 

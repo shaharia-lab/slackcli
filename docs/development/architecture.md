@@ -339,6 +339,23 @@ That is [issue #73](https://github.com/shaharia-lab/slackcli/issues/73), and
 [#77](https://github.com/shaharia-lab/slackcli/issues/77) tracks the same hazard
 on the non-JSON paths.
 
+### Failures
+
+A command reports a failure through `failCommand()` in
+`src/lib/command-errors.ts` and returns; it never exits the process itself.
+Without `--json` it prints what commands always printed (`spinner.fail(context)`
+then `error(message, hint)`). With `--json` it stops the spinner silently and
+writes one `{"error":{code,message,hint?,retryable,slack_error?}}` line to
+stderr, so stdout stays empty (#326). `classifyError()` picks the `code` from
+the error's type (`SlackAuthError`, the `CliError` family in `cli-errors.ts`,
+`SlackUrlParseError`, `SlackTransportError`) or from Slack's own code
+(`slackData.error`, attached by both transports) through `SLACK_CODE_MAP`, never
+from message text, and redacts credentials from `message` and `hint` with the
+log patterns. An error no command caught reaches `handleFatalError()`
+(`process-errors.ts`), which writes the same object when the `preAction` hook
+recorded `--json` (`setJsonErrorMode()`). The update notice is skipped once the
+exit code is non-zero, so the error object stays the last line of stderr.
+
 ## Logging
 
 Every run writes a JSON Lines log through [LogTape](https://logtape.org). The

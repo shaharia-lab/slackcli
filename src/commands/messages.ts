@@ -12,6 +12,8 @@ import {
 import type { SlackClient } from '../lib/slack-client.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
+import { failCommand } from '../lib/command-errors.ts';
+import { InvalidInputError } from '../lib/cli-errors.ts';
 
 // Help text shared by several commands below.
 const THREAD_TS_NOTE =
@@ -168,12 +170,12 @@ export async function parseBlocksInput(input: string): Promise<Array<Record<stri
   if (input.startsWith('@')) {
     const path = input.slice(1);
     if (!path) {
-      throw new Error('--blocks file path cannot be empty');
+      throw new InvalidInputError('--blocks file path cannot be empty');
     }
     try {
       source = await readFile(path, 'utf8');
     } catch (err: any) {
-      throw new Error(`Cannot read blocks file ${path}: ${err.message}`);
+      throw new InvalidInputError(`Cannot read blocks file ${path}: ${err.message}`);
     }
   }
 
@@ -181,11 +183,16 @@ export async function parseBlocksInput(input: string): Promise<Array<Record<stri
   try {
     blocks = JSON.parse(source);
   } catch (err: any) {
-    throw new Error(`Invalid blocks JSON: ${err.message}`);
+    // The parser's message quotes the input, so the --json report leaves it out.
+    throw new InvalidInputError(
+      `Invalid blocks JSON: ${err.message}`,
+      undefined,
+      'Invalid blocks JSON: --blocks is not valid JSON.',
+    );
   }
 
   if (!Array.isArray(blocks)) {
-    throw new Error('--blocks must contain a JSON array of Block Kit blocks');
+    throw new InvalidInputError('--blocks must contain a JSON array of Block Kit blocks');
   }
   for (const [index, block] of blocks.entries()) {
     if (
@@ -195,7 +202,7 @@ export async function parseBlocksInput(input: string): Promise<Array<Record<stri
       || typeof (block as Record<string, unknown>).type !== 'string'
       || !(block as Record<string, unknown>).type
     ) {
-      throw new Error(`Block at index ${index} must be an object with a non-empty string "type"`);
+      throw new InvalidInputError(`Block at index ${index} must be an object with a non-empty string "type"`);
     }
   }
 
@@ -216,24 +223,24 @@ export async function resolveMessageText(options: {
   if (options.messageFile !== undefined) {
     const path = options.messageFile;
     if (!path) {
-      throw new Error('--message-file path cannot be empty');
+      throw new InvalidInputError('--message-file path cannot be empty');
     }
 
     let text: string;
     try {
       text = await readFile(path, 'utf8');
     } catch (err: any) {
-      throw new Error(`Cannot read message file ${path}: ${err.message}`);
+      throw new InvalidInputError(`Cannot read message file ${path}: ${err.message}`);
     }
 
     if (!text.trim()) {
-      throw new Error(`Message file ${path} is empty`);
+      throw new InvalidInputError(`Message file ${path} is empty`);
     }
     return text;
   }
 
   if (options.message === undefined) {
-    throw new Error('Either --message or --message-file is required');
+    throw new InvalidInputError('Either --message or --message-file is required');
   }
   return options.message;
 }
@@ -344,9 +351,7 @@ export function createMessagesCommand(): Command {
           success(`Message timestamp: ${response.ts}`);
         }
       } catch (err: any) {
-        spinner.fail('Failed to send message');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to send message' });
       }
     });
 
@@ -374,9 +379,7 @@ export function createMessagesCommand(): Command {
         spinner.succeed('Reaction added successfully!');
         success(`Added :${options.emoji}: to message ${target.timestamp}`);
       } catch (err: any) {
-        spinner.fail('Failed to add reaction');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to add reaction' });
       }
     });
 
@@ -418,9 +421,7 @@ export function createMessagesCommand(): Command {
           success(`Message timestamp: ${response.ts}`);
         }
       } catch (err: any) {
-        spinner.fail('Failed to update message');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to update message' });
       }
     });
 
@@ -454,9 +455,7 @@ export function createMessagesCommand(): Command {
           console.log('\n' + formatDraftList(drafts));
         }
       } catch (err: any) {
-        spinner.fail('Failed to list drafts');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to list drafts' });
       }
     });
 
@@ -511,9 +510,7 @@ export function createMessagesCommand(): Command {
           success(`Draft ID: ${response.draft.id}`);
         }
       } catch (err: any) {
-        spinner.fail('Failed to create draft');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to create draft' });
       }
     });
 
@@ -529,9 +526,9 @@ export function createMessagesCommand(): Command {
         const draft = await loadActiveDraft(client, draftId);
         const { channelId } = validateSendableDraft(draft);
         spinner.stop();
-        if (!(await confirmWrite(`Send draft ${draftId} to ${channelId}?`, options.yes))) {
-          error('Draft was not sent');
-          process.exitCode = 1;
+        if (!(await confirmWrite(`Send draft ${draftId} to ${channelId}?`, options.yes, options.json))) {
+          // confirmWrite() set the exit code and, under --json, reported the refusal.
+          if (!options.json) error('Draft was not sent');
           return;
         }
         spinner.start('Sending draft...');
@@ -547,9 +544,7 @@ export function createMessagesCommand(): Command {
         if (options.json) writeJson(result);
         else success(`Message timestamp: ${result.ts}`);
       } catch (err: any) {
-        spinner.fail('Failed to send draft');
-        error(err.message);
-        process.exitCode = 1;
+        failCommand(err, { json: options.json, spinner, context: 'Failed to send draft' });
       }
     });
 
@@ -561,12 +556,12 @@ export function createMessagesCommand(): Command {
     .action(async (draftId, options) => {
       const spinner = ora('Deleting draft...').start();
       try {
-        if (!draftId.trim()) throw new Error('Draft ID cannot be empty');
+        if (!draftId.trim()) throw new InvalidInputError('Draft ID cannot be empty');
         const client = await getAuthenticatedClient(options.workspace);
         spinner.stop();
-        if (!(await confirmWrite(`Delete draft ${draftId}?`, options.yes))) {
-          error('Draft was not deleted');
-          process.exitCode = 1;
+        if (!(await confirmWrite(`Delete draft ${draftId}?`, options.yes, options.json))) {
+          // confirmWrite() set the exit code and, under --json, reported the refusal.
+          if (!options.json) error('Draft was not deleted');
           return;
         }
         spinner.start('Deleting draft...');
@@ -575,9 +570,7 @@ export function createMessagesCommand(): Command {
         if (options.json) writeJson({ draft_id: draftId, deleted: true });
         else success(`Deleted draft ${draftId}`);
       } catch (err: any) {
-        spinner.fail('Failed to delete draft');
-        error(err.message);
-        process.exitCode = 1;
+        failCommand(err, { json: options.json, spinner, context: 'Failed to delete draft' });
       }
     });
 

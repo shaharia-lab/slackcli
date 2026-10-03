@@ -60,6 +60,35 @@ describe('handleFatalError', () => {
   });
 });
 
+describe('handleFatalError under --json', () => {
+  afterEach(() => resetSync());
+
+  it('writes the classified error object instead of the text message, then exits 1', () => {
+    configureLogging({ level: 'info', verbose: false, sinks: { capture: () => {} } });
+    const printed: string[] = [];
+    const written: string[] = [];
+    const exits: number[] = [];
+    const err = Object.assign(new Error('Slack API error: missing_scope'), { slackData: { ok: false, error: 'missing_scope' } });
+    handleFatalError('unhandledRejection', err, {
+      json: true,
+      print: (message) => printed.push(message),
+      writeJson: (line) => written.push(line),
+      exit: (code) => exits.push(code),
+    });
+    expect(printed).toEqual([]);
+    expect(written).toHaveLength(1);
+    expect(JSON.parse(written[0])).toEqual({
+      error: {
+        code: 'permission_denied',
+        message: 'Slack API error: missing_scope',
+        retryable: false,
+        slack_error: 'missing_scope',
+      },
+    });
+    expect(exits).toEqual([1]);
+  });
+});
+
 // The real thing, in a child process: an async action rejects with nothing
 // awaiting it, as happens under `program.parse()`. The record must be on disk
 // before the process exits, and the exit code must be 1.

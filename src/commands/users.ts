@@ -1,10 +1,12 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, writeJson } from '../lib/formatter.ts';
+import { writeJson } from '../lib/formatter.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 import { statusOf, listUsersByStatus, type UserStatusFilter } from '../lib/users.ts';
+import { failCommand } from '../lib/command-errors.ts';
+import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
@@ -80,9 +82,12 @@ export function createUsersCommand(): Command {
         const response = await client.getUserInfo(user);
 
         if (!response.ok || !response.user) {
-          spinner.fail('User not found');
-          error(response.error || 'Unknown error');
-          process.exit(1);
+          failCommand(new NotFoundError(response.error || 'Unknown error'), {
+            json: options.json,
+            spinner,
+            context: 'User not found',
+          });
+          return;
         }
 
         const u = response.user;
@@ -118,9 +123,7 @@ export function createUsersCommand(): Command {
         }
         console.log('');
       } catch (err: any) {
-        spinner.fail('Failed to fetch user');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to fetch user' });
       }
     });
 
@@ -136,12 +139,12 @@ export function createUsersCommand(): Command {
       const status = String(options.status).toLowerCase() as UserStatusFilter;
 
       if (!Number.isFinite(limit) || limit <= 0) {
-        error('--limit must be a positive integer');
-        process.exit(1);
+        failCommand(new InvalidInputError('--limit must be a positive integer'), { json: options.json });
+        return;
       }
       if (status !== 'all' && status !== 'active' && status !== 'deactivated') {
-        error('--status must be one of: all | active | deactivated');
-        process.exit(1);
+        failCommand(new InvalidInputError('--status must be one of: all | active | deactivated'), { json: options.json });
+        return;
       }
 
       const spinner = ora('Listing users...').start();
@@ -188,9 +191,7 @@ export function createUsersCommand(): Command {
         }
         console.log('');
       } catch (err: any) {
-        spinner.fail('Failed to list users');
-        error(err.message);
-        process.exit(1);
+        failCommand(err, { json: options.json, spinner, context: 'Failed to list users' });
       }
     });
 

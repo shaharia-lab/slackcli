@@ -1036,6 +1036,20 @@ describe('notifyIfUpdateAvailable', () => {
       expect(stderr).toHaveBeenCalledTimes(1);
     });
 
+    it('prints no banner after a command failed, so a --json error stays the last stderr line (#326)', async () => {
+      await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
+      const saved = process.exitCode;
+      try {
+        await notifyIfUpdateAvailable(argv, NO_ENV);
+        process.exitCode = 1;
+        expect(fireBeforeExit()).toBe('');
+        process.exitCode = 0;
+        expect(fireBeforeExit()).toContain('→ v99.0.0');
+      } finally {
+        process.exitCode = saved ?? 0;
+      }
+    });
+
     it('reads an old cache file without the failure field', async () => {
       await writeRawCache({ checkedAt: Date.now(), latestVersion: 'v99.0.0' });
 

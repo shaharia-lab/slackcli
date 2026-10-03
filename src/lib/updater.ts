@@ -435,6 +435,12 @@ export function isUpdateNotifierDisabled(env: NodeJS.ProcessEnv = process.env): 
   return isTruthyEnv(env.SLACKCLI_NO_UPDATE_NOTIFIER) || isTruthyEnv(env.CI);
 }
 
+// Whether the command has already set a non-zero exit code.
+function isFailing(): boolean {
+  const code = process.exitCode;
+  return code !== undefined && code !== null && Number(code) !== 0;
+}
+
 // Show a one-line update notification after the command finishes (via beforeExit),
 // and refresh the cache in the background if it is stale. The banner uses the
 // freshly fetched version when the refresh finished, the cached one otherwise.
@@ -497,7 +503,10 @@ export function notifyIfUpdateAvailable(
   let printed = false;
 
   process.on('beforeExit', () => {
-    if (printed) return;
+    // A failed command prints no notice: under --json its error object must stay
+    // the last line of stderr (#326), and a failure that called process.exit()
+    // never reached here anyway.
+    if (printed || isFailing()) return;
     const latest = freshLatest ?? cachedLatest;
     if (latest === undefined || !isNewerVersion(latest, CURRENT_VERSION)) return;
     printed = true;

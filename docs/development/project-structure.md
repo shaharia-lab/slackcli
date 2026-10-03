@@ -3,7 +3,8 @@
 ```
 slackcli/
 ├── src/
-│   ├── index.ts                  CLI entry point; registers command groups
+│   ├── index.ts                  CLI entry point: welcome screen or parse, update notice
+│   ├── program.ts                createProgram(): registers command groups, hooks and help
 │   ├── version.ts                App version (build-time define, else package.json)
 │   ├── commands/                 One file per command group
 │   │   ├── auth.ts
@@ -31,8 +32,8 @@ slackcli/
 
 ## `src/commands/`
 
-Each file exports a `create<Group>Command(): Command` factory that `src/index.ts`
-registers. They parse flags, call into `src/lib/`, print, and set the exit code.
+Each file exports a `create<Group>Command(): Command` factory that
+`createProgram()` in `src/program.ts` registers. They parse flags, call into `src/lib/`, print, and set the exit code.
 They hold no Slack API knowledge.
 
 | File | Subcommands |
@@ -68,16 +69,17 @@ They hold no Slack API knowledge.
 | `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. Logs waits at `debug`. |
 | `auth-errors.ts` | Pure classifier for Slack's five authentication codes (`invalid_auth`, `token_expired`, `token_revoked`, `not_authed`, `account_inactive`): the meaning and fix for a profile, the three-line message, the `SlackAuthError` that `SlackClient.request()` throws for them on both auth paths, and the separate wording for a token rejected during login. |
 | `retry.ts` | Pure retry policy for browser-auth calls: which failures are retried (429 always, 5xx/network errors for the `READ_METHODS` allowlist only), `Retry-After` parsing, backoff with jitter, and the attempt/wait caps. |
-| `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header, and the exit override that logs Commander usage errors. Called once from `src/index.ts`; libs log via LogTape's `getLogger` directly. |
+| `logger.ts` | Logging configuration: log directory and level resolution, the rotating file and verbose stderr sinks, the `session_start` environment header, and the exit override that logs Commander usage errors. Called once from `src/program.ts`; libs log via LogTape's `getLogger` directly. |
 | `log-redaction.ts` | The token/cookie/JWT redaction patterns applied to every log line. |
 | `logs.ts` | `logs` command work: lists the log file and its rotations oldest first, reads them line by line, redacts each line again, groups records by `run_id`, selects runs, formats them as text, and deletes only the log files. |
 | `tildify.ts` | Home directory as `~` in log records: `tildify()` for a path, `tildifyText()` for free text, `errorMessageForLog()` for an error's message. Its own module so libs can use it without importing `logger.ts`. |
-| `process-errors.ts` | Last-resort `unhandledRejection` / `uncaughtException` handlers: log the error with its stack, print the message, exit 1. Installed from `src/index.ts`. |
+| `process-errors.ts` | Last-resort `unhandledRejection` / `uncaughtException` handlers: log the error with its stack, print the message, exit 1. Installed from `src/program.ts`. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
 | `poll.ts` | `conversations read`'s polling helpers: exact Slack `ts` comparison, the `ts > --oldest` and `--exclude-self` filters, the `next_oldest` cursor, and resolving the authenticated identity (stored `user_id`, or one `auth.test`). |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types. |
 | `formatter.ts` | Chalk-coloured renderers, status helpers, and `writeJson()`. |
+| `help.ts` | The `--help` layout: `describeCommand()` (summary, description, `Examples`, `Notes`, standard notes for `--json`, browser-only and confirmation), the root command tree and footer, and the `--help` pointer after usage errors. |
 | `clipboard.ts` | Cross-platform clipboard read (`pbpaste` / PowerShell / `xclip` / `xsel`). |
 | `interactive-input.ts` | Multi-line terminal input (double-Enter or Ctrl-D). |
 | `updater.ts` | Self-update via GitHub releases, with SHA-256 verification. |

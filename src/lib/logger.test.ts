@@ -632,12 +632,13 @@ describe('process integration', () => {
   });
 
   it('logs usage errors from every command group in the real tree', () => {
-    const indexSource = readFileSync(join(root, 'src/index.ts'), 'utf-8');
-    const groups = [...indexSource.matchAll(/program\.addCommand\(create(\w+)Command\(\)\)/g)]
+    const programSource = readFileSync(join(root, 'src/program.ts'), 'utf-8');
+    const groups = [...programSource.matchAll(/program\.addCommand\(create(\w+)Command\(\)\)/g)]
       .map((match) => match[1]!.toLowerCase());
     expect(groups.length).toBeGreaterThanOrEqual(13);
-    // The walk only reaches commands registered before it runs.
-    expect(indexSource.lastIndexOf('program.addCommand(')).toBeLessThan(indexSource.indexOf('installUsageErrorLogging(program'));
+    // The walks only reach commands registered before they run.
+    expect(programSource.lastIndexOf('program.addCommand(')).toBeLessThan(programSource.indexOf('installUsageErrorLogging(program'));
+    expect(programSource.lastIndexOf('program.addCommand(')).toBeLessThan(programSource.indexOf('installUsageErrorHint(program'));
 
     const run = (args: string[], dir: string) => Bun.spawnSync(
       [process.execPath, 'run', join(root, 'src/index.ts'), ...args],
@@ -678,7 +679,10 @@ describe('process integration', () => {
     const result = run(['messages', 'send', '--recipient-id', 'C0000000000', '--message', 'x', '--yes']);
     expect(result.exitCode).toBe(1);
     expect(result.stdout.toString()).toBe('');
-    expect(result.stderr.toString()).toBe("error: unknown option '--yes'\n");
+    // The --help pointer (#324) follows the error; the log still records it.
+    expect(result.stderr.toString()).toBe(
+      "error: unknown option '--yes'\n(run \"slackcli messages send --help\" for usage and examples)\n",
+    );
     const records = readLines(join(dir, LOG_FILE_NAME));
     expect(records.map((r) => r.properties.event)).toEqual(['session_start', 'usage_error']);
     expect(records[0]!.properties).toMatchObject({ command: 'messages send' });

@@ -74,13 +74,13 @@ one; the command refuses a no-op.
 
 ### `usergroups add <group> <users...>` / `remove <group> <users...>`
 
-Adds or removes members. User IDs may be space- or comma-separated, with or
-without a leading `@`.
+Adds or removes members. User IDs (`U…`) may be space- or comma-separated, with
+or without a leading `@`; handles and emails are not resolved to IDs.
 
 Slack's underlying `usergroups.users.update` replaces the group's **entire**
 member list — there is no incremental add/remove endpoint. SlackCLI makes
 `add`/`remove` safe by **reading the current membership, applying your change,
-and writing the result back**, so concurrent members are never dropped. An
+and writing the result back**, so existing members are never dropped. An
 add/remove that would change nothing is reported as a no-op and skips the write.
 
 Slack does not allow a user group with **zero** members, so `remove` refuses to

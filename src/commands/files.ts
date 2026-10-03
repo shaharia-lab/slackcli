@@ -8,7 +8,63 @@ import { resolveOutputPath } from '../lib/output-path.ts';
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackFile } from '../types/index.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
+
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
+    summary: 'Inspect, read and download Slack files',
+    description:
+      'Show a file\'s metadata, print a textual file, or download the original bytes. ' +
+      'Every command takes a file ID (F...) or a Slack file URL. For canvases, "slackcli canvas read" converts to Markdown.',
+  },
+  info: {
+    summary: 'Show metadata for a Slack file',
+    description:
+      'Show a file\'s ID, name, type, size, owner, creation time and permalink, without downloading it. ' +
+      'Use "files read" for its content or "files download" for the bytes.',
+    examples: [
+      'slackcli files info F0123456789',
+      'slackcli files info https://acme.slack.com/files/U0123456789/F0123456789/report.pdf --json',
+    ],
+    json:
+      'the complete Slack file object (id, name, title, mimetype, size, user, permalink, ...). ' +
+      'It can include url_private and url_private_download: treat it as private.',
+    notes: ['<file-id-or-url> takes a file ID (F...) or a Slack file URL.'],
+  },
+  read: {
+    summary: 'Print the content of a textual Slack file',
+    description:
+      'Print a textual file (text/*, JSON, XML, email, ...) to stdout, up to 10 MB. ' +
+      'For an email file it prints Slack\'s plain-text extraction unless --raw is given. ' +
+      'Binary files are refused: use "files download".',
+    examples: [
+      'slackcli files read F0123456789',
+      'slackcli files read F0123456789 --raw',
+      'slackcli files read https://acme.slack.com/files/U0123456789/F0123456789/notes.txt --json',
+    ],
+    json: '{ id, name, title, mimetype, source, content } - source is plain_text or original.',
+    notes: ['<file-id-or-url> takes a file ID (F...) or a Slack file URL.'],
+  },
+  download: {
+    summary: 'Download the original bytes of a Slack file',
+    description:
+      'Stream the original file to --output without converting it. Use it for binary files; ' +
+      '"files read" prints textual ones. It never overwrites an existing file.',
+    examples: [
+      'slackcli files download F0123456789 --output ./report.pdf',
+      'slackcli files download https://acme.slack.com/files/U0123456789/F0123456789/report.pdf --output ./report.pdf',
+      'slackcli files download F0123456789 --output ~/Downloads/report.pdf --yes',
+    ],
+    confirms: true,
+    notes: [
+      'The confirmation applies only when --output resolves outside the current directory ' +
+        '(../, an absolute path outside it, or a symlink out); a path inside it downloads with no prompt.',
+      '<file-id-or-url> takes a file ID (F...) or a Slack file URL.',
+    ],
+  },
+} satisfies Record<string, CommandHelp>;
 
 const MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -169,12 +225,9 @@ export async function confirmedOutputPath(
 }
 
 export function createFilesCommand(): Command {
-  const files = new Command('files')
-    .description('Inspect, read, and download Slack files');
+  const files = describeCommand(new Command('files'), HELP.group);
 
-  files
-    .command('info')
-    .description('Show metadata for a Slack file')
+  describeCommand(files.command('info'), HELP.info)
     .argument('<file-id-or-url>', 'Slack file ID or URL')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
@@ -200,9 +253,7 @@ export function createFilesCommand(): Command {
       }
     });
 
-  files
-    .command('read')
-    .description('Print the content of a textual Slack file')
+  describeCommand(files.command('read'), HELP.read)
     .argument('<file-id-or-url>', 'Slack file ID or URL')
     .option('--raw', 'Read the original file instead of Slack-extracted plain text', false)
     .option('--workspace <id|name>', 'Workspace to use')
@@ -252,9 +303,7 @@ export function createFilesCommand(): Command {
       }
     });
 
-  files
-    .command('download')
-    .description('Download the original Slack file')
+  describeCommand(files.command('download'), HELP.download)
     .argument('<file-id-or-url>', 'Slack file ID or URL')
     .requiredOption('--output <path>', 'Path for the downloaded file')
     .option('--workspace <id|name>', 'Workspace to use')

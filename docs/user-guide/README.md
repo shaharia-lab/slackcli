@@ -14,8 +14,14 @@ slackcli conversations list
 slackcli messages send --recipient-id=C1234567890 --message="Hello from the terminal"
 ```
 
-`slackcli --help`, and `slackcli <group> --help`, print the authoritative option
-list for the version you have installed.
+`slackcli --help` lists every command under its group, with how the workspace
+is chosen, the `SLACKCLI_*` environment variables and `--json`.
+`slackcli <group> <command> --help` prints that command's options, examples and
+notes: accepted ID and URL formats, flags that replace each other, the `--json`
+output shape, browser-only limits and the `--yes` rule. Help ships inside the
+binary, so it always matches the version you have installed. A rejected command
+line (an unknown option, a missing argument) ends with a pointer to the
+command's `--help`.
 
 Running `slackcli` on its own in a terminal shows a short welcome screen: the
 logo and version, a pointer to `slackcli --help`, the repository link (a star

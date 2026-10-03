@@ -2,17 +2,41 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatTeamInfo, writeJson } from '../lib/formatter.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { SlackTeam } from '../types/index.ts';
 
-export function createTeamCommand(): Command {
-  const team = new Command('team')
-    .description('View the workspace (team) itself');
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
+    summary: 'View the workspace (team) itself',
+    description:
+      'View the workspace (team) itself: its name, domain and ID. For groups of people inside ' +
+      'the workspace, use "slackcli usergroups".',
+  },
+  info: {
+    summary: 'Show workspace name, domain and ID',
+    description:
+      'Show the workspace name, ID, domain, URL, email domain and verification status (Slack ' +
+      'team.info). Works with both auth types.',
+    examples: [
+      'slackcli team info',
+      'slackcli team info --workspace acme --json',
+      'slackcli team info --team T0123456789 --json',
+    ],
+    json: '{ id, name, domain, email_domain, url, is_verified, icon } — the workspace.',
+    notes: [
+      '--team is only for Enterprise Grid: it picks one member workspace (a T... ID) of the org. ' +
+        'Without it Slack returns the token\'s own workspace; on a single workspace leave it out.',
+    ],
+  },
+} satisfies Record<string, CommandHelp>;
 
-  team
-    .command('info')
-    .description('Show workspace name, domain, and ID')
+export function createTeamCommand(): Command {
+  const team = describeCommand(new Command('team'), HELP.group);
+
+  describeCommand(team.command('info'), HELP.info)
     .option('--workspace <id|name>', 'Workspace to use')
-    .option('--team <workspace-id>', 'Target workspace T-id (enterprise org scoping)')
+    .option('--team <workspace-id>', 'Enterprise Grid only: member workspace T-id to look up')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {
       const spinner = ora('Fetching workspace info...').start();

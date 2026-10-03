@@ -16,11 +16,21 @@ slackcli saved list --json
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output |
 
-Raw saved entries are only pointers — a channel ID and a timestamp. SlackCLI
-paginates the whole list, then resolves each pointer into the actual message
-text, the channel name, and the author, so the output is readable without a
-second lookup.
+SlackCLI pages through the whole list (or stops at `--limit`). `--limit` caps
+the items fetched, before `--state` filters them.
 
-Both auth types work: browser auth uses Slack's `saved.list`, standard auth
-falls back to `stars.list`. The two return different shapes; the enrichment step
-normalises them, so the output and the `--json` schema are the same either way.
+The two auth types read different Slack lists and return different shapes:
+
+- **Browser auth** uses Slack's `saved.list`, the **Later** list. Raw saved
+  entries are only pointers — a channel ID and a timestamp — so SlackCLI
+  resolves each one into the message text, the channel name, and the author.
+  Each `--json` item is `{type, channel_id, channel_name, message, date_saved,
+  todo_state}`; non-message items carry only `type`, `channel_id` and
+  `date_saved`.
+- **Standard auth** (app tokens) falls back to `stars.list`, which returns
+  *starred* items with the message inline. They are passed through as Slack
+  returns them, so the `--json` item shape is Slack's `stars.list` shape. Those
+  items have no `todo_state`, so `--state` matches nothing.
+
+`--json` emits `{item_count, items}`. When there are no items, nothing is
+written to stdout and the command exits 0.

@@ -3,16 +3,42 @@ import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatSavedItems, writeJson } from '../lib/formatter.ts';
 import { enrichSavedItems } from '../lib/saved.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
+
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
+    summary: 'View your saved-for-later items',
+    description: 'Read your Slack "Later" (saved for later) list, with message text, channel and author resolved.',
+  },
+  list: {
+    summary: 'List your saved-for-later items',
+    description:
+      'List your saved items, paging through the whole list (or up to --limit). ' +
+      'Behaviour depends on the auth type, see Notes.',
+    examples: [
+      'slackcli saved list',
+      'slackcli saved list --state to_do',
+      'slackcli saved list --limit 50 --json',
+    ],
+    json:
+      '{ item_count, items }. With no items nothing is written to stdout (exit 0).',
+    notes: [
+      'Browser auth reads saved.list (the Later list): items are { type, channel_id, channel_name, message, date_saved, todo_state }, ' +
+        'with message text resolved; non-message items carry only type, channel_id and date_saved.',
+      'App tokens (xoxb/xoxp) read stars.list (starred items) and return Slack\'s items as-is: ' +
+        'no todo_state, so --state matches nothing.',
+      '--limit caps the items fetched, before --state filters them.',
+    ],
+  },
+} satisfies Record<string, CommandHelp>;
 
 export function createSavedCommand(): Command {
-  const saved = new Command('saved')
-    .description('View saved for later items');
+  const saved = describeCommand(new Command('saved'), HELP.group);
 
-  saved
-    .command('list')
-    .description('List saved for later items')
+  describeCommand(saved.command('list'), HELP.list)
     .option('--limit <number>', 'Maximum number of items to return')
-    .option('--state <state>', 'Filter by state: saved, to_do, or completed')
+    .option('--state <state>', 'Filter by state: saved, to_do, or completed (browser auth only)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
     .action(async (options) => {

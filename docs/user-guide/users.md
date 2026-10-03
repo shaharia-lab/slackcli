@@ -23,8 +23,9 @@ Shows name, handle, ID, email, title, account status, timezone, and admin flag.
 
 The **account status** comes from `deleted`, which is the one deactivation
 signal Slack always returns. A deactivated user has `tz`, `tz_label`,
-`tz_offset`, and `is_admin` stripped from the response, so those show as `n/a`
-for deactivated accounts.
+`tz_offset`, and `is_admin` stripped from the response, so the text output
+shows `Admin: false` and `TZ: (none) (n/a, offset n/a)`, and with `--json`
+those keys are absent.
 
 ## `users list`
 

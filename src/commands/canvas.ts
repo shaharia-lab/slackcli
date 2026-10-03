@@ -13,6 +13,54 @@ import {
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackCanvas } from '../types/index.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
+
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
+    summary: 'List and read Slack canvases as Markdown',
+    description:
+      'List canvas documents in the workspace or a channel, and read one as Markdown, with ' +
+      'user and channel mentions resolved to names.',
+  },
+  list: {
+    summary: 'List canvas documents',
+    description:
+      'List canvases visible to you in the workspace, or only those shared in one channel with --channel. ' +
+      'Use "canvas read" for a canvas\'s content.',
+    examples: [
+      'slackcli canvas list',
+      'slackcli canvas list --channel C0123456789 --limit 50',
+      'slackcli canvas list --json',
+    ],
+    json:
+      '{ canvas_count, canvases: [{ id, title, created, edit_timestamp, user, editors, size, permalink }] }. ' +
+      'With no canvases nothing is written to stdout (exit 0).',
+    notes: [
+      '--channel takes a channel ID or a Slack URL.',
+      '--limit must be 1-1000 (default 20).',
+    ],
+  },
+  read: {
+    summary: 'Read a canvas as Markdown',
+    description:
+      'Download one canvas (up to 10 MB) and print it as Markdown, by canvas ID or URL, ' +
+      'or the canvas attached to a channel or DM with --channel.',
+    examples: [
+      'slackcli canvas read F0123456789',
+      'slackcli canvas read https://acme.slack.com/docs/T0123456789/F0123456789 --json',
+      'slackcli canvas read --channel C0123456789',
+    ],
+    json:
+      '{ id, title, created, edit_timestamp, user, editors, size, permalink, markdown }.',
+    notes: [
+      '[canvas-id] takes a canvas file ID (F...) or a Slack URL; --channel takes a channel ID or a Slack URL.',
+      'Give [canvas-id] or --channel; when both are given the canvas ID wins.',
+      '--raw prints the source HTML and takes precedence over --json (stdout is then HTML, not JSON).',
+      'A channel without a canvas is reported on stderr with exit 0 and no stdout. An unknown canvas ID exits 1 with Slack\'s error.',
+    ],
+  },
+} satisfies Record<string, CommandHelp>;
 
 // Warn when a pasted link points at a different workspace than the one we will call,
 // rather than letting Slack answer with a misleading not-found error.
@@ -36,13 +84,10 @@ function reportCanvasReadFailure(spinner: Ora, err: any): void {
 }
 
 export function createCanvasCommand(): Command {
-  const canvas = new Command('canvas')
-    .description('List and read Slack canvas documents');
+  const canvas = describeCommand(new Command('canvas'), HELP.group);
 
   // List canvases
-  canvas
-    .command('list')
-    .description('List canvas documents in the workspace')
+  describeCommand(canvas.command('list'), HELP.list)
     .option('--limit <number>', 'Number of canvases to return', '20')
     .option('--channel <id>', 'Channel ID or URL whose shared canvases to list')
     .option('--workspace <id|name>', 'Workspace to use')
@@ -105,9 +150,7 @@ export function createCanvasCommand(): Command {
     });
 
   // Read canvas content
-  canvas
-    .command('read')
-    .description('Read canvas content as markdown')
+  describeCommand(canvas.command('read'), HELP.read)
     .argument('[canvas-id]', 'Canvas file ID or URL (e.g., F1234567890)')
     .option('--channel <id>', 'Channel ID or URL whose canvas to read')
     .option('--raw', 'Output raw HTML instead of markdown', false)

@@ -19,6 +19,8 @@ slackcli canvas list --json
 | `--workspace <id\|name>` | — | Workspace to use |
 | `--json` | off | JSON output |
 
+With `--json`, an empty result writes nothing to stdout and exits 0.
+
 ## `canvas read`
 
 ```bash
@@ -45,8 +47,13 @@ slackcli canvas read F1234567890 --json
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output including metadata and the Markdown |
 
+`--raw` takes precedence over `--json`: with both, stdout carries the HTML, not
+JSON.
+
 Canvas IDs are file IDs: `F` followed by alphanumerics. Either give one or use
-`--channel`; a channel with no canvas is reported as such rather than failing.
+`--channel` (the canvas ID wins when both are given). A channel with no canvas
+is reported on stderr with exit code 0 and nothing on stdout. An unknown canvas
+ID exits 1 with Slack's error.
 
 ### What the conversion handles
 

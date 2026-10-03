@@ -2,16 +2,57 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatEmoji, formatEmojiList, writeJson } from '../lib/formatter.ts';
+import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { fetchCustomEmoji, getCustomEmoji, parseEmojiLimit } from '../lib/emoji.ts';
 
-export function createEmojiCommand(): Command {
-  const emoji = new Command('emoji')
-    .description('View a workspace\'s custom emoji');
+// --help content, kept apart from the command chains below (#324).
+const HELP = {
+  group: {
+    summary: 'View a workspace\'s custom emoji',
+    description:
+      'View the workspace\'s custom emoji (the uploaded ones, not the built-in Unicode set). ' +
+      'Works with both auth types.',
+  },
+  list: {
+    summary: 'List the workspace\'s custom emoji',
+    description:
+      'List every custom emoji in the workspace, sorted by name, originals and aliases. Use ' +
+      '"emoji get" to look up one emoji by name.',
+    examples: [
+      'slackcli emoji list',
+      'slackcli emoji list --no-aliases --limit 50',
+      'slackcli emoji list --json',
+    ],
+    json:
+      '{ emoji_count, emoji: [{ name, is_alias, url, alias_for }] } — url for an original, ' +
+      'alias_for (the target name) for an alias.',
+    notes: [
+      'The whole list is fetched in one call; --no-aliases and then --limit are applied locally.',
+      'A workspace with no custom emoji prints nothing on stdout, even with --json (exit 0).',
+    ],
+  },
+  get: {
+    summary: 'Show details for a single custom emoji',
+    description:
+      'Show one custom emoji: an original with its image URL, or an alias with the emoji it ' +
+      'points at. Use "emoji list" to browse them all.',
+    examples: [
+      'slackcli emoji get party-parrot',
+      'slackcli emoji get :party-parrot: --json',
+    ],
+    json: '{ name, is_alias, url, alias_for } — the emoji; url for an original, alias_for for an alias.',
+    notes: [
+      'The name matches exactly, with or without the surrounding colons. Built-in emoji are not found.',
+      'No custom emoji by that name: exits 1.',
+    ],
+  },
+} satisfies Record<string, CommandHelp>;
 
-  emoji
-    .command('list')
-    .description('List the workspace\'s custom emoji')
-    .option('--limit <number>', 'Maximum number of emoji to return')
+export function createEmojiCommand(): Command {
+  const emoji = describeCommand(new Command('emoji'), HELP.group);
+
+  describeCommand(emoji.command('list'), HELP.list)
+    .option('--limit <number>', 'Maximum number of emoji to return (a positive integer)')
     .option('--no-aliases', 'Exclude alias emoji, showing only originals')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
@@ -60,9 +101,7 @@ export function createEmojiCommand(): Command {
       }
     });
 
-  emoji
-    .command('get')
-    .description('Show details for a single custom emoji')
+  describeCommand(emoji.command('get'), HELP.get)
     .argument('<name>', 'Emoji name, with or without surrounding colons')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)

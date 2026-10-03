@@ -8,7 +8,7 @@ Every subcommand accepts `--workspace <id|name>`.
 ## `conversations list`
 
 ```bash
-slackcli conversations list                          # everything you are in
+slackcli conversations list                          # every conversation you can see
 slackcli conversations list --types=public_channel
 slackcli conversations list --types=im               # DMs only
 slackcli conversations list --limit=200 --exclude-archived
@@ -63,7 +63,7 @@ slackcli conversations read C1234567890 --oldest="$CURSOR" --exclude-self --json
 | `--exclude-replies` | off | Drop threaded replies from channel history |
 | `--exclude-self` | off | Drop messages sent by the authenticated user (or, for a bot token, its bot) |
 | `--limit <number>` | `100` | How many messages |
-| `--oldest` / `--latest` | — | Time range bounds; only messages strictly newer than `--oldest` are shown |
+| `--oldest` / `--latest` | — | Time range bounds (`1234567890.123456`, `p1234567890123456`, or epoch seconds); only messages strictly newer than `--oldest` are shown |
 | `--json` | off | JSON output, including `ts` and `thread_ts` |
 
 Channel history comes back newest-first from Slack and is reversed so you read
@@ -109,9 +109,16 @@ slackcli conversations unread --types=dms          # channels, dms, groups
 slackcli conversations unread --json
 ```
 
-Conversations with mentions sort first, then alphabetically. On a workspace with
-many unread channels this makes one API call per channel to resolve names and
-may hit Slack rate limits.
+Conversations with mentions sort first, then alphabetically. `--json` gives
+`{ unread_channels: [...] }`. When nothing is unread the command prints
+"All caught up!" on stderr and writes nothing to stdout, even with `--json`.
+
+**Auth-type caveat.** With browser auth this reads Slack's own unread state
+(`client.counts`), then makes one or two API calls per unread conversation to
+resolve its name (a DM also looks up the user), so a workspace with many unread
+channels may hit Slack rate limits. With a standard token it reads the first 1000 conversations from `conversations.list`
+and keeps those you are a member of that carry an unread count; Slack often
+omits those counts for app tokens, so the result can be incomplete.
 
 ## `conversations members list`
 

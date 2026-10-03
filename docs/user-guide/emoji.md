@@ -24,6 +24,7 @@ prints nothing on stdout, even with `--json`.
 | `--no-aliases` | Exclude alias emoji, showing only originals |
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output |
+| `--fields <list>` | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 ## `emoji get <name>`
 
@@ -35,6 +36,7 @@ surrounding colons, so both `party-parrot` and `:party-parrot:` work.
 |---|---|
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output |
+| `--fields <list>` | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 ## Aliases
 

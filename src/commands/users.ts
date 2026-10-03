@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 import { statusOf, listUsersByStatus, type UserStatusFilter } from '../lib/users.ts';
@@ -19,6 +20,7 @@ const HELP = {
   },
   info: {
     summary: 'Show one user by ID, @handle or email',
+    fields: 'the user record',
     description:
       'Show one user: name, handle, email, title, account status (deactivated or not), admin ' +
       'flag and timezone. Use "users list" to enumerate users, "search people" to find one by name.',
@@ -28,6 +30,7 @@ const HELP = {
       'slackcli users info U0123456789 --json',
       'slackcli users info @alice',
       'slackcli users info alice@example.com --json',
+      'slackcli users info U0123456789 --json --fields id,real_name,profile.email,tz',
     ],
     json:
       'the raw Slack user object { id, name, real_name, deleted, is_admin, is_bot, tz, tz_label, ' +
@@ -42,6 +45,7 @@ const HELP = {
   },
   list: {
     summary: 'List workspace users with account status',
+    fields: 'each item of users',
     description:
       'List workspace users with their account status, filtered by --status. Pages through ' +
       'users.list until --limit users match. Use "users info" for one user\'s full profile.',
@@ -49,6 +53,7 @@ const HELP = {
       'slackcli users list',
       'slackcli users list --status deactivated --limit 50',
       'slackcli users list --status active --resolve-fields --json',
+      'slackcli users list --json --fields id,name,email',
     ],
     json:
       '{ total, status, users: [{ id, name, real_name, email, title, status, deleted, fields }] } ' +
@@ -79,10 +84,12 @@ export function createUsersCommand(): Command {
     .option('--resolve-fields', RESOLVE_FIELDS_HELP, false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (user, options) => {
       const spinner = ora(`Fetching user ${user}...`).start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
         // A handle (@alice) or email is looked up; an ID is used as given.
         const userId = await resolveIdentifier(client, user, user, 'user', '<user>', {
@@ -110,7 +117,7 @@ export function createUsersCommand(): Command {
         spinner.succeed(`Found ${u.real_name || u.name}`);
 
         if (options.json) {
-          writeJson(resolvedFields ? { ...u, resolved_fields: resolvedFields } : u);
+          writeJson(applyFields('users info', resolvedFields ? { ...u, resolved_fields: resolvedFields } : u, fields));
           return;
         }
 
@@ -143,6 +150,7 @@ export function createUsersCommand(): Command {
     .option('--resolve-fields', RESOLVE_FIELDS_HELP, false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const limit = Number.parseInt(options.limit, 10);
       const status = String(options.status).toLowerCase() as UserStatusFilter;
@@ -159,6 +167,7 @@ export function createUsersCommand(): Command {
       const spinner = ora('Listing users...').start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
         // --limit is MATCHES RETURNED: scan pages until `limit` users pass the
@@ -189,7 +198,7 @@ export function createUsersCommand(): Command {
         spinner.succeed(`Listed ${rows.length} users (${status})`);
 
         if (options.json) {
-          writeJson({ total: rows.length, status, users: rows });
+          writeJson(applyFields('users list', { total: rows.length, status, users: rows }, fields));
           return;
         }
 

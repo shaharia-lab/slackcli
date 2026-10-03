@@ -120,7 +120,7 @@ describe('messages command', () => {
     }
   });
 
-  it('exposes list-drafts as a browser-only read command with limit, workspace, and JSON options', () => {
+  it('exposes list-drafts as a browser-only read command with limit, workspace, JSON and fields options', () => {
     const command = subcommand('list-drafts');
     expect(command).toBeDefined();
     expect(helpOf(command!)?.browserOnly).toBe(true);
@@ -128,6 +128,7 @@ describe('messages command', () => {
       '--limit',
       '--workspace',
       '--json',
+      '--fields',
     ]);
   });
 

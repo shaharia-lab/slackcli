@@ -3,6 +3,9 @@
 `slackcli files` inspects metadata, prints textual content, and downloads
 Slack-hosted files. Every command accepts a file ID or Slack file URL.
 
+`files info` and `files read` take [`--fields`](scripting.md#keeping-output-small---fields-and---limit) with
+`--json` to print only the fields you name (`files info F1234567890 --json --fields id,name,size`).
+
 Reading files requires the `files:read` scope when you use standard
 authentication. Browser-session authentication uses the existing browser cookie
 and token.

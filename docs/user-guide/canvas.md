@@ -18,6 +18,7 @@ slackcli canvas list --json
 | `--channel <id>` | — | Channel ID, URL or name (`"#general"`) whose shared canvases to list |
 | `--workspace <id\|name>` | — | Workspace to use |
 | `--json` | off | JSON output |
+| `--fields <list>` | all | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 With `--json`, an empty result writes nothing to stdout and exits 0.
 
@@ -46,6 +47,7 @@ slackcli canvas read F1234567890 --json
 | `--raw` | Print the source HTML instead of Markdown |
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output including metadata and the Markdown |
+| `--fields <list>` | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 `--raw` takes precedence over `--json`: with both, stdout carries the HTML, not
 JSON.

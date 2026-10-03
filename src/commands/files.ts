@@ -4,6 +4,7 @@ import { open, rm } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { isAuthPage } from '../lib/canvas-parser.ts';
 import { error, formatFileSize, warning, writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { resolveOutputPath } from '../lib/output-path.ts';
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
@@ -23,6 +24,7 @@ const HELP = {
   },
   info: {
     summary: 'Show metadata for a Slack file',
+    fields: 'the file record',
     description:
       'Show a file\'s ID, name, type, size, owner, creation time and permalink, without downloading it. ' +
       'Use "files read" for its content or "files download" for the bytes.',
@@ -37,6 +39,7 @@ const HELP = {
   },
   read: {
     summary: 'Print the content of a textual Slack file',
+    fields: 'the file record',
     description:
       'Print a textual file (text/*, JSON, XML, email, ...) to stdout, up to 10 MB. ' +
       'For an email file it prints Slack\'s plain-text extraction unless --raw is given. ' +
@@ -233,10 +236,12 @@ export function createFilesCommand(): Command {
     .argument('<file-id-or-url>', 'Slack file ID or URL')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (input, options) => {
       const spinner = ora('Fetching file metadata...').start();
 
       try {
+        const fields = fieldsOption(options);
         const fileId = normalizeIdentifier(input, 'file', '<file-id-or-url>');
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspaceOf(input));
@@ -244,7 +249,7 @@ export function createFilesCommand(): Command {
 
         spinner.succeed(`File: ${file.title || file.name || file.id}`);
         if (options.json) {
-          writeJson(file);
+          writeJson(applyFields('files info', file, fields));
           return;
         }
         console.log('\n' + formatFileInfo(file));
@@ -258,10 +263,12 @@ export function createFilesCommand(): Command {
     .option('--raw', 'Read the original file instead of Slack-extracted plain text', false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (input, options) => {
       const spinner = ora('Fetching file...').start();
 
       try {
+        const fields = fieldsOption(options);
         const fileId = normalizeIdentifier(input, 'file', '<file-id-or-url>');
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspaceOf(input));
@@ -285,14 +292,14 @@ export function createFilesCommand(): Command {
 
         spinner.succeed(`File: ${file.title || file.name || file.id}`);
         if (options.json) {
-          writeJson({
+          writeJson(applyFields('files read', {
             id: file.id,
             name: file.name,
             title: file.title,
             mimetype: file.mimetype,
             source: result.source,
             content: result.content,
-          });
+          }, fields));
           return;
         }
         process.stdout.write(result.content + (result.content.endsWith('\n') ? '' : '\n'));

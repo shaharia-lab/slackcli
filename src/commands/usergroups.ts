@@ -7,6 +7,7 @@ import {
   formatUsergroupList,
   writeJson,
 } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { isInteractiveTerminal } from '../lib/interactive-input.ts';
 import { ConfirmationRequiredError, InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
@@ -48,6 +49,7 @@ const HELP = {
   },
   list: {
     summary: 'List the workspace\'s user groups',
+    fields: 'each item of usergroups',
     description:
       'List the workspace\'s user groups, sorted by name, with handle, member count and ' +
       'enabled/disabled state. Use "usergroups read" for one group and its members.',
@@ -66,6 +68,7 @@ const HELP = {
   },
   read: {
     summary: 'Show a user group and its members',
+    fields: 'the user group record',
     description:
       'Show one user group and its members, with each member ID resolved to a name. Use ' +
       '"usergroups list" to find the group first.',
@@ -325,9 +328,11 @@ export function createUsergroupsCommand(): Command {
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--team <workspace-id>', 'Enterprise Grid only: member workspace T-id to list')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching user groups...').start();
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
         const groups = await fetchUsergroups(client, {
           includeDisabled: options.includeDisabled,
@@ -338,7 +343,7 @@ export function createUsergroupsCommand(): Command {
         spinner.succeed(`Found ${groups.length} user group${groups.length === 1 ? '' : 's'}`);
 
         if (options.json) {
-          writeJson({ usergroup_count: groups.length, usergroups: groups });
+          writeJson(applyFields('usergroups list', { usergroup_count: groups.length, usergroups: groups }, fields));
           return;
         }
         console.log('\n' + formatUsergroupList(groups));
@@ -353,9 +358,11 @@ export function createUsergroupsCommand(): Command {
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--team <workspace-id>', 'Enterprise Grid only: member workspace T-id that owns the group')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (ref, options) => {
       const spinner = ora('Fetching user group...').start();
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
         const group = await requireGroup(client, ref, spinner, options);
         if (!group) return;
@@ -367,7 +374,7 @@ export function createUsergroupsCommand(): Command {
         spinner.succeed(`${group.name} — ${members.length} member${members.length === 1 ? '' : 's'}`);
 
         if (options.json) {
-          writeJson({ ...group, member_ids: ids, members });
+          writeJson(applyFields('usergroups read', { ...group, member_ids: ids, members }, fields));
           return;
         }
         console.log('\n' + formatUsergroup(group, members));

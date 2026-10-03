@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { formatSavedItems, writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { enrichSavedItems } from '../lib/saved.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { failCommand } from '../lib/command-errors.ts';
@@ -14,6 +15,7 @@ const HELP = {
   },
   list: {
     summary: 'List your saved-for-later items',
+    fields: 'each item of items',
     description:
       'List your saved items, paging through the whole list (or up to --limit). ' +
       'Behaviour depends on the auth type, see Notes.',
@@ -42,10 +44,12 @@ export function createSavedCommand(): Command {
     .option('--state <state>', 'Filter by state: saved, to_do, or completed (browser auth only)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching saved items...').start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
         let { items, users } = await enrichSavedItems(client, {
@@ -66,7 +70,7 @@ export function createSavedCommand(): Command {
         spinner.succeed(`Found ${items.length} saved items`);
 
         if (options.json) {
-          writeJson({ item_count: items.length, items });
+          writeJson(applyFields('saved list', { item_count: items.length, items }, fields));
           return;
         }
 

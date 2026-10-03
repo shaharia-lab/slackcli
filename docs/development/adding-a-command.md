@@ -171,7 +171,9 @@ uses `describeCommand()` from `src/lib/help.ts`, never a bare `.description()`:
   Required exactly when the command has `--json`.
 - `confirms: true` on a command with `--yes` (adds the standard confirmation
   note); `browserOnly: true` on a command that needs browser session tokens;
-  `dryRun: true` on a command with `--dry-run` (adds the standard dry-run note).
+  `dryRun: true` on a command with `--dry-run` (adds the standard dry-run note);
+  `fields: 'each item of <list key>'` (or `'the … record'`) on a command with
+  `--fields` (adds the standard `--fields` note).
 - `notes`: accepted value formats, flags that replace or require each other,
   and auth-type differences. Keep the whole help to about one screen; depth
   belongs in `docs/user-guide/`.
@@ -215,6 +217,11 @@ review:
       before `confirmWrite()` and the write call: build the preview with
       `buildPreview()`, print it with `emitDryRun()` and return. A dry run may
       read, never write, and never prompts.
+- [ ] A read command with `--json` takes `--fields` (`FIELDS_FLAG` from
+      `src/lib/json-fields.ts`): add it to `FIELDS_LIST_KEYS` with the key of
+      its main list (`null` for a single record), validate with
+      `fieldsOption(options)` before any Slack call, and print through
+      `writeJson(applyFields('<group> <command>', payload, fields))`.
 - [ ] **Never call `process.exit()` after `writeJson()`** — set
       `process.exitCode` and return. See
       [architecture](architecture.md#output).

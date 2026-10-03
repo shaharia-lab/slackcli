@@ -25,6 +25,11 @@ export interface CommandHelp {
   confirms?: boolean;
   /** Rendered as the standard note for a write command's --dry-run. */
   dryRun?: boolean;
+  /**
+   * Rendered as the standard `--fields` note (#330): what the fields select
+   * from, e.g. `each item of messages` or `the user record`.
+   */
+  fields?: string;
   notes?: string[];
 }
 
@@ -54,6 +59,18 @@ export const DRY_RUN_NOTE =
   '--dry-run resolves and validates everything (it may make read calls), prints what would be done ' +
   'and exits 0 without changing anything; it never prompts and needs no --yes. Slack checks ' +
   'permissions only on the real write, so a dry run can pass where the write is refused.';
+
+/**
+ * The `--fields` note (#330). `target` names what is projected: "each item of
+ * messages" when the command's other top-level keys are kept, or "the ...
+ * record" when the whole output is one record and is projected itself.
+ */
+export const FIELDS_NOTE = (target: string) =>
+  `--fields (needs --json) keeps only the named fields of ${target}, in the order given; dot paths ` +
+  'select nested values (profile.email gives { "profile": { "email": ... } }). A field that is not there ' +
+  'is left out, without an error. ' +
+  (target.endsWith(' record') ? '' : 'The other top-level keys are kept as they are. ') +
+  'Ask only for the fields you use to keep the output small.';
 
 export const USAGE_ERROR_HINT = (commandPath: string) =>
   `(run "${commandPath} --help" for usage and examples)`;
@@ -85,6 +102,7 @@ export function helpNotes(help: CommandHelp): string[] {
   if (help.browserOnly) notes.push(BROWSER_ONLY_NOTE);
   if (help.confirms) notes.push(CONFIRM_NOTE);
   if (help.dryRun) notes.push(DRY_RUN_NOTE);
+  if (help.fields) notes.push(FIELDS_NOTE(help.fields));
   return notes.concat(help.notes ?? []);
 }
 

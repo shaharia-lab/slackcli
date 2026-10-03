@@ -1,7 +1,9 @@
 # Users
 
 `slackcli users` looks up people by ID, handle or email and lists workspace users with their
-account status. Every subcommand accepts `--workspace <id|name>` and `--json`.
+account status. Every subcommand accepts `--workspace <id|name>` and `--json`;
+with `--json`, [`--fields`](scripting.md#keeping-output-small---fields-and---limit) keeps only the fields you name
+(`users list --json --fields id,name,email`, `users info U012HH99H63 --json --fields id,profile.email`).
 
 `search people` finds users by name or email; `users` is for looking one up by
 ID and for enumerating the workspace with a status filter.

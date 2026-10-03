@@ -10,6 +10,13 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
   `--json` exits 1 and ends stderr with one line
   `{"error":{"code","message","hint"?,"retryable","slack_error"?}}`: branch on
   `code`, never on message text.
+- `--fields a,b.c` (needs `--json`): on every read command below except
+  `conversations members list`, `auth` and `logs`. Keeps only those fields of each
+  item of the main list (or of the single record); dot paths keep nesting; counts,
+  `next_cursor`, `next_oldest`, `has_more` and `users` are kept. Missing field: omitted,
+  no error. Typical: `conversations read --fields ts,user,text`,
+  `conversations list --fields id,name`, `search messages --fields ts,user,text,channel.name,permalink`,
+  `users list --fields id,name,email`. Bad list or no `--json`: exit 1 `invalid_input`.
 - `--workspace <id|name>`: every Slack command. Accepts profile key, `--profile`
   name, `T…` ID, or workspace name. Ambiguous name: command stops, pass the profile.
 - IDs accept Slack URLs (channel, DM, user, canvas, file). Timestamps accept

@@ -80,6 +80,10 @@ Read [references/commands.md](references/commands.md) before choosing commands.
 `slackcli <group> <cmd> --help` is authoritative for the installed version.
 
 - `--json` whenever you process output (stdout is JSON only; rest is stderr).
+- Keep output small: on read commands add `--fields` with only the fields you
+  need (`--json --fields ts,user,text`; dot paths like `profile.email`), and a
+  tight `--limit`. Full Slack objects are often several times larger. Counts and cursors are
+  always kept; a misspelt field is silently absent, so check `--help` shapes.
 - Pass names directly: `--recipient-id="#general"`, `@alice` or
   `alice@example.com` work wherever an ID does (quote the `#`). Exact match
   only; `not_found` / `invalid_input` (ambiguous, lists IDs) mean search

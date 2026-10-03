@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
+import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { fetchMessage } from '../lib/message.ts';
 import { fetchUnreadChannels } from '../lib/unread.ts';
@@ -41,6 +42,7 @@ const HELP = {
   },
   list: {
     summary: 'List the conversations you can see',
+    fields: 'each item of conversations',
     description:
       'List channels, private channels, DMs and group DMs, one page at a time. Use it to find a ' +
       'channel ID; use "conversations unread" for only the ones with unread messages.',
@@ -48,6 +50,7 @@ const HELP = {
       'slackcli conversations list',
       'slackcli conversations list --types im --exclude-archived',
       'slackcli conversations list --limit 200 --json',
+      'slackcli conversations list --json --fields id,name,is_member',
       'slackcli conversations list --cursor "dXNlcjpVMDYxTkZUVDI=" --json',
     ],
     json:
@@ -61,12 +64,14 @@ const HELP = {
   },
   read: {
     summary: 'Read channel history or one thread',
+    fields: 'each item of messages',
     description:
       'Read the recent messages of a channel, DM or group DM, oldest first, or up to --limit messages ' +
       'of one thread (one page, parent included; has_more says when it was cut off). Use "conversations get" for a single message. Safe to poll: pass next_oldest back as --oldest.',
     examples: [
       'slackcli conversations read C0123456789 --limit 20',
       'slackcli conversations read general --limit 20 --json',
+      'slackcli conversations read C0123456789 --limit 50 --json --fields ts,user,text',
       'slackcli conversations read C0123456789 --thread-ts 1712345678.123456',
       'slackcli conversations read --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --json',
       'slackcli conversations read C0123456789 --oldest 1712345678.123456 --exclude-self --json',
@@ -88,6 +93,7 @@ const HELP = {
   },
   get: {
     summary: 'Fetch one message by channel and timestamp',
+    fields: 'the message under message',
     description:
       'Fetch a single message by its channel and timestamp, or from its Slack link. Use ' +
       '"conversations read" for a channel\'s history or a thread.',
@@ -110,6 +116,7 @@ const HELP = {
   },
   unread: {
     summary: 'List conversations with unread messages',
+    fields: 'each item of unread_channels',
     description:
       'List the conversations that have unread messages or mentions, mentions first, then by name. ' +
       'Use "conversations read" to read one of them.',
@@ -314,10 +321,12 @@ export function createConversationsCommand(): Command {
     .option('--cursor <cursor>', 'Pagination cursor for next page of results')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching conversations...').start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
         const response = await client.listConversations({
@@ -354,7 +363,7 @@ export function createConversationsCommand(): Command {
         const jsonNextCursor = nextCursor || null;
 
         if (options.json) {
-          writeJson({
+          writeJson(applyFields('conversations list', {
             conversation_count: channels.length,
             conversations: channels.map(ch => ({
               id: ch.id,
@@ -378,7 +387,7 @@ export function createConversationsCommand(): Command {
               email: u.profile?.email,
             })),
             next_cursor: jsonNextCursor,
-          });
+          }, fields));
           return;
         }
 
@@ -405,10 +414,12 @@ export function createConversationsCommand(): Command {
     .option('--latest <timestamp>', 'End of time range (Slack timestamp or epoch seconds)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format (includes timestamps for replies)', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (channelIdArg, options) => {
       const spinner = ora('Fetching messages...').start();
 
       try {
+        const fields = fieldsOption(options);
         const target = resolveThreadTarget(
           { permalink: options.permalink, channelId: channelIdArg, threadTs: options.threadTs },
           { channel: '<channel-id>', timestamp: '--thread-ts' }
@@ -478,7 +489,7 @@ export function createConversationsCommand(): Command {
 
         // Output in JSON format if requested
         if (options.json) {
-          writeJson({
+          writeJson(applyFields('conversations read', {
             channel_id: channelId,
             message_count: messages.length,
             next_oldest: page.nextOldest,
@@ -512,7 +523,7 @@ export function createConversationsCommand(): Command {
               real_name: u.real_name,
               email: u.profile?.email,
             })),
-          });
+          }, fields));
         } else {
           console.log('\n' + formatConversationHistory(channelId, messages, users));
         }
@@ -528,10 +539,12 @@ export function createConversationsCommand(): Command {
     .option('--permalink <url>', 'Slack message link (replaces <channel-id> and <timestamp>)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (channelIdArg, timestampArg, options) => {
       const spinner = ora('Fetching message...').start();
 
       try {
+        const fields = fieldsOption(options);
         const target = resolveMessageTarget(
           { permalink: options.permalink, channelId: channelIdArg, timestamp: timestampArg },
           { channel: '<channel-id>', timestamp: '<timestamp>' }
@@ -564,7 +577,7 @@ export function createConversationsCommand(): Command {
         spinner.succeed('Message found');
 
         if (options.json) {
-          writeJson({
+          writeJson(applyFields('conversations get', {
             channel_id: channelId,
             message: {
               ts: msg.ts,
@@ -594,7 +607,7 @@ export function createConversationsCommand(): Command {
               real_name: u.real_name,
               email: u.profile?.email,
             })),
-          });
+          }, fields));
         } else {
           console.log('\n' + formatConversationHistory(channelId, [msg], users));
         }
@@ -608,10 +621,12 @@ export function createConversationsCommand(): Command {
     .option('--types <types>', 'Filter by type (comma-separated: channels,dms,groups)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (options) => {
       const spinner = ora('Fetching unread counts...').start();
 
       try {
+        const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
         let channels = await fetchUnreadChannels(client, {
@@ -637,7 +652,7 @@ export function createConversationsCommand(): Command {
         spinner.succeed(`${channels.length} conversations with unread messages`);
 
         if (options.json) {
-          writeJson({ unread_channels: channels });
+          writeJson(applyFields('conversations unread', { unread_channels: channels }, fields));
           return;
         }
 

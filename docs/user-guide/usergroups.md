@@ -38,10 +38,13 @@ member count, and enabled/disabled state.
 | `--team <workspace-id>` | Scope to one workspace (enterprise org) |
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output |
+| `--fields <list>` | With `--json`, only these comma-separated fields (dot paths allowed) |
 
 ### `usergroups read <group>`
 
-Shows one group and its members, resolving member IDs to names.
+Shows one group and its members, resolving member IDs to names. `--json` and
+`--fields <list>` work as on `usergroups list`; here the fields select from the
+group record itself (`--fields id,handle,member_ids`).
 
 ## Write commands and the `--yes` gate
 

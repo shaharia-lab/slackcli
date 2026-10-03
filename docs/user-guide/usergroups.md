@@ -55,6 +55,19 @@ The mutating subcommands (`create`, `update`, `add`, `remove`, `enable`,
   silently proceeding — so a script cannot mutate or disable a group unattended
   by accident. Pass `--yes` to opt into the non-interactive path deliberately.
 
+Every write also takes **`--dry-run`**: it resolves the group, reads its
+members where needed, and prints what would change without changing it and
+without prompting. For `add` and `remove` the preview lists the users added
+and removed and the full member list that would be written, and it refuses to
+empty a group just as the real `remove` does:
+
+```bash
+slackcli usergroups add @platform U0123456789 --dry-run
+slackcli usergroups remove @platform U0123456789 --dry-run --json
+```
+
+See [`--dry-run`](scripting.md#--dry-run) for the preview format.
+
 ### `usergroups create <name>`
 
 Creates a group.

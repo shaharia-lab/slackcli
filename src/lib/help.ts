@@ -23,6 +23,8 @@ export interface CommandHelp {
   browserOnly?: boolean;
   /** Rendered as the standard confirmation-rule note for gated writes. */
   confirms?: boolean;
+  /** Rendered as the standard note for a write command's --dry-run. */
+  dryRun?: boolean;
   notes?: string[];
 }
 
@@ -48,6 +50,10 @@ export const CHANNEL_NAME_NOTE =
 export const USER_NAME_NOTE =
   'A user can be given as @handle (exact Slack handle, case-insensitive) or an email address; ' +
   'email lookup needs the users:read.email scope on an app token. Unknown or ambiguous names exit 1.';
+export const DRY_RUN_NOTE =
+  '--dry-run resolves and validates everything (it may make read calls), prints what would be done ' +
+  'and exits 0 without changing anything; it never prompts and needs no --yes. Slack checks ' +
+  'permissions only on the real write, so a dry run can pass where the write is refused.';
 
 export const USAGE_ERROR_HINT = (commandPath: string) =>
   `(run "${commandPath} --help" for usage and examples)`;
@@ -78,6 +84,7 @@ export function helpNotes(help: CommandHelp): string[] {
   if (help.json) notes.push(`With --json, stdout is one JSON object: ${help.json}`);
   if (help.browserOnly) notes.push(BROWSER_ONLY_NOTE);
   if (help.confirms) notes.push(CONFIRM_NOTE);
+  if (help.dryRun) notes.push(DRY_RUN_NOTE);
   return notes.concat(help.notes ?? []);
 }
 

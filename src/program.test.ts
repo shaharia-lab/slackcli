@@ -16,6 +16,27 @@ const BROWSER_ONLY = new Set([
   'slackcli messages delete-draft',
 ]);
 
+// Every command that writes to Slack takes --dry-run (#328). A new write
+// command belongs here; commands that only change local state do not.
+const SLACK_WRITES = new Set([
+  'slackcli messages send',
+  'slackcli messages edit',
+  'slackcli messages react',
+  'slackcli messages draft',
+  'slackcli messages send-draft',
+  'slackcli messages delete-draft',
+  'slackcli conversations members add',
+  'slackcli conversations members remove',
+  'slackcli conversations join',
+  'slackcli conversations leave',
+  'slackcli usergroups create',
+  'slackcli usergroups update',
+  'slackcli usergroups add',
+  'slackcli usergroups remove',
+  'slackcli usergroups enable',
+  'slackcli usergroups disable',
+]);
+
 const SUMMARY_MAX = 48;
 
 function allCommands(root: Command): Command[] {
@@ -102,6 +123,14 @@ describe('command tree help (#324)', () => {
     // A --yes flag means the command gates on confirmation.
     expect(Boolean(help.confirms)).toBe(has(cmd, '--yes'));
     expect(Boolean(help.browserOnly)).toBe(BROWSER_ONLY.has(path));
+    // The Slack writes, and only they, take --dry-run and say so in help.
+    expect({ path, dryRun: has(cmd, '--dry-run') }).toEqual({ path, dryRun: SLACK_WRITES.has(path) });
+    expect(Boolean(help.dryRun)).toBe(SLACK_WRITES.has(path));
+  });
+
+  it('names every Slack write in the dry-run list', () => {
+    const paths = new Set(runnable.map(commandPath));
+    for (const path of SLACK_WRITES) expect({ path, exists: paths.has(path) }).toEqual({ path, exists: true });
   });
 
   it('renders Examples and Notes in every runnable command\'s --help', () => {

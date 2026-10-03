@@ -171,11 +171,15 @@ export async function removeUsergroupMembers(
   return mutateMembers(client, usergroupId, { remove: removeIds }, options);
 }
 
-async function mutateMembers(
-  client: SlackClient,
+// The membership a write would leave, read from Slack but not written: the
+// change summary plus the full list it would send. Shared by the real write
+// and `--dry-run` (#328), so a preview shows exactly what would be sent and
+// refuses what the write would refuse.
+export async function planMembershipChange(
+  client: Pick<SlackClient, 'listUsergroupUsers'>,
   usergroupId: string,
   change: { add?: string[]; remove?: string[] },
-  options: LibOptions,
+  options: LibOptions = {},
 ): Promise<{ added: string[]; removed: string[]; next: string[]; noop: boolean }> {
   options.onProgress?.('Reading current membership...');
   const currentResp = await client.listUsergroupUsers(usergroupId, { team_id: options.teamId });
@@ -192,8 +196,19 @@ async function mutateMembers(
         'Disable the group instead (usergroups disable).',
     );
   }
+  return { added: result.added, removed: result.removed, next: result.next, noop: false };
+}
+
+async function mutateMembers(
+  client: SlackClient,
+  usergroupId: string,
+  change: { add?: string[]; remove?: string[] },
+  options: LibOptions,
+): Promise<{ added: string[]; removed: string[]; next: string[]; noop: boolean }> {
+  const result = await planMembershipChange(client, usergroupId, change, options);
+  if (result.noop) return result;
 
   options.onProgress?.('Updating membership...');
   await client.setUsergroupUsers(usergroupId, result.next.join(','), { team_id: options.teamId });
-  return { added: result.added, removed: result.removed, next: result.next, noop: false };
+  return result;
 }

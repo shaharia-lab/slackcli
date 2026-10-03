@@ -10,7 +10,14 @@ import {
   resolveThreadTarget,
   workspaceMismatchWarning,
 } from '../lib/slack-url-parser.ts';
-import type { SlackClient } from '../lib/slack-client.ts';
+import {
+  checkUploadFile,
+  DRAFT_CREATE_AUTH_MESSAGE,
+  DRAFT_DELETE_AUTH_MESSAGE,
+  type SlackClient,
+} from '../lib/slack-client.ts';
+import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
+import type { DryRunTarget } from '../types/index.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
 import { failCommand } from '../lib/command-errors.ts';
@@ -52,6 +59,7 @@ const HELP = {
       'slackcli messages send --recipient-id="#general" --message "Deploy done"',
       'slackcli messages send --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message "Fixed"',
       'slackcli messages send --recipient-id U0123456789 --message-file ./note.md --json',
+      'slackcli messages send --recipient-id C0123456789 --message "Deploy done" --dry-run',
     ],
     json:
       '{ channel_id, ts, permalink? } for a post; { channel_id, file_id } with --file. ' +
@@ -67,7 +75,9 @@ const HELP = {
         'With --file the text becomes the file comment.',
       '--blocks cannot be combined with --file; the message text is the notification fallback.',
       'Sends immediately, with no confirmation prompt.',
+      'A dry run to a user ID does not open the DM; it previews the user as the target.',
     ],
+    dryRun: true,
   },
   react: {
     summary: 'Add an emoji reaction to a message',
@@ -85,6 +95,7 @@ const HELP = {
       '--emoji is the name without colons; custom workspace emoji work too.',
       'Acts immediately, with no confirmation prompt.',
     ],
+    dryRun: true,
   },
   edit: {
     summary: 'Replace the text of a message you posted',
@@ -103,6 +114,7 @@ const HELP = {
       MESSAGE_TEXT_NOTE,
       'Edits immediately, with no confirmation prompt.',
     ],
+    dryRun: true,
   },
   listDrafts: {
     summary: 'List your active (unsent) drafts',
@@ -140,6 +152,7 @@ const HELP = {
       MESSAGE_TEXT_NOTE,
       'Creates the draft immediately, with no confirmation prompt.',
     ],
+    dryRun: true,
   },
   sendDraft: {
     summary: 'Post an active draft, then delete the draft',
@@ -155,6 +168,7 @@ const HELP = {
       'but the draft was not deleted (exit 1): do not retry without checking.',
     browserOnly: true,
     confirms: true,
+    dryRun: true,
     notes: [
       'Exception to the rule above: the draft is read (drafts.list) before the prompt, so a refusal ' +
         'still makes that one read call, but posts nothing.',
@@ -173,6 +187,7 @@ const HELP = {
     json: '{ draft_id, deleted: true }.',
     browserOnly: true,
     confirms: true,
+    dryRun: true,
   },
 } satisfies Record<string, CommandHelp>;
 
@@ -275,6 +290,12 @@ export async function permalinkField(
   }
 }
 
+// The dry-run target of a send or draft: a user ID is previewed as a DM to that
+// user, because a dry run does not open the DM (conversations.open).
+function recipientTarget(channelId: string, threadTs: string | undefined): DryRunTarget {
+  return { kind: channelId.startsWith('U') ? 'user' : 'channel', id: channelId, thread_ts: threadTs };
+}
+
 // Warn when a pasted link points at a different workspace than the one we will call,
 // rather than letting Slack answer with a misleading message_not_found.
 function warnOnWorkspaceMismatch(client: SlackClient, linkWorkspace: string | undefined): void {
@@ -297,12 +318,13 @@ function resolveTargetArg(
   });
 }
 
-// The conversation a send or draft goes to: --recipient-id (an ID, link or
-// name) or --permalink, with a user's DM opened for them.
-async function openRecipient(
+// The recipient of a send or draft: --recipient-id (an ID, link or name) or
+// --permalink, resolved to a channel or user ID. A user's DM is not opened
+// yet, so a dry run can stop here without opening it.
+async function resolveRecipient(
   options: { permalink?: string; recipientId?: string; threadTs?: string; workspace?: string },
   spinner: ReturnType<typeof ora>,
-): Promise<{ client: SlackClient; channelId: string; target: ResolvedThreadTarget }> {
+): Promise<{ client: SlackClient; recipientId: string; target: ResolvedThreadTarget }> {
   const target = resolveThreadTarget(
     { permalink: options.permalink, channelId: options.recipientId, threadTs: options.threadTs },
     { channel: '--recipient-id', timestamp: '--thread-ts' },
@@ -312,14 +334,16 @@ async function openRecipient(
   const client = await getAuthenticatedClient(options.workspace);
   warnOnWorkspaceMismatch(client, target.workspace);
 
-  // A user ID (starts with U) needs its DM opened.
-  let channelId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
-  if (channelId.startsWith('U')) {
-    spinner.text = 'Opening direct message...';
-    const dmResponse = await client.openConversation(channelId);
-    channelId = dmResponse.channel.id;
-  }
-  return { client, channelId, target };
+  const recipientId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
+  return { client, recipientId, target };
+}
+
+// The conversation to post in: a user ID (starts with U) needs its DM opened.
+async function openRecipient(client: SlackClient, recipientId: string, spinner: ReturnType<typeof ora>): Promise<string> {
+  if (!recipientId.startsWith('U')) return recipientId;
+  spinner.text = 'Opening direct message...';
+  const dmResponse = await client.openConversation(recipientId);
+  return dmResponse.channel.id;
 }
 
 export function createMessagesCommand(): Command {
@@ -342,12 +366,29 @@ export function createMessagesCommand(): Command {
     )
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output the delivered message as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (options) => {
       const spinner = ora('Sending message...').start();
 
       try {
         const message = await resolveMessageText(options);
-        const { client, channelId, target } = await openRecipient(options, spinner);
+        const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
+        const { client, recipientId, target } = await resolveRecipient(options, spinner);
+
+        if (options.dryRun) {
+          const file = options.file ? await checkUploadFile(options.file) : undefined;
+          const payload = file
+            ? { file: options.file, file_size: file.size, comment: message }
+            : { text: message, blocks };
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(client, 'send message', recipientTarget(recipientId, target.threadTs), payload, { lookupName: true }),
+            options.json,
+          );
+          return;
+        }
+
+        const channelId = await openRecipient(client, recipientId, spinner);
 
         spinner.text = 'Sending message...';
         if (options.file) {
@@ -370,7 +411,6 @@ export function createMessagesCommand(): Command {
           return;
         }
 
-        const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
         const response = await client.postMessage(channelId, message, {
           thread_ts: target.threadTs,
           blocks,
@@ -398,6 +438,7 @@ export function createMessagesCommand(): Command {
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
     .requiredOption('--emoji <name>', 'Emoji name (e.g., thumbsup, heart, fire)')
     .option('--workspace <id|name>', 'Workspace to use')
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (options) => {
       const spinner = ora('Adding reaction...').start();
 
@@ -410,6 +451,21 @@ export function createMessagesCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, target.workspace);
         const channelId = await resolveTargetArg(client, options.channelId, target.channelId, '--channel-id', spinner);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(
+              client,
+              'add reaction',
+              { kind: 'message', id: channelId, ts: target.timestamp },
+              { emoji: options.emoji },
+              { lookupName: true },
+            ),
+            false,
+          );
+          return;
+        }
 
         await client.addReaction(channelId, target.timestamp, options.emoji);
 
@@ -432,6 +488,7 @@ export function createMessagesCommand(): Command {
     )
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output the updated message as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (options) => {
       const spinner = ora('Updating message...').start();
 
@@ -445,6 +502,21 @@ export function createMessagesCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, target.workspace);
         const channelId = await resolveTargetArg(client, options.channelId, target.channelId, '--channel-id', spinner);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(
+              client,
+              'edit message',
+              { kind: 'message', id: channelId, ts: target.timestamp },
+              { text: message },
+              { lookupName: true },
+            ),
+            options.json,
+          );
+          return;
+        }
 
         const response = await client.updateMessage(
           channelId,
@@ -509,12 +581,25 @@ export function createMessagesCommand(): Command {
     .option('--permalink <url>', 'Slack message link; drafts a reply in that message\'s thread (replaces --recipient-id and --thread-ts)')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output the created draft as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (options) => {
       const spinner = ora('Creating draft...').start();
 
       try {
         const message = await resolveMessageText(options);
-        const { client, channelId, target } = await openRecipient(options, spinner);
+        const { client, recipientId, target } = await resolveRecipient(options, spinner);
+
+        if (options.dryRun) {
+          client.requireBrowserAuth(DRAFT_CREATE_AUTH_MESSAGE);
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(client, 'create draft', recipientTarget(recipientId, target.threadTs), { text: message }, { lookupName: true }),
+            options.json,
+          );
+          return;
+        }
+
+        const channelId = await openRecipient(client, recipientId, spinner);
 
         spinner.text = 'Creating draft...';
         const response = await client.createDraft(channelId, message, {
@@ -543,13 +628,27 @@ export function createMessagesCommand(): Command {
     .option('--yes', 'Confirm sending without a prompt', false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output the posted message as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (draftId, options) => {
       const spinner = ora('Loading draft...').start();
       try {
         const client = await getAuthenticatedClient(options.workspace);
         const draft = await loadActiveDraft(client, draftId);
-        const { channelId } = validateSendableDraft(draft);
+        const { channelId, threadTs, text, blocks } = validateSendableDraft(draft);
         spinner.stop();
+        if (options.dryRun) {
+          emitDryRun(
+            await buildPreview(
+              client,
+              'send draft',
+              { kind: 'channel', id: channelId, thread_ts: threadTs },
+              { draft_id: draftId, text, blocks },
+              { lookupName: true },
+            ),
+            options.json,
+          );
+          return;
+        }
         if (!(await confirmWrite(`Send draft ${draftId} to ${channelId}?`, options.yes, options.json))) {
           // confirmWrite() set the exit code and, under --json, reported the refusal.
           if (!options.json) error('Draft was not sent');
@@ -577,12 +676,18 @@ export function createMessagesCommand(): Command {
     .option('--yes', 'Confirm deletion without a prompt', false)
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output the deleted draft ID as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (draftId, options) => {
       const spinner = ora('Deleting draft...').start();
       try {
         if (!draftId.trim()) throw new InvalidInputError('Draft ID cannot be empty');
         const client = await getAuthenticatedClient(options.workspace);
         spinner.stop();
+        if (options.dryRun) {
+          client.requireBrowserAuth(DRAFT_DELETE_AUTH_MESSAGE);
+          emitDryRun(await buildPreview(client, 'delete draft', { kind: 'draft', id: draftId }), options.json);
+          return;
+        }
         if (!(await confirmWrite(`Delete draft ${draftId}?`, options.yes, options.json))) {
           // confirmWrite() set the exit code and, under --json, reported the refusal.
           if (!options.json) error('Draft was not deleted');

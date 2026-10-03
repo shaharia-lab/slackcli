@@ -19,6 +19,7 @@ import {
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { SlackChannel, SlackMessage, SlackUser } from '../types/index.ts';
 import { failCommand } from '../lib/command-errors.ts';
+import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 import { lazyClient, resolveIdentifier, resolveUserList } from '../lib/name-resolver.ts';
 
@@ -162,9 +163,11 @@ const HELP = {
       'slackcli conversations members add C0123456789 U0123456789',
       'slackcli conversations members add C0123456789 U0123456789,U0123456780 --yes',
       'slackcli conversations members add https://acme.slack.com/archives/C0123456789 U0123456789 --yes --json',
+      'slackcli conversations members add C0123456789 U0123456789 --dry-run --json',
     ],
     json: '{ channel_id, added: [user IDs] }.',
     confirms: true,
+    dryRun: true,
     notes: [
       CHANNEL_ARG_NOTE,
       USER_REFS_NOTE,
@@ -185,6 +188,7 @@ const HELP = {
     ],
     json: '{ channel_id, removed: [user IDs], failed: [{ user, error }] }.',
     confirms: true,
+    dryRun: true,
     notes: [
       CHANNEL_ARG_NOTE,
       USER_REFS_NOTE,
@@ -207,6 +211,7 @@ const HELP = {
       CHANNEL_ARG_NOTE,
       CHANNEL_NAME_NOTE,
     ],
+    dryRun: true,
   },
   leave: {
     summary: 'Leave a channel or conversation as yourself',
@@ -219,6 +224,7 @@ const HELP = {
     ],
     json: '{ channel_id, left, not_in_channel } — not_in_channel is true (and left false) when you were not a member.',
     confirms: true,
+    dryRun: true,
     notes: [
       CHANNEL_ARG_NOTE,
       CHANNEL_NAME_NOTE,
@@ -743,11 +749,13 @@ export function createConversationsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (enterprise org scoping)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (channelArg, users, options) => {
       const targets = await membershipTargetsOrFail(channelArg, users, options, 'Failed to add members', 'add');
       if (!targets) return;
       const { channelId, workspace, ids } = targets;
-      if (!(await confirmWrite(`Add ${ids.length} user(s) to ${channelId}?`, options.yes, options.json))) {
+      // A dry run changes nothing, so it never asks (#328).
+      if (!options.dryRun && !(await confirmWrite(`Add ${ids.length} user(s) to ${channelId}?`, options.yes, options.json))) {
         return;
       }
 
@@ -755,6 +763,15 @@ export function createConversationsCommand(): Command {
       try {
         const client = targets.client ?? await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspace);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(client, 'add channel members', { kind: 'channel', id: channelId }, { add: ids, team: options.team || undefined }, { lookupName: true }),
+            options.json,
+          );
+          return;
+        }
 
         await client.inviteToConversation(channelId, ids.join(','), { team: options.team });
 
@@ -779,11 +796,12 @@ export function createConversationsCommand(): Command {
     .option('--team <workspace-id>', 'Target workspace T-id (enterprise org scoping)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (channelArg, users, options) => {
       const targets = await membershipTargetsOrFail(channelArg, users, options, 'Failed to remove members', 'remove');
       if (!targets) return;
       const { channelId, workspace, ids } = targets;
-      if (!(await confirmWrite(`Remove ${ids.length} user(s) from ${channelId}?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Remove ${ids.length} user(s) from ${channelId}?`, options.yes, options.json))) {
         return;
       }
 
@@ -791,6 +809,15 @@ export function createConversationsCommand(): Command {
       try {
         const client = targets.client ?? await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspace);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(client, 'remove channel members', { kind: 'channel', id: channelId }, { remove: ids, team: options.team || undefined }, { lookupName: true }),
+            options.json,
+          );
+          return;
+        }
 
         const removed: string[] = [];
         const failed: Array<{ user: string; error: string }> = [];
@@ -839,6 +866,7 @@ export function createConversationsCommand(): Command {
     .argument('<channel>', 'Channel ID, Slack link (/archives/<channel>) or channel name')
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (channelArg, options) => {
       const spinner = ora('Joining channel...').start();
       try {
@@ -846,6 +874,12 @@ export function createConversationsCommand(): Command {
         const client = await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, parsed.workspace);
         const channelId = await resolveChannelName(client, channelArg, parsed.channelId, spinner);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(await buildPreview(client, 'join channel', { kind: 'channel', id: channelId }, {}, { lookupName: true }), options.json);
+          return;
+        }
 
         const response = await client.joinConversation(channelId);
 
@@ -867,17 +901,24 @@ export function createConversationsCommand(): Command {
     .option('--workspace <id|name>', 'Workspace to use (overrides default)')
     .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
     .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
     .action(async (channelArg, options) => {
       const targets = await membershipTargetsOrFail(channelArg, [], options, 'Failed to leave channel');
       if (!targets) return;
       const { channelId, workspace } = targets;
-      if (!(await confirmWrite(`Leave ${channelId}?`, options.yes, options.json))) {
+      if (!options.dryRun && !(await confirmWrite(`Leave ${channelId}?`, options.yes, options.json))) {
         return;
       }
       const spinner = ora('Leaving channel...').start();
       try {
         const client = targets.client ?? await getAuthenticatedClient(options.workspace);
         warnOnWorkspaceMismatch(client, workspace);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(await buildPreview(client, 'leave channel', { kind: 'channel', id: channelId }, {}, { lookupName: true }), options.json);
+          return;
+        }
 
         const response = await client.leaveConversation(channelId);
         const alreadyOut = response.not_in_channel === true;

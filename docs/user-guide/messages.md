@@ -5,6 +5,25 @@ sends, and deletes drafts.
 
 Every subcommand accepts `--workspace <id|name>`.
 
+## Previewing a write (`--dry-run`)
+
+`send`, `edit`, `react`, `draft`, `send-draft` and `delete-draft` take
+`--dry-run`. The message is resolved and checked as for a real send — the text
+from `--message` or `--message-file`, parsed `--blocks`, the `--file` to
+upload, the target from `--recipient-id`, `--thread-ts` or `--permalink` — and
+printed instead of sent. `send`, `edit`, `react` and `draft` have no
+confirmation prompt, so this is the way to check one first:
+
+```bash
+slackcli messages send --recipient-id C0123456789 --message-file ./note.md --dry-run
+slackcli messages send-draft Dr0123456789 --dry-run --json
+```
+
+A dry run to a user ID does not open the DM; the preview names the user. The
+draft commands still need browser session tokens, and fail on an app token as
+the real command does. See [`--dry-run`](scripting.md#--dry-run) for the
+preview format.
+
 ## `messages send`
 
 ```bash

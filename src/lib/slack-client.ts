@@ -4,6 +4,7 @@ import { getLogger } from '@logtape/logtape';
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import type {
+  DryRunWorkspace,
   SlackAuthTestResponse,
   SlackDraftListResponse,
   WorkspaceConfig,
@@ -177,6 +178,29 @@ async function resolveRedirect(response: Response, currentUrl: URL): Promise<URL
   }
   return nextUrl;
 }
+
+// The local checks a file upload makes before any Slack call: the path must be
+// a non-empty regular file. `messages send --dry-run` runs them too (#328).
+export async function checkUploadFile(filePath: string): Promise<{ filename: string; size: number }> {
+  const fileStats = await stat(filePath).catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      throw new InvalidInputError(`File not found: ${filePath}`);
+    }
+    throw error;
+  });
+  if (!fileStats.isFile()) {
+    throw new InvalidInputError(`Cannot upload non-file path: ${filePath}`);
+  }
+  if (fileStats.size === 0) {
+    throw new InvalidInputError(`Cannot upload empty file: ${filePath}`);
+  }
+  return { filename: basename(filePath), size: fileStats.size };
+}
+
+// The refusals of the browser-only draft calls on an app token.
+export const DRAFT_CREATE_AUTH_MESSAGE = 'Draft creation requires browser authentication';
+export const DRAFT_LIST_AUTH_MESSAGE = 'Draft listing requires browser authentication';
+export const DRAFT_DELETE_AUTH_MESSAGE = 'Draft deletion requires browser authentication';
 
 export class SlackClient {
   private readonly config: WorkspaceConfig;
@@ -480,23 +504,10 @@ export class SlackClient {
     initial_comment?: string;
     thread_ts?: string;
   } = {}): Promise<ExternalUploadCompleteResponse> {
-    const fileStats = await stat(filePath).catch((error: unknown) => {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-        throw new InvalidInputError(`File not found: ${filePath}`);
-      }
-      throw error;
-    });
-    if (!fileStats.isFile()) {
-      throw new InvalidInputError(`Cannot upload non-file path: ${filePath}`);
-    }
-    if (fileStats.size === 0) {
-      throw new InvalidInputError(`Cannot upload empty file: ${filePath}`);
-    }
-
-    const filename = basename(filePath);
+    const { filename, size } = await checkUploadFile(filePath);
     const uploadUrlResponse = await this.request('files.getUploadURLExternal', {
       filename,
-      length: fileStats.size,
+      length: size,
     }) as ExternalUploadUrlResponse;
 
     if (!uploadUrlResponse.upload_url || !uploadUrlResponse.file_id) {
@@ -514,7 +525,7 @@ export class SlackClient {
     });
     logger.info('File upload returned HTTP {http_status}', {
       http_status: uploadResponse.status,
-      bytes: fileStats.size,
+      bytes: size,
       duration_ms: Math.round(performance.now() - uploadStartedAt),
     });
 
@@ -536,9 +547,7 @@ export class SlackClient {
   async createDraft(channelId: string, text: string, options: {
     thread_ts?: string;
   } = {}): Promise<any> {
-    if (this.config.auth_type === 'standard') {
-      throw new UnsupportedAuthTypeError('Draft creation requires browser authentication');
-    }
+    this.requireBrowserAuth(DRAFT_CREATE_AUTH_MESSAGE);
 
     const destinations: any = [{ channel_id: channelId }];
     if (options.thread_ts) {
@@ -559,9 +568,7 @@ export class SlackClient {
 
   // List active drafts (browser auth only; Slack has no public API for drafts).
   async listDrafts(options: { limit?: number } = {}): Promise<SlackDraftListResponse> {
-    if (this.config.auth_type === 'standard') {
-      throw new UnsupportedAuthTypeError('Draft listing requires browser authentication');
-    }
+    this.requireBrowserAuth(DRAFT_LIST_AUTH_MESSAGE);
 
     const params: Record<string, any> = { is_active: true };
     if (options.limit !== undefined) params.limit = options.limit;
@@ -571,9 +578,7 @@ export class SlackClient {
   // Slack's internal delete endpoint compares this timestamp to the server's
   // current time. Reusing the draft's last_updated_ts causes draft_has_conflict.
   async deleteDraft(draftId: string): Promise<void> {
-    if (this.config.auth_type === 'standard') {
-      throw new UnsupportedAuthTypeError('Draft deletion requires browser authentication');
-    }
+    this.requireBrowserAuth(DRAFT_DELETE_AUTH_MESSAGE);
     await this.request('drafts.delete', {
       draft_id: draftId,
       client_last_updated_ts: (Date.now() / 1000).toFixed(7),
@@ -1016,5 +1021,25 @@ export class SlackClient {
   get workspaceHost(): string | undefined {
     if (this.config.auth_type !== 'browser') return undefined;
     return extractSlackWorkspaceName(this.config.workspace_url);
+  }
+
+  // Which workspace and profile this client acts on, for a dry-run preview.
+  // The profile key follows the stored-record rule: its profile name, else its
+  // workspace ID. No credential is included.
+  get workspaceIdentity(): DryRunWorkspace {
+    return {
+      name: this.config.workspace_name,
+      id: this.config.workspace_id,
+      profile: this.config.profile ?? this.config.workspace_id,
+    };
+  }
+
+  // Throw what a browser-only call throws on an app token, without making the
+  // call. Dry runs of the draft commands use it to fail the way the real write
+  // would.
+  requireBrowserAuth(message: string): void {
+    if (this.config.auth_type === 'standard') {
+      throw new UnsupportedAuthTypeError(message);
+    }
   }
 }

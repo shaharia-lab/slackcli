@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { resetSync } from '@logtape/logtape';
-import { SlackClient, SlackTransportError } from './slack-client.ts';
+import {
+  checkUploadFile,
+  DRAFT_CREATE_AUTH_MESSAGE,
+  SlackClient,
+  SlackTransportError,
+} from './slack-client.ts';
+import { InvalidInputError, UnsupportedAuthTypeError } from './cli-errors.ts';
 import { AUTH_ERROR_CODES, SlackAuthError } from './auth-errors.ts';
 import { configureLogging } from './logger.ts';
 import { RateLimiter, SLACK_MIN_REQUEST_INTERVAL_MS } from './rate-limiter.ts';
@@ -1134,6 +1140,58 @@ describe('SlackClient identity getters', () => {
     });
     expect(browser.isBotToken).toBe(false);
     expect(browser.storedUserId).toBe('U_ME');
+  });
+});
+
+describe('SlackClient dry-run helpers (#328)', () => {
+  const standard = (profile?: string) => new SlackClient({
+    workspace_id: 'T1',
+    workspace_name: 'Acme Corp',
+    auth_type: 'standard',
+    token: 'xoxb-test',
+    token_type: 'bot',
+    ...(profile ? { profile } : {}),
+  });
+  const browser = new SlackClient({
+    workspace_id: 'T2',
+    workspace_name: 'Acme Browser',
+    workspace_url: 'https://acme.slack.com',
+    auth_type: 'browser',
+    xoxd_token: 'xoxd-test',
+    xoxc_token: 'xoxc-test',
+    profile: 'work',
+  });
+
+  it('names the workspace and profile, falling back to the workspace ID, and never a token', () => {
+    expect(standard('acme').workspaceIdentity).toEqual({ name: 'Acme Corp', id: 'T1', profile: 'acme' });
+    expect(standard().workspaceIdentity).toEqual({ name: 'Acme Corp', id: 'T1', profile: 'T1' });
+    expect(browser.workspaceIdentity).toEqual({ name: 'Acme Browser', id: 'T2', profile: 'work' });
+    expect(JSON.stringify(browser.workspaceIdentity)).not.toContain('xox');
+  });
+
+  it('refuses a browser-only call on an app token with the error the call itself throws', async () => {
+    expect(() => standard().requireBrowserAuth(DRAFT_CREATE_AUTH_MESSAGE)).toThrow(UnsupportedAuthTypeError);
+    expect(() => standard().requireBrowserAuth(DRAFT_CREATE_AUTH_MESSAGE)).toThrow(DRAFT_CREATE_AUTH_MESSAGE);
+    expect(() => browser.requireBrowserAuth(DRAFT_CREATE_AUTH_MESSAGE)).not.toThrow();
+    // Same class and message as the real call, so a dry run fails identically.
+    await expect(standard().createDraft('C1', 'hi')).rejects.toThrow(DRAFT_CREATE_AUTH_MESSAGE);
+  });
+
+  it('checks an upload file without calling Slack', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-check-'));
+    try {
+      const filePath = join(dir, 'report.txt');
+      await Bun.write(filePath, 'Quarterly report');
+      expect(await checkUploadFile(filePath)).toEqual({ filename: 'report.txt', size: 16 });
+
+      const empty = join(dir, 'empty.txt');
+      await Bun.write(empty, '');
+      await expect(checkUploadFile(empty)).rejects.toThrow(`Cannot upload empty file: ${empty}`);
+      await expect(checkUploadFile(dir)).rejects.toThrow(`Cannot upload non-file path: ${dir}`);
+      await expect(checkUploadFile(join(dir, 'missing.txt'))).rejects.toBeInstanceOf(InvalidInputError);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

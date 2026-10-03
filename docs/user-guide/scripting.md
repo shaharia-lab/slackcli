@@ -54,6 +54,62 @@ slackcli canvas read F123 --json | jq -r '.markdown' > canvas.md
 `reply_count`, `reactions`, `bot_id`, `blocks`, `attachments`, and file metadata
 when a message has attachments.
 
+## `--dry-run`
+
+Every command that changes something in Slack takes `--dry-run`:
+`messages send`, `edit`, `react`, `draft`, `send-draft`, `delete-draft`;
+`conversations members add`, `members remove`, `join`, `leave`; and
+`usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.
+
+A dry run does everything except the write: it picks the workspace, resolves
+the target, reads `--message-file` and parses `--blocks`, runs every check the
+real command runs, and prints what would be done. It never prompts and needs no
+`--yes`, so it is safe to run unattended, and it exits `0` on a valid preview.
+
+```
+$ slackcli messages send --recipient-id C0123456789 --message "Deploy done" --dry-run
+Dry run: nothing was sent.
+  Workspace: Acme Corp (acme)
+  Action:    send message
+  Target:    C0123456789 (#deploys)
+  Text:      Deploy done
+```
+
+With `--json` the preview is one object on stdout:
+
+```json
+{
+  "dry_run": true,
+  "action": "send message",
+  "workspace": { "name": "Acme Corp", "id": "T0123456789", "profile": "acme" },
+  "target": { "kind": "channel", "id": "C0123456789", "name": "#deploys" },
+  "payload": { "text": "Deploy done" }
+}
+```
+
+- `action` names the write: `send message`, `edit message`, `add reaction`,
+  `create draft`, `send draft`, `delete draft`, `add channel members`,
+  `remove channel members`, `join channel`, `leave channel`,
+  `create user group`, `update user group`, `add user group members`,
+  `remove user group members`, `enable user group`, `disable user group`.
+- `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
+  `message` (with `ts`), `draft` or `usergroup`. `thread_ts` is set for a
+  thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
+  for display and left out when the lookup fails.
+- `payload` is exactly what would be sent: the message `text` and `blocks`;
+  `file`, `file_size` and `comment` for an upload; the `emoji`; the `add` or
+  `remove` user IDs for a channel; for a user group, the fields to set, or
+  `{ added, removed, next, noop }` where `next` is the full member list the
+  write would send. `team` appears when `--team` is passed.
+- `messages react` has no `--json`, so its preview is text only.
+
+A dry run may make read calls (resolving a user group, reading its members,
+loading a draft, naming the target) but no write call. A failure is the real
+command's failure: invalid input, a missing file, bad Block Kit JSON, an
+unknown group or a draft command on an app token exits `1` with the same
+error. **Slack checks permissions only on the real write**, so a dry run can
+pass where the write is then refused (`missing_scope`, `not_in_channel`, …).
+
 ## Exit codes
 
 `0` on success, `1` on failure. Without `--json`, a failure prints a message to
@@ -302,6 +358,8 @@ done
   terminal and `--yes` is absent, so an unattended job must pass `--yes`
   explicitly. With `--json` the refusal is a `confirmation_required` error
   object. See [User groups](usergroups.md).
+- **`--dry-run` never needs `--yes`.** It changes nothing, so it never prompts
+  and is not refused when stdin is not a terminal. See [`--dry-run`](#--dry-run).
 - **`files download` needs `--yes` to write outside the working directory.** An
   `--output` path that resolves inside the current directory is unaffected. One
   that escapes it (`../…`, an absolute path, or a symlinked directory) is

@@ -10,7 +10,7 @@ import type { Ora } from 'ora';
 import { SlackAuthError } from './auth-errors.ts';
 import { CliError, type ErrorCode } from './cli-errors.ts';
 import { error as printError } from './formatter.ts';
-import { redactText } from './log-redaction.ts';
+import { redactText } from './logs.ts';
 import { SlackTransportError } from './slack-client.ts';
 import { SlackUrlParseError } from './slack-url-parser.ts';
 
@@ -101,8 +101,10 @@ function transportCode(err: SlackTransportError): ErrorCode {
 
 function messageOf(err: unknown): string {
   if (err instanceof Error) return err.message;
-  if (err === undefined || err === null) return 'Unknown error';
-  return String(err);
+  if (typeof err === 'string') return err;
+  if (typeof err === 'number' || typeof err === 'boolean' || typeof err === 'bigint') return String(err);
+  // undefined, null, or an object that is not an Error: nothing worth printing.
+  return 'Unknown error';
 }
 
 interface Classified {

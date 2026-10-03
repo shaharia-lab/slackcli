@@ -10,12 +10,9 @@
 import { createReadStream, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import type { RedactionPattern } from '@logtape/redaction';
 import { LOG_FILE_NAME } from './logger.ts';
-import { redactText } from './log-redaction.ts';
-
-// Applies the same patterns the log sink uses. The file should already be
-// redacted, but a line written by an older build, or edited by hand, may not be.
-export { redactText };
+import { SLACK_REDACTION_PATTERNS } from './log-redaction.ts';
 
 /** `LOG_FILE_NAME` and its rotations `slackcli.log.1`, `slackcli.log.2`, … */
 const LOG_FILE_PATTERN = /^slackcli\.log(?:\.([1-9]\d*))?$/;
@@ -82,6 +79,22 @@ export function listLogFiles(dir: string): string[] {
 
   files.sort((a, b) => b.rotation - a.rotation);
   return files.map((file) => file.path);
+}
+
+// Same call the sink's `redactByPattern()` makes; every pattern is global.
+function applyPattern(text: string, { pattern, replacement }: RedactionPattern): string {
+  // Narrowed so each `replaceAll` overload sees one type.
+  return typeof replacement === 'string'
+    ? text.replaceAll(pattern, replacement)
+    : text.replaceAll(pattern, replacement);
+}
+
+/**
+ * Applies the same patterns the log sink uses. The file should already be
+ * redacted, but a line written by an older build, or edited by hand, may not be.
+ */
+export function redactText(text: string): string {
+  return SLACK_REDACTION_PATTERNS.reduce((acc, pattern) => applyPattern(acc, pattern), text);
 }
 
 function parseLine(line: string): { runId: string; record: LogRecord } | undefined {

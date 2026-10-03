@@ -42,19 +42,3 @@ export const SLACK_REDACTION_PATTERNS: RedactionPatterns = [
 export function redactFormatter(formatter: TextFormatter): TextFormatter {
   return redactByPattern(formatter, SLACK_REDACTION_PATTERNS);
 }
-
-// Same call the sink's `redactByPattern()` makes; every pattern is global.
-function applyPattern(text: string, { pattern, replacement }: RedactionPattern): string {
-  // Narrowed so each `replaceAll` overload sees one type.
-  return typeof replacement === 'string'
-    ? text.replaceAll(pattern, replacement)
-    : text.replaceAll(pattern, replacement);
-}
-
-/**
- * Applies the sink's patterns to one string: for text that leaves the process
- * by another route than the log sink (`slackcli logs`, `--json` error objects).
- */
-export function redactText(text: string): string {
-  return SLACK_REDACTION_PATTERNS.reduce((acc, pattern) => applyPattern(acc, pattern), text);
-}

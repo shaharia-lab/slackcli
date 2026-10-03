@@ -120,6 +120,7 @@ describe('classifyError', () => {
     ['undefined', undefined, 'Unknown error'],
     ['null', null, 'Unknown error'],
     ['a number', 42, '42'],
+    ['a plain object', { reason: 'x' }, 'Unknown error'],
     ['a plain Error', new Error('boom'), 'boom'],
   ])('reports %s as unknown', (_label, value, message) => {
     expect(classifyError(value)).toEqual({ code: 'unknown', message, retryable: false });

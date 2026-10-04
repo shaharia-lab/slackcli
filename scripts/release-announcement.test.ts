@@ -100,7 +100,7 @@ describe('buildAnnouncement', () => {
     expect(releaseUrl('v1.2.3')).toBe(RELEASE_URL);
   });
 
-  it('prefers the RELEASE_URL GitHub reports for the release', () => {
+  it('prefers the URL GitHub reports for the release', () => {
     const url = 'https://github.com/shaharia-lab/slackcli/releases/tag/v9.9.9';
     expect(buildAnnouncement({ tag: 'v1.2.3', url, body: 'notes' }).embeds[0].url).toBe(url);
   });

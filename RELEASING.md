@@ -85,6 +85,7 @@ Only the **latest release** is supported. Fixes, including security fixes, alway
 | [GitHub Releases](https://github.com/shaharia-lab/slackcli/releases) | The canonical announcement: release notes, binaries for every platform and `checksums.txt`. Use **Watch → Custom → Releases** on the repository to be notified. |
 | The CLI itself | SlackCLI checks for a newer version in the background, at most once every 24 hours, and prints a notice on stderr when one exists. |
 | [slackcli.dev](https://slackcli.dev) | The website reads the latest version and download links from GitHub Releases whenever it is built. |
+| Shaharia Lab Discord | One post in the release channel for each stable release, with the release notes and the Homebrew install command, sent after the Homebrew tap is updated. Pre-releases are not announced there. |
 
 The full history of changes is kept in [CHANGELOG.md](CHANGELOG.md).
 

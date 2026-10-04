@@ -219,7 +219,8 @@ Three gates decide whether it runs at all:
   its `created` output. "Re-run all jobs" on a finished release finds it in
   place, so nothing is posted twice. "Re-run failed jobs" after a failed
   `update-homebrew` does not re-run `release`, keeps `created=true`, and posts
-  once. If the check cannot tell (an API error), it reports `created=false`:
+  once. If the check gets anything but a clear 404 (an API error), it reports
+  `created=false`:
   a missed announcement can be posted by hand, a duplicate cannot be taken back.
 - **A stable tag.** A tag with a SemVer pre-release suffix (it contains `-`,
   e.g. `v1.0.0-rc.1`) is not announced.
@@ -239,9 +240,9 @@ a role mention in a PR title cannot ping the server.
 
 **It can never fail a release.** The job is `continue-on-error`: when Discord is
 down or rejects the webhook, the job shows as failed with an `::error::`
-annotation and the run stays green. To recover a missed announcement, use
-"Re-run failed jobs" on the run (only `announce-discord` runs again), or post
-it by hand. A release whose `release` job was re-run after it had already
+annotation and the run stays green. To recover a missed announcement, re-run
+the `announce-discord` job alone from the run page (or
+`gh run rerun --job <job-id>`), or post it by hand. A release whose `release` job was re-run after it had already
 created the release is treated as existing and is not announced; post that one
 by hand too.
 

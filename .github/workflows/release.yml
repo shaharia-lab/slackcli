@@ -161,18 +161,18 @@ jobs:
 
       # Must run before the release is created. A re-run of this job finds the
       # release in place and reports created=false, so "Re-run all jobs" never
-      # announces a release twice. Anything other than a clear "release not
-      # found" also counts as not created: a missed announcement can be posted
-      # by hand, a duplicate cannot be taken back.
+      # announces a release twice. Anything other than a clear HTTP 404 also
+      # counts as not created: a missed announcement can be posted by hand, a
+      # duplicate cannot be taken back.
       - name: Check whether the release already exists
         id: existing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if out="$(gh release view "$GITHUB_REF_NAME" --json tagName 2>&1)"; then
+          if out="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --silent 2>&1)"; then
             echo "Release $GITHUB_REF_NAME already exists; it will not be announced again"
             echo "created=false" >> "$GITHUB_OUTPUT"
-          elif [ "$out" = "release not found" ]; then
+          elif [[ "$out" == *"HTTP 404"* ]]; then
             echo "created=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Could not tell whether release $GITHUB_REF_NAME exists; it will not be announced"

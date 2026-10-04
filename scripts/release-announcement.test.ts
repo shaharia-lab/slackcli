@@ -10,8 +10,8 @@ import {
   truncateNotes,
 } from './release-announcement';
 
-const URL = 'https://github.com/shaharia-lab/slackcli/releases/tag/v1.2.3';
-const LINK = `[Full release notes](${URL})`;
+const RELEASE_URL = 'https://github.com/shaharia-lab/slackcli/releases/tag/v1.2.3';
+const LINK = `[Full release notes](${RELEASE_URL})`;
 const FOOTER = `\n\n${INSTALL_HINT}`;
 
 /** `count` lines of `width` characters each, joined by newlines. */
@@ -21,25 +21,25 @@ function lines(count: number, width: number): string {
 
 describe('truncateNotes', () => {
   it('returns short notes untouched', () => {
-    expect(truncateNotes('## What changed\n* a fix', URL, 200)).toBe('## What changed\n* a fix');
+    expect(truncateNotes('## What changed\n* a fix', RELEASE_URL, 200)).toBe('## What changed\n* a fix');
   });
 
   it('returns notes of exactly the limit untouched', () => {
     const body = lines(10, 19); // 10 * 19 + 9 newlines = 199
     expect(body).toHaveLength(199);
-    expect(truncateNotes(body, URL, 199)).toBe(body);
+    expect(truncateNotes(body, RELEASE_URL, 199)).toBe(body);
   });
 
   it('cuts notes one character over the limit', () => {
     const body = lines(10, 19) + 'y';
-    const out = truncateNotes(body, URL, 199);
+    const out = truncateNotes(body, RELEASE_URL, 199);
     expect(out).not.toBe(body);
     expect(out.length).toBeLessThanOrEqual(199);
   });
 
   it('cuts on a line boundary and ends with the full-notes link', () => {
     const body = lines(100, 20);
-    const out = truncateNotes(body, URL, 500);
+    const out = truncateNotes(body, RELEASE_URL, 500);
     expect(out.length).toBeLessThanOrEqual(500);
     expect(out.endsWith(`\n\n${LINK}`)).toBe(true);
     const kept = out.slice(0, -`\n\n${LINK}`.length);
@@ -54,12 +54,12 @@ describe('truncateNotes', () => {
   it('keeps the last line when the cut falls exactly on its end', () => {
     const link = `\n\n${LINK}`;
     const body = lines(20, 20); // lines end at 20, 41, 62, ...
-    const out = truncateNotes(body, URL, 62 + link.length);
+    const out = truncateNotes(body, RELEASE_URL, 62 + link.length);
     expect(out).toBe(`${body.slice(0, 62)}${link}`);
   });
 
   it('cuts a single line with no newline mid-line, within the limit', () => {
-    const out = truncateNotes('a'.repeat(5000), URL, 300);
+    const out = truncateNotes('a'.repeat(5000), RELEASE_URL, 300);
     expect(out).toHaveLength(300);
     expect(out.endsWith(`\n\n${LINK}`)).toBe(true);
   });
@@ -67,7 +67,7 @@ describe('truncateNotes', () => {
   it('never splits a surrogate pair', () => {
     const link = `\n\n${LINK}`;
     // An odd amount of room would cut the last emoji (2 code units) in half.
-    const out = truncateNotes('😀'.repeat(400), URL, 101 + link.length);
+    const out = truncateNotes('😀'.repeat(400), RELEASE_URL, 101 + link.length);
     const kept = out.slice(0, -link.length);
     expect(kept).toBe('😀'.repeat(50));
     // No high surrogate left without its low half.
@@ -76,18 +76,18 @@ describe('truncateNotes', () => {
 
   it('counts multi-byte characters as UTF-16 code units, so it never exceeds the limit', () => {
     const body = Array.from({ length: 300 }, () => 'ünïcödé 日本語 😀').join('\n');
-    const out = truncateNotes(body, URL, 1000);
+    const out = truncateNotes(body, RELEASE_URL, 1000);
     expect(out.length).toBeLessThanOrEqual(1000);
     expect([...out].length).toBeLessThanOrEqual(1000);
     expect(out.endsWith(LINK)).toBe(true);
   });
 
   it('falls back to the link alone when the first line is blank padding', () => {
-    expect(truncateNotes(' '.repeat(600), URL, 200)).toBe(LINK);
+    expect(truncateNotes(' '.repeat(600), RELEASE_URL, 200)).toBe(LINK);
   });
 
   it('refuses a limit too small to hold the link', () => {
-    expect(() => truncateNotes('a'.repeat(100), URL, LINK.length)).toThrow(RangeError);
+    expect(() => truncateNotes('a'.repeat(100), RELEASE_URL, LINK.length)).toThrow(RangeError);
   });
 });
 
@@ -96,17 +96,17 @@ describe('buildAnnouncement', () => {
     const payload = buildAnnouncement({ tag: 'v1.2.3', body: 'notes' });
     expect(payload.embeds).toHaveLength(1);
     expect(payload.embeds[0].title).toBe('SlackCLI v1.2.3');
-    expect(payload.embeds[0].url).toBe(URL);
-    expect(releaseUrl('v1.2.3')).toBe(URL);
+    expect(payload.embeds[0].url).toBe(RELEASE_URL);
+    expect(releaseUrl('v1.2.3')).toBe(RELEASE_URL);
   });
 
-  it('prefers the URL GitHub reports for the release', () => {
+  it('prefers the RELEASE_URL GitHub reports for the release', () => {
     const url = 'https://github.com/shaharia-lab/slackcli/releases/tag/v9.9.9';
     expect(buildAnnouncement({ tag: 'v1.2.3', url, body: 'notes' }).embeds[0].url).toBe(url);
   });
 
   it('puts the notes first and the install hint last', () => {
-    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: URL, body: '## What changed\n* a fix\n' }).embeds[0];
+    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: RELEASE_URL, body: '## What changed\n* a fix\n' }).embeds[0];
     expect(description).toBe(`## What changed\n* a fix${FOOTER}`);
     expect(description).toContain('brew tap shaharia-lab/tap && brew install slackcli');
   });
@@ -117,13 +117,13 @@ describe('buildAnnouncement', () => {
     ['null', null],
     ['missing', undefined],
   ])('links to the release when the body is %s', (_label, body) => {
-    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: URL, body }).embeds[0];
+    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: RELEASE_URL, body }).embeds[0];
     expect(description).toBe(`${LINK}${FOOTER}`);
   });
 
   it('keeps notes that exactly fill the description', () => {
     const body = 'n'.repeat(EMBED_DESCRIPTION_LIMIT - FOOTER.length);
-    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: URL, body }).embeds[0];
+    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: RELEASE_URL, body }).embeds[0];
     expect(description).toHaveLength(EMBED_DESCRIPTION_LIMIT);
     expect(description).toBe(`${body}${FOOTER}`);
   });
@@ -131,7 +131,7 @@ describe('buildAnnouncement', () => {
   it('truncates long notes so the description stays within 4096 and keeps the hint', () => {
     expect(EMBED_DESCRIPTION_LIMIT).toBe(4096);
     const body = lines(400, 60); // ~24 KB, like a large generated changelog
-    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: URL, body }).embeds[0];
+    const { description } = buildAnnouncement({ tag: 'v1.2.3', url: RELEASE_URL, body }).embeds[0];
     expect(description.length).toBeLessThanOrEqual(4096);
     expect(description.length).toBeGreaterThan(4096 - 62);
     expect(description.endsWith(`\n\n${LINK}${FOOTER}`)).toBe(true);
@@ -140,7 +140,7 @@ describe('buildAnnouncement', () => {
   it.each(['@everyone', '@here', '<@&123456789012345678>', '<@123456789012345678>'])(
     'suppresses every mention when the notes contain %s',
     (mention) => {
-      const payload = buildAnnouncement({ tag: 'v1.2.3', url: URL, body: `* fix by ${mention}` });
+      const payload = buildAnnouncement({ tag: 'v1.2.3', url: RELEASE_URL, body: `* fix by ${mention}` });
       expect(payload.allowed_mentions).toEqual({ parse: [] });
       // Sent as written; allowed_mentions is what stops the ping.
       expect(payload.embeds[0].description).toContain(mention);
@@ -161,10 +161,10 @@ describe('scripts/release-announcement.ts', () => {
 
   it('prints one JSON payload for a `gh release view --json body,url` file', () => {
     const file = join(dir, 'release.json');
-    writeFileSync(file, JSON.stringify({ body: '* a fix\r\n* @everyone', url: URL }));
+    writeFileSync(file, JSON.stringify({ body: '* a fix\r\n* @everyone', url: RELEASE_URL }));
     const res = run(file, 'v1.2.3');
     expect(res.code).toBe(0);
-    expect(JSON.parse(res.stdout)).toEqual(buildAnnouncement({ tag: 'v1.2.3', url: URL, body: '* a fix\r\n* @everyone' }));
+    expect(JSON.parse(res.stdout)).toEqual(buildAnnouncement({ tag: 'v1.2.3', url: RELEASE_URL, body: '* a fix\r\n* @everyone' }));
     expect(res.stdout.trimEnd().split('\n')).toHaveLength(1);
   });
 

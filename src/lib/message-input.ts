@@ -46,6 +46,9 @@ export interface StreamLimits {
   timeoutMs: number;
 }
 
+/** What `readStreamText()` applies when the caller passes no limits. */
+const DEFAULT_STREAM_LIMITS: StreamLimits = { maxBytes: MAX_STDIN_BYTES, timeoutMs: STDIN_TIMEOUT_MS };
+
 /** The part of a readable stream `readStreamText()` uses. */
 export interface TextSource {
   on(event: string, listener: (...args: any[]) => void): unknown;
@@ -64,7 +67,7 @@ export interface TextSource {
  */
 export function readStreamText(
   stream: TextSource,
-  limits: StreamLimits = { maxBytes: MAX_STDIN_BYTES, timeoutMs: STDIN_TIMEOUT_MS }
+  limits: StreamLimits = DEFAULT_STREAM_LIMITS
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];

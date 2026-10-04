@@ -199,9 +199,51 @@ skill that drives the whole sequence. By hand it is:
    `sha256` values come from the `release` job's `checksums.txt` (nothing is
    re-downloaded), and the job fails before writing to the tap if any of them
    is missing or is not a 64-character hex SHA256.
+5. **`announce-discord`** — posts one embed to the release channel of the
+   Shaharia Lab Discord: `SlackCLI vX.Y.Z` linking to the GitHub Release, the
+   release notes, and the Homebrew install hint. See
+   [The Discord announcement](#the-discord-announcement).
 
 Permissions are least-privilege throughout: the workflow default is
 `contents: read`, and only the `release` job opts into `contents: write`.
+
+### The Discord announcement
+
+`announce-discord` runs last, after `release` and `update-homebrew` have both
+succeeded, so the assets and the formula the message points at already exist.
+Three gates decide whether it runs at all:
+
+- **Not a fork** — `github.repository` must be `shaharia-lab/slackcli`.
+- **This run created the release.** Before publishing, the `release` job checks
+  whether a GitHub Release for the tag already exists and exposes the answer as
+  its `created` output. "Re-run all jobs" on a finished release finds it in
+  place, so nothing is posted twice. "Re-run failed jobs" after a failed
+  `update-homebrew` does not re-run `release`, keeps `created=true`, and posts
+  once. If the check cannot tell (an API error), it reports `created=false`:
+  a missed announcement can be posted by hand, a duplicate cannot be taken back.
+- **A stable tag.** A tag with a SemVer pre-release suffix (it contains `-`,
+  e.g. `v1.0.0-rc.1`) is not announced.
+
+The webhook URL is the `DISCORD_WEBHOOK` repository Actions secret, provisioned
+by Terraform in the infrastructure repository. It reaches only the posting step,
+through `env:`, and is never printed: curl's own output is discarded and a
+failure reports the HTTP status alone (`000` for a network error). Without the
+secret the step logs a notice and exits 0.
+
+The payload is built by `scripts/release-announcement.ts` (tested in
+`scripts/release-announcement.test.ts`) and sent with a plain `curl`, so there
+is no third-party action. Discord caps an embed description at 4096 characters;
+longer notes are cut on a line boundary and end with a "Full release notes"
+link. The payload sets `allowed_mentions: { parse: [] }`, so an `@everyone` or
+a role mention in a PR title cannot ping the server.
+
+**It can never fail a release.** The job is `continue-on-error`: when Discord is
+down or rejects the webhook, the job shows as failed with an `::error::`
+annotation and the run stays green. To recover a missed announcement, use
+"Re-run failed jobs" on the run (only `announce-discord` runs again), or post
+it by hand. A release whose `release` job was re-run after it had already
+created the release is treated as existing and is not announced; post that one
+by hand too.
 
 If a tag was pushed with the wrong version, fix `package.json` on `main`, then
 delete and re-push the tag — the error message from `verify-version` says the

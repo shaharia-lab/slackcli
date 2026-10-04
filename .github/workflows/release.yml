@@ -122,6 +122,9 @@ jobs:
       sha_macos_arm: ${{ steps.sums.outputs.sha_macos_arm }}
       sha_linux: ${{ steps.sums.outputs.sha_linux }}
       sha_linux_arm: ${{ steps.sums.outputs.sha_linux_arm }}
+      # 'true' only on the run that creates the release: the duplicate guard
+      # for announce-discord (#358).
+      created: ${{ steps.existing.outputs.created }}
 
     steps:
       - name: Checkout code
@@ -155,6 +158,26 @@ jobs:
             echo "sha_linux=$(sha_for slackcli-linux)"
             echo "sha_linux_arm=$(sha_for slackcli-linux-arm64)"
           } >> "$GITHUB_OUTPUT"
+
+      # Must run before the release is created. A re-run of this job finds the
+      # release in place and reports created=false, so "Re-run all jobs" never
+      # announces a release twice. Anything other than a clear "release not
+      # found" also counts as not created: a missed announcement can be posted
+      # by hand, a duplicate cannot be taken back.
+      - name: Check whether the release already exists
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if out="$(gh release view "$GITHUB_REF_NAME" --json tagName 2>&1)"; then
+            echo "Release $GITHUB_REF_NAME already exists; it will not be announced again"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          elif [ "$out" = "release not found" ]; then
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Could not tell whether release $GITHUB_REF_NAME exists; it will not be announced"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -351,3 +374,64 @@ jobs:
           fi
 
           echo "Homebrew formulas updated successfully!"
+
+  # Posts one embed to the Shaharia Lab Discord release channel (#358). Last
+  # in the chain so the release assets and the Homebrew formula the message
+  # points at already exist. Nothing depends on it and continue-on-error keeps
+  # a Discord outage from failing the release: the job shows as failed, the
+  # run stays green.
+  announce-discord:
+    name: Announce on Discord
+    needs: [release, update-homebrew]
+    # Three gates: not a fork, this run created the release (so a re-run does
+    # not post again), and the tag is not a SemVer pre-release.
+    if: github.repository == 'shaharia-lab/slackcli' && needs.release.outputs.created == 'true' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Same pin as the build job. The payload script has no dependencies,
+          # so there is no install step.
+          bun-version: 1.4.1
+
+      - name: Post release announcement
+        env:
+          # The webhook URL is a credential: it is only ever read from the
+          # environment, never interpolated into this script or printed.
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Secrets cannot be read in a job-level `if`, so the check is here.
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "::notice::DISCORD_WEBHOOK is not set; skipping the Discord announcement"
+            exit 0
+          fi
+
+          gh release view "$TAG" --json body,url > release.json
+          bun run scripts/release-announcement.ts release.json "$TAG" > payload.json
+
+          # curl's own messages are dropped so nothing about the request can
+          # reach the log; a network failure reports as HTTP 000. The response
+          # goes to a file, not /dev/null: curl 8.5 cannot truncate /dev/null
+          # before a retry and gives up with a write error instead of retrying.
+          status="$(curl -sS -o response.txt -w '%{http_code}' \
+            --retry 3 --retry-all-errors --max-time 15 \
+            -H 'Content-Type: application/json' \
+            --data @payload.json "$DISCORD_WEBHOOK" 2>/dev/null)" || true
+
+          case "$status" in
+            2??) echo "Announced $TAG on Discord (HTTP $status)" ;;
+            *)
+              echo "::error::Discord announcement failed (HTTP ${status:-000})"
+              exit 1
+              ;;
+          esac

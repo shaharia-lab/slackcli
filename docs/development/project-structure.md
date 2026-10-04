@@ -18,6 +18,7 @@ slackcli/
 │   ├── lib/                      All logic; tests live beside each file
 │   └── types/index.ts            Shared interfaces
 ├── scripts/build.ts              Compile wrapper: checks Bun >= 1.4.1, injects __APP_VERSION__
+├── scripts/release-announcement.ts  Builds the Discord release announcement payload for release.yml
 ├── .github/workflows/            CI, tests, SonarQube Cloud scan, release, policy checks
 ├── .github/ISSUE_TEMPLATE/       Issue forms; blank issues are disabled
 ├── .github/PULL_REQUEST_TEMPLATE.md  Linked-issue reference + checklist

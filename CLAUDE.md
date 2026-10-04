@@ -120,7 +120,7 @@ Detailed, maintained references live in `docs/development/` — [architecture.md
 - **PR gate** (`pr-linked-issue.yml`): the PR must link an open issue labelled `ready-for-pr` (constitution §1–2); the `no-issue-needed` label on the PR is the maintainer escape hatch.
 - **Signed commits** (`signed-commits.yml`): advisory comment on unverified commits; the `main` ruleset makes them unmergeable regardless.
 - **Stale** (`stale.yml`): issues are labelled stale after 7 idle days, reminded at 14, closed at 21; PRs at 14 / 21 / 28.
-- **Release** (`release.yml`): `v*.*.*` tags build Linux x64/arm64, macOS x64/arm64 (ad-hoc codesigned), Windows x64; publish a GitHub release with SHA256 checksums; update the Homebrew tap at `shaharia-lab/homebrew-tap`. See [build-and-release.md](docs/development/build-and-release.md).
+- **Release** (`release.yml`): `v*.*.*` tags build Linux x64/arm64, macOS x64/arm64 (ad-hoc codesigned), Windows x64; publish a GitHub release with SHA256 checksums; update the Homebrew tap at `shaharia-lab/homebrew-tap`; announce the release on Discord (non-blocking). See [build-and-release.md](docs/development/build-and-release.md).
 
 ## Version
 

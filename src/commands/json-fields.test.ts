@@ -288,7 +288,7 @@ describe('--fields, in process', () => {
     const items = [out[listKey]].flat();
     const fullItems = [full[listKey]].flat();
     expect(items.length).toBeGreaterThan(0);
-    expect(items.length).toBe(fullItems.length);
+    expect(items).toHaveLength(fullItems.length);
     items.forEach((item: Record<string, unknown>, i: number) => {
       expect(Object.keys(fullItems[i]).length).toBeGreaterThan(1);
       expect(item).toEqual({ [field]: fullItems[i][field] });

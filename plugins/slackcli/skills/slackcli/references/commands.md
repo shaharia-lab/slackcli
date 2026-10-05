@@ -5,7 +5,7 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 
 ## Everywhere
 
-- `--json`: every read command, plus `messages send|edit|draft|schedule|delete-scheduled`
+- `--json`: every read command, plus `messages send|edit|delete|draft|schedule|delete-scheduled`
   and `usergroups` writes. JSON on stdout; spinners, warnings, errors on stderr. A failure with
   `--json` exits 1 and ends stderr with one line
   `{"error":{"code","message","hint"?,"retryable","slack_error"?}}`: branch on
@@ -21,10 +21,10 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
   name, `T…` ID, or workspace name. Ambiguous name: command stops, pass the profile.
 - IDs accept Slack URLs (channel, DM, user, canvas, file). Timestamps accept
   `p1234567890123456`, `1234567890123456`, `1234567890.123456`.
-- `--permalink <url>` replaces channel + timestamp on `messages send|react|edit|draft`,
+- `--permalink <url>` replaces channel + timestamp on `messages send|react|edit|delete|draft`,
   `conversations read|get|mark-read`. A reply link targets the parent thread
   (`get` and `mark-read` use the linked message's own timestamp).
-- `--dry-run` on every Slack write (`messages send|edit|react|draft|send-draft|delete-draft|schedule|delete-scheduled`,
+- `--dry-run` on every Slack write (`messages send|edit|delete|react|draft|send-draft|delete-draft|schedule|delete-scheduled`,
   `conversations members add|remove`, `join`, `leave`, `mark-read`, every `usergroups` write):
   resolves and validates, writes nothing, never prompts or needs `--yes`, exits 0.
   With `--json`: `{dry_run: true, action, workspace: {name,id,profile}, target: {kind,id?,name?,ts?,thread_ts?}, payload}`.
@@ -76,6 +76,7 @@ Undo: mark again with `--ts=<previous_last_read>` (null when Slack reports none)
 messages send --recipient-id=<C…|U…|url|"#name"|@handle|email> (--message=T | --message-file=F|-) [--thread-ts=TS] [--file=PATH]… [--blocks=JSON|@file] [--json]
 messages send --permalink=URL --message=T          # reply in that thread
 messages edit (--channel-id=C --timestamp=TS | --permalink=URL) (--message=T | --message-file=F|-) [--json]
+messages delete (--channel-id=C --timestamp=TS | --permalink=URL) [--yes] [--json]   # chat.delete; retry-safe
 messages react (--channel-id=C --timestamp=TS | --permalink=URL) --emoji=NAME
 messages draft --recipient-id=C (--message=T | --message-file=F|-) [--json]    # browser auth only
 messages send-draft Dr… [--yes] [--json]                                     # post, then delete draft
@@ -90,9 +91,10 @@ messages delete-scheduled Q… [--yes] [--json]                                #
 `"#name"` / `name` / `@handle` / email (exact match; quote `#`); a bare name that is
 both a channel and a user is refused. `--file` is repeatable (one per attachment; several files
 share one message, all-or-nothing) and is exclusive with `--blocks`. `--emoji` without
-colons. Only the authenticated identity's messages can be edited.
+colons. Only the authenticated identity's messages can be edited or deleted.
 JSON: `send` → `{channel_id, ts, permalink?}` (`permalink` omitted if lookup fails);
-with `--file` → `{channel_id, file_id, file_ids}` (`file_id` is the first of `file_ids`). `edit` → `{channel_id, ts}`. `draft` → `{channel_id, draft_id}`.
+with `--file` → `{channel_id, file_id, file_ids}` (`file_id` is the first of `file_ids`). `edit` → `{channel_id, ts}`. `delete` → `{channel_id,ts,deleted,already_deleted}`
+(`message_not_found` exits 0 with `deleted:false,already_deleted:true`). `draft` → `{channel_id, draft_id}`.
 `list-drafts` → `{draft_count, drafts[]{draft_id,channel_id,text,date_created,file_ids,thread_ts?,date_scheduled?}}`.
 `send-draft` → `{channel_id,ts,permalink?}`; on cleanup failure it also returns
 `cleanup_error` and exits nonzero. `delete-draft` → `{draft_id,deleted:true}`.

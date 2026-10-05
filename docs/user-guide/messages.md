@@ -1,13 +1,13 @@
-# Send, reply, edit and react to Slack messages
+# Send, reply, edit, delete and react to Slack messages
 
-`slackcli messages` sends, edits, and reacts to messages, creates, lists,
+`slackcli messages` sends, edits, deletes, and reacts to messages, creates, lists,
 sends, and deletes drafts, and schedules messages for later.
 
 Every subcommand accepts `--workspace <id|name>`.
 
 ## Previewing a write (`--dry-run`)
 
-`send`, `edit`, `react`, `draft`, `send-draft`, `delete-draft`, `schedule` and
+`send`, `edit`, `delete`, `react`, `draft`, `send-draft`, `delete-draft`, `schedule` and
 `delete-scheduled` take `--dry-run`. The message is resolved and checked as for a real send — the text
 from `--message` or `--message-file`, parsed `--blocks`, the `--file` to
 upload, the target from `--recipient-id`, `--thread-ts` or `--permalink` — and
@@ -237,6 +237,46 @@ order to edit it.
 `--message-file` works here exactly as it does on `messages send` — the new
 body comes from a UTF-8 file, or from standard input with `-`, mutually
 exclusive with `--message`.
+
+## `messages delete`
+
+```bash
+slackcli messages delete --channel-id=C1234567890 --timestamp=1234567890.123456
+slackcli messages delete --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456" --yes --json
+```
+
+Deletes a message with `chat.delete`. A bot token can delete only the app's own
+messages; a user or browser session deletes what that user could delete in
+Slack. Name the message as for `messages edit`: `--channel-id` and
+`--timestamp`, or a single `--permalink` to the message.
+
+Deleting is permanent, so the command asks for confirmation on a terminal and
+refuses to run unattended without `--yes`. `--dry-run` shows the target and
+deletes nothing.
+
+`--json` prints the deleted message's identity:
+
+```json
+{
+  "channel_id": "C1234567890",
+  "ts": "1234567890.123456",
+  "deleted": true,
+  "already_deleted": false
+}
+```
+
+The delete is safe to retry, like `conversations leave`. When Slack answers
+`message_not_found` the command still exits 0, with `deleted: false` and
+`already_deleted: true`. Slack gives the same answer for a mistyped timestamp,
+so the text output says the message was not found and may already be deleted,
+rather than claiming it deleted anything.
+
+With `--json`, a workspace-mismatch warning for a `--permalink` from another
+workspace goes to stderr, so stdout carries only the JSON object.
+
+Every other refusal exits 1 with Slack's code in `slack_error`: for example
+`cant_delete_message` (`permission_denied`) for someone else's message, or
+`channel_not_found` (`not_found`).
 
 ## `messages react`
 

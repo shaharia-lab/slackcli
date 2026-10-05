@@ -548,6 +548,10 @@ export class SlackClient {
     return this.request('chat.update', { channel, ts, text, parse: 'none' });
   }
 
+  async deleteMessage(channel: string, ts: string): Promise<any> {
+    return this.request('chat.delete', { channel, ts });
+  }
+
   async uploadFileExternal(channel: string, filePath: string, options: {
     initial_comment?: string;
     thread_ts?: string;

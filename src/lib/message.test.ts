@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { fetchMessage } from './message.ts';
+import { deleteMessage, fetchMessage } from './message.ts';
 import type { SlackClient } from './slack-client.ts';
 
 function createMockClient(
@@ -155,5 +155,58 @@ describe('fetchMessage', () => {
     await fetchMessage(client, 'C123', '1.1');
     expect(listMessagesCalled).toBe(false);
     expect(historyCalled).toBe(true);
+  });
+});
+
+function slackRefusal(code: string): Error {
+  return Object.assign(new Error(`Slack API error: ${code}`), { slackData: { ok: false, error: code } });
+}
+
+describe('deleteMessage', () => {
+  it('deletes the message and reports it was not already gone', async () => {
+    const calls: Array<[string, string]> = [];
+    const client = {
+      deleteMessage: (channel: string, ts: string) => {
+        calls.push([channel, ts]);
+        return Promise.resolve({ ok: true, channel, ts });
+      },
+    };
+
+    const result = await deleteMessage(client, 'C123', '1.1');
+
+    expect(calls).toEqual([['C123', '1.1']]);
+    expect(result).toEqual({ channel_id: 'C123', ts: '1.1', deleted: true, already_deleted: false });
+  });
+
+  it('treats message_not_found as already deleted, so a retry succeeds', async () => {
+    const client = { deleteMessage: () => Promise.reject(slackRefusal('message_not_found')) };
+
+    const result = await deleteMessage(client, 'C123', '1.1');
+
+    expect(result).toEqual({ channel_id: 'C123', ts: '1.1', deleted: false, already_deleted: true });
+  });
+
+  it.each(['cant_delete_message', 'channel_not_found', 'not_in_channel', 'missing_scope'])(
+    'rethrows %s unchanged',
+    async (code) => {
+      const refusal = slackRefusal(code);
+      const client = { deleteMessage: () => Promise.reject(refusal) };
+
+      await expect(deleteMessage(client, 'C123', '1.1')).rejects.toBe(refusal);
+    },
+  );
+
+  it('rethrows a failure that carries no Slack answer', async () => {
+    const network = new Error('socket hang up');
+    const client = { deleteMessage: () => Promise.reject(network) };
+
+    await expect(deleteMessage(client, 'C123', '1.1')).rejects.toBe(network);
+  });
+
+  it('does not mistake message_not_found in the text alone for the Slack code', async () => {
+    const lookalike = new Error('Slack API error: message_not_found');
+    const client = { deleteMessage: () => Promise.reject(lookalike) };
+
+    await expect(deleteMessage(client, 'C123', '1.1')).rejects.toBe(lookalike);
   });
 });

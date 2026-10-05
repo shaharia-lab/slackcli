@@ -34,6 +34,7 @@ function recordingClient(overrides: { channels?: any[]; users?: any[]; groupUser
     postMessage: () => ({ ok: true, ts: '1712345678.000100' }),
     getPermalink: () => ({ ok: true, permalink: 'https://acme.slack.com/archives/C0000000001/p1712345678000100' }),
     updateMessage: () => ({ ok: true, ts: '1712345678.000100' }),
+    deleteMessage: () => ({ ok: true, channel: 'C0000000001', ts: '1712345678.000100' }),
     createDraft: () => ({ ok: true, draft: { id: 'Dr0000000001' } }),
     getConversationHistory: () => ({ ok: true, messages: [] }),
     getConversationMembers: () => ({ ok: true, members: ['U0000000001'] }),
@@ -177,6 +178,14 @@ describe('name resolution in commands', () => {
       'messages', 'edit', '--channel-id', 'general', '--timestamp', '1712345678.000100', '--message', 'fixed', '--json',
     ]);
     expect(stub.calls.find((c) => c.method === 'updateMessage')?.args[0]).toBe('C0000000001');
+    expect(json().channel_id).toBe('C0000000001');
+  });
+
+  it('messages delete resolves --channel-id and reports the ID', async () => {
+    const stub = await run([
+      'messages', 'delete', '--channel-id', 'general', '--timestamp', '1712345678.000100', '--yes', '--json',
+    ]);
+    expect(stub.calls.find((c) => c.method === 'deleteMessage')?.args[0]).toBe('C0000000001');
     expect(json().channel_id).toBe('C0000000001');
   });
 

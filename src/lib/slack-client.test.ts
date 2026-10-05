@@ -53,6 +53,10 @@ class TestSlackClient extends SlackClient {
       };
     }
 
+    if (method === 'chat.delete') {
+      return { ok: true, channel: params.channel, ts: params.ts };
+    }
+
     if (method === 'chat.update') {
       return { ok: true, channel: params.channel, ts: params.ts, text: params.text };
     }
@@ -659,6 +663,18 @@ describe('SlackClient.updateMessage', () => {
     await client.updateMessage('C123', '1234567890.123456', 'A <https://example.com|label> B');
 
     expect(client.calls[0]!.params.parse).toBe('none');
+  });
+});
+
+describe('SlackClient.deleteMessage', () => {
+  it('calls chat.delete with the channel and timestamp only', async () => {
+    const client = new TestSlackClient();
+
+    await client.deleteMessage('C123', '1234567890.123456');
+
+    expect(client.calls).toEqual([
+      { method: 'chat.delete', params: { channel: 'C123', ts: '1234567890.123456' } },
+    ]);
   });
 });
 

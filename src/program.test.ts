@@ -30,6 +30,7 @@ const STANDARD_ONLY = new Set([
 const SLACK_WRITES = new Set([
   'slackcli messages send',
   'slackcli messages edit',
+  'slackcli messages delete',
   'slackcli messages react',
   'slackcli messages draft',
   'slackcli messages send-draft',

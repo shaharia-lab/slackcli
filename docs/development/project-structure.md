@@ -44,7 +44,7 @@ They hold no Slack API knowledge.
 | `conversations.ts` | `list`, `read`, `get`, `unread`, `mark-read`, `members list`/`add`/`remove`, `join`, `leave` |
 | `files.ts` | `info`, `read`, `download` |
 | `logs.ts` | `path`, `show`, `clear` |
-| `messages.ts` | `send`, `react`, `edit`, `draft`, `list-drafts`, `send-draft`, `delete-draft`, `schedule`, `list-scheduled`, `delete-scheduled` |
+| `messages.ts` | `send`, `react`, `edit`, `delete`, `draft`, `list-drafts`, `send-draft`, `delete-draft`, `schedule`, `list-scheduled`, `delete-scheduled` |
 | `saved.ts` | `list` |
 | `search.ts` | `messages`, `channels`, `people` |
 | `update.ts` | (default action), `check` |
@@ -81,7 +81,7 @@ They hold no Slack API knowledge.
 | `cli-errors.ts` | The closed set of `--json` error codes (`ERROR_CODES`) and the typed errors the CLI raises itself: `CliError`, `InvalidInputError`, `NotFoundError`, `UnsupportedAuthTypeError`, `ConfirmationRequiredError`. No imports, so any module can throw them. |
 | `command-errors.ts` | `classifyError()` (any thrown value → `{code, message, hint?, retryable, slack_error?}`, by type and Slack code, credentials redacted) and `failCommand()`, the one failure path of a command: the usual text, or the JSON error object on stderr under `--json`; sets exit code 1. |
 | `mark-read.ts` | `conversations mark-read`: reads the conversation's current read cursor (`last_read` of `conversations.info`, best effort), makes the `conversations.mark` write, and returns `{ channel_id, ts, previous_last_read }`. |
-| `message.ts` | Fetch one message by channel + timestamp, per auth type. |
+| `message.ts` | Fetch one message by channel + timestamp, per auth type; delete one, treating `message_not_found` as already deleted. |
 | `poll.ts` | `conversations read`'s polling helpers: exact Slack `ts` comparison, the `ts > --oldest` and `--exclude-self` filters, the `next_oldest` cursor, and resolving the authenticated identity (stored `user_id`, or one `auth.test`). |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types, plus the workspace-wide thread summary (`threads` of `client.counts`, browser auth only) and each unread conversation's read cursors (`cursors`, kept off the list so the default output does not change). |

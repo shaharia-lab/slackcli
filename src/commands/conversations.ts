@@ -2,11 +2,11 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { formatChannelList, formatConversationHistory, formatUnreadChannels, warning, writeJson } from '../lib/formatter.ts';
+import { formatChannelList, formatConversationHistory, formatUnreadChannels, formatUnreadThreads, warning, writeJson } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { fetchMessage } from '../lib/message.ts';
-import { fetchUnreadChannels } from '../lib/unread.ts';
+import { fetchUnread, hasUnreadThreads } from '../lib/unread.ts';
 import { processReadPage, resolveSelfIdentity } from '../lib/poll.ts';
 import { confirmWrite, splitUserRefs } from './usergroups.ts';
 import {
@@ -118,7 +118,8 @@ const HELP = {
     summary: 'List conversations with unread messages',
     fields: 'each item of unread_channels',
     description:
-      'List the conversations that have unread messages or mentions, mentions first, then by name. ' +
+      'List the conversations that have unread messages or mentions, mentions first, then by name, ' +
+      'and with browser auth say whether followed threads have unread replies or mentions. ' +
       'Use "conversations read" to read one of them.',
     examples: [
       'slackcli conversations unread',
@@ -126,15 +127,18 @@ const HELP = {
       'slackcli conversations unread --json',
     ],
     json:
-      '{ unread_channels: [{ id, name, mention_count, has_unreads, unread_count?, is_im, is_mpim, is_private }] } ' +
-      '— unread_count only with an app token.',
+      '{ unread_channels: [{ id, name, mention_count, has_unreads, unread_count?, is_im, is_mpim, is_private }], ' +
+      'threads?: { has_unreads, mention_count } } — unread_count only with an app token, threads only with browser auth.',
     notes: [
       'Browser auth reads Slack\'s own unread state (client.counts), then looks up each channel\'s name: ' +
         'one or two calls per unread conversation (a DM also looks up the user), so many unreads can hit rate limits.',
       'An app token (xoxb/xoxp) reads the first 1000 conversations from conversations.list and keeps the ones ' +
         'you are a member of that Slack reports unread counts for; Slack often omits those counts, so results can be incomplete.',
-      'When nothing is unread it prints "All caught up!" on stderr and writes nothing to stdout, even with --json.',
-      '--types values: channels (public and private), dms, groups (group DMs).',
+      'threads is a workspace-wide summary of followed threads, taken from the same client.counts response (no extra call). ' +
+        'It does not say which threads, and an app token has no equivalent, so the key is left out there.',
+      'When no conversation and no thread is unread it prints "All caught up!" on stderr and writes nothing to stdout, even with --json. ' +
+        'Unread threads alone still print: --json gives { unread_channels: [], threads: {...} }.',
+      '--types values: channels (public and private), dms, groups (group DMs). It filters unread_channels only; threads is always reported.',
     ],
   },
   members: {
@@ -629,9 +633,13 @@ export function createConversationsCommand(): Command {
         const fields = fieldsOption(options);
         const client = await getAuthenticatedClient(options.workspace);
 
-        let channels = await fetchUnreadChannels(client, {
+        const unread = await fetchUnread(client, {
           onProgress: (msg) => { spinner.text = msg; },
         });
+        let channels = unread.channels;
+        // Workspace-wide, so --types (which narrows the conversation list) does not apply.
+        const threads = unread.threads;
+        const threadsUnread = hasUnreadThreads(threads);
 
         // Apply type filter if specified
         if (options.types) {
@@ -644,19 +652,30 @@ export function createConversationsCommand(): Command {
           });
         }
 
-        if (channels.length === 0) {
+        if (channels.length === 0 && !threadsUnread) {
           spinner.succeed('All caught up! No unread messages.');
           return;
         }
 
-        spinner.succeed(`${channels.length} conversations with unread messages`);
+        spinner.succeed(
+          channels.length > 0
+            ? `${channels.length} conversations with unread messages`
+            : 'No unread conversations, but unread thread activity',
+        );
 
         if (options.json) {
-          writeJson(applyFields('conversations unread', { unread_channels: channels }, fields));
+          writeJson(applyFields(
+            'conversations unread',
+            { unread_channels: channels, ...(threads ? { threads } : {}) },
+            fields,
+          ));
           return;
         }
 
-        console.log('\n' + formatUnreadChannels(channels));
+        if (channels.length > 0) console.log('\n' + formatUnreadChannels(channels));
+        if (threads && threadsUnread) {
+          console.log((channels.length > 0 ? '' : '\n') + formatUnreadThreads(threads));
+        }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch unread conversations' });
       }

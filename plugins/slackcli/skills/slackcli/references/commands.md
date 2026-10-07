@@ -58,7 +58,8 @@ conversations unread [--types=channels|dms|groups] [--json]
 
 JSON: `list` → `conversations[]`, `users[]`, `next_cursor` (null on last page).
 `read` → `messages[]{ts,thread_ts,user,text,reply_count,reactions,blocks,attachments}`,
-`users[]`; oldest first. `unread` → `unread_channels[]{…,mention_count}`.
+`users[]`; oldest first. `unread` → `unread_channels[]{…,mention_count}`, plus
+`threads{has_unreads,mention_count}` (browser auth only: followed threads, workspace-wide).
 Standard token: `get` resolves top-level messages only; use `read --thread-ts=<parent>`.
 
 ## messages

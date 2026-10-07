@@ -114,8 +114,29 @@ slackcli conversations unread --json
 ```
 
 Conversations with mentions sort first, then alphabetically. `--json` gives
-`{ unread_channels: [...] }`. When nothing is unread the command prints
-"All caught up!" on stderr and writes nothing to stdout, even with `--json`.
+`{ unread_channels: [...] }`. When no conversation and no thread is unread the
+command prints "All caught up!" on stderr and writes nothing to stdout, even
+with `--json`.
+
+**Unread threads.** With browser auth the command also says whether the threads
+you follow have unread replies or mentions, which Slack counts separately from
+their channel:
+
+```text
+🧵 Threads: unread replies, 1 mention
+```
+
+```json
+{ "unread_channels": [], "threads": { "has_unreads": true, "mention_count": 1 } }
+```
+
+`threads` is one summary for the whole workspace, not a list: it does not say
+which threads. It comes from the same `client.counts` response, so it costs no
+extra call, and `--types` does not filter it. Unread threads alone are enough to
+print a result, so a script should test both keys before reporting "nothing
+unread". A thread mention counts as unread even when `has_unreads` is `false`.
+With a standard token the `threads` key is left out, because
+`conversations.list` has no equivalent.
 
 **Auth-type caveat.** With browser auth this reads Slack's own unread state
 (`client.counts`), then makes one or two API calls per unread conversation to

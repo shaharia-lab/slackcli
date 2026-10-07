@@ -1,14 +1,33 @@
 import type { SlackClient } from './slack-client.ts';
-import type { UnreadChannel } from '../types/index.ts';
+import type { UnreadChannel, UnreadSummary, UnreadThreads } from '../types/index.ts';
 
-export async function fetchUnreadChannels(
+// The `threads` block of client.counts, reduced to the two fields the CLI
+// reports. Returns undefined when Slack sent no usable block, so callers can
+// tell "no unread threads" from "not reported".
+export function normalizeUnreadThreads(raw: unknown): UnreadThreads | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const { has_unreads: hasUnreads, mention_count: mentionCount } = raw as Record<string, unknown>;
+  const mentions = typeof mentionCount === 'number' && Number.isFinite(mentionCount) && mentionCount > 0
+    ? Math.floor(mentionCount)
+    : 0;
+  return { has_unreads: hasUnreads === true, mention_count: mentions };
+}
+
+// A thread mention counts as unread activity even if Slack left has_unreads
+// false, the same rule the channel filter below applies.
+export function hasUnreadThreads(threads: UnreadThreads | undefined): boolean {
+  return threads !== undefined && (threads.has_unreads || threads.mention_count > 0);
+}
+
+export async function fetchUnread(
   client: SlackClient,
   options: {
     onProgress?: (message: string) => void;
   } = {},
-): Promise<UnreadChannel[]> {
+): Promise<UnreadSummary> {
   const response = await client.getUnreadCounts();
   let channels: UnreadChannel[];
+  let threads: UnreadThreads | undefined;
 
   if (client.authType === 'browser') {
     // client.counts response
@@ -17,6 +36,7 @@ export async function fetchUnreadChannels(
       ...(response.mpims || []),
       ...(response.ims || []),
     ];
+    threads = normalizeUnreadThreads(response.threads);
 
     channels = allChannels
       .filter((ch: any) => ch.has_unreads || (ch.mention_count && ch.mention_count > 0))
@@ -73,5 +93,6 @@ export async function fetchUnreadChannels(
     return (a.name || '').localeCompare(b.name || '');
   });
 
-  return channels;
+  // conversations.list has no thread equivalent, so an app token reports none.
+  return threads ? { channels, threads } : { channels };
 }

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`conversations unread` reports unread thread activity**: with browser auth the output now says whether the threads you follow have unread replies or mentions, so a reply in a thread no longer hides behind "All caught up!" when its channel has nothing unread at the top level (#264)
+  - `--json` adds `threads: { has_unreads, mention_count }` next to `unread_channels`; the text output adds a `Threads:` line
+  - A workspace-wide summary taken from the same `client.counts` response: no extra API call, and `--types` does not filter it
+  - Unread threads alone now print `{ "unread_channels": [], "threads": {...} }` instead of nothing
+  - With an app token the `threads` key is left out, since `conversations.list` has no equivalent, and the output is unchanged
 - **Releases are announced on Discord**: after a stable release is published and the Homebrew tap is updated, the release workflow posts the version, a link to the GitHub Release, the release notes and the Homebrew install hint to the Shaharia Lab Discord release channel. Pre-release tags are not announced, a re-run does not post twice, and a Discord failure never fails the release (#358)
 
 ## [0.14.0] - 2026-10-03

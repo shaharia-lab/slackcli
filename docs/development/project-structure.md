@@ -82,7 +82,7 @@ They hold no Slack API knowledge.
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
 | `poll.ts` | `conversations read`'s polling helpers: exact Slack `ts` comparison, the `ts > --oldest` and `--exclude-self` filters, the `next_oldest` cursor, and resolving the authenticated identity (stored `user_id`, or one `auth.test`). |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |
-| `unread.ts` | Fetches and normalises unread channel data across both auth types. |
+| `unread.ts` | Fetches and normalises unread channel data across both auth types, plus the workspace-wide thread summary (`threads` of `client.counts`, browser auth only). |
 | `formatter.ts` | Chalk-coloured renderers, status helpers, and `writeJson()`. |
 | `dry-run.ts` | `--dry-run` on the Slack writes: the `DRY_RUN_FLAG` option, `buildPreview()` (workspace identity, target with a best-effort `#channel` / `@user` name lookup, payload without undefined fields) and `emitDryRun()` (one JSON object under `--json`, else `formatDryRun()`'s text; logs the action and a field count only). |
 | `help.ts` | The `--help` layout: `describeCommand()` (summary, description, `Examples`, `Notes`, standard notes for `--json`, browser-only, confirmation and `--dry-run`), the root command tree and footer, and the `--help` pointer after usage errors. |
@@ -97,7 +97,7 @@ They hold no Slack API knowledge.
 Every shared interface: `AuthType`, `TokenType`, `StandardAuthConfig`,
 `BrowserAuthConfig`, `WorkspaceConfig`, `WorkspacesData`, `SlackChannel`,
 `SlackUser`, `SlackFile`, `SlackMessage`, `SlackDraft`, `DraftSummary`, `SlackAuthTestResponse`, `SavedItem`,
-`SearchMatch`, `ChannelSearchResult`, `PeopleSearchResult`, `UnreadChannel`,
+`SearchMatch`, `ChannelSearchResult`, `PeopleSearchResult`, `UnreadChannel`, `UnreadThreads`, `UnreadSummary`,
 `SlackCanvas`, and the per-command option interfaces.
 
 `WorkspaceConfig` is a discriminated union on `auth_type` — narrowing it is what

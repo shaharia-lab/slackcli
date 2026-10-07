@@ -8,6 +8,7 @@ import {
   formatChannelSearchResults,
   formatPeopleSearchResults,
   formatUnreadChannels,
+  formatUnreadThreads,
   formatPaginationHint,
   formatFileSize,
   formatDraftList,
@@ -829,6 +830,25 @@ describe('formatter output with colour enabled', () => {
         + '  ' + dim('2.') + ' 👤 ' + bold('D1') + ' ' + dim('(D1)') + '\n'
         + '\n',
       );
+    });
+  });
+
+  describe('formatUnreadThreads', () => {
+    it('names unread replies and counts mentions', () => {
+      expect(formatUnreadThreads({ has_unreads: true, mention_count: 0 }))
+        .toBe(bold('🧵 Threads:') + ' ' + yellow('unread replies') + '\n');
+      expect(formatUnreadThreads({ has_unreads: true, mention_count: 2 }))
+        .toBe(bold('🧵 Threads:') + ' ' + yellow('unread replies') + ', ' + red('2 mentions') + '\n');
+    });
+
+    it('uses the singular for one mention, with or without unread replies', () => {
+      expect(formatUnreadThreads({ has_unreads: false, mention_count: 1 }))
+        .toBe(bold('🧵 Threads:') + ' ' + red('1 mention') + '\n');
+    });
+
+    it('says so when nothing is unread', () => {
+      expect(formatUnreadThreads({ has_unreads: false, mention_count: 0 }))
+        .toBe(bold('🧵 Threads:') + ' ' + dim('nothing unread') + '\n');
     });
   });
 

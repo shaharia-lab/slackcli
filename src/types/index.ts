@@ -366,6 +366,18 @@ export interface UnreadChannel {
   is_private?: boolean;
 }
 
+// Workspace-wide unread thread summary (the `threads` block of client.counts)
+export interface UnreadThreads {
+  has_unreads: boolean;
+  mention_count: number;
+}
+
+// What `conversations unread` reports. `threads` is only known with browser auth.
+export interface UnreadSummary {
+  channels: UnreadChannel[];
+  threads?: UnreadThreads;
+}
+
 // Canvas types
 export interface SlackCanvas {
   id: string;

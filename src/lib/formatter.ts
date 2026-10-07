@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import type {
   SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
-  SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel,
+  SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThreads,
   SlackTeam, SlackUsergroup, UsergroupMember,
   CustomEmoji, DraftSummary, IdentityResult, ProfileCheck,
   DryRunPreview, DryRunTarget,
@@ -489,6 +489,18 @@ export function formatUnreadChannels(channels: UnreadChannel[]): string {
 
   output += '\n';
   return output;
+}
+
+// Format the workspace-wide unread thread summary (browser auth only)
+export function formatUnreadThreads(threads: UnreadThreads): string {
+  const parts: string[] = [];
+  if (threads.has_unreads) parts.push(chalk.yellow('unread replies'));
+  if (threads.mention_count > 0) {
+    const noun = threads.mention_count === 1 ? 'mention' : 'mentions';
+    parts.push(chalk.red(`${threads.mention_count} ${noun}`));
+  }
+  const summary = parts.length > 0 ? parts.join(', ') : chalk.dim('nothing unread');
+  return `${chalk.bold('🧵 Threads:')} ${summary}\n`;
 }
 
 // Format pagination hint

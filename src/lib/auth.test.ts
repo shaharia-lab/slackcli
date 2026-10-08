@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import {
@@ -21,6 +21,7 @@ import { AmbiguousWorkspaceError, resolveWorkspace, type ResolvedWorkspace } fro
 import { MissingCredentialError } from './secret-store';
 import type { SlackAuthTestResponse, WorkspaceConfig, WorkspacesData } from '../types/index';
 import { configureLogging } from './logger';
+import { tildify } from './tildify';
 import { AUTH_ERROR_CODES, SlackAuthError, authErrorProfile } from './auth-errors';
 import { SlackClient, SlackTransportError } from './slack-client';
 import * as browserAuth from './browser-auth';
@@ -74,12 +75,16 @@ describe.skipIf(process.platform === 'win32')('authenticateAuto logging', () => 
     expect(failure?.properties.reason).toBe('browser_exited');
 
     const launcher = byCategory('browser-launcher').map((r) => r.properties);
+    // Log fields have a leading home dir abbreviated to `~` (tildify); match that
+    // form so the test holds whether or not tmpdir() sits under $HOME (it does in
+    // an agentic sandbox, where $TMPDIR is relocated under the home directory).
+    const home = homedir();
     expect(launcher).toContainEqual(expect.objectContaining({
-      executable: join(dir, 'fake-browser'),
+      executable: tildify(join(dir, 'fake-browser'), home),
       source: 'SLACKCLI_BROWSER',
     }));
     expect(launcher).toContainEqual(expect.objectContaining({
-      profile_dir: join(dir, 'profile'),
+      profile_dir: tildify(join(dir, 'profile'), home),
       profile_state: 'created',
       source: 'SLACKCLI_BROWSER_PROFILE',
     }));

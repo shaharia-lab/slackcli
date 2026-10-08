@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, win32 } from 'node:path';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import { configureLogging } from './logger';
+import { tildify } from './tildify';
 import {
   findBrowser,
   defaultProfileDir,
@@ -587,17 +588,23 @@ describe.skipIf(process.platform === 'win32')('launchBrowser logging', () => {
     if (result.ok) return;
     expect(result.reason).toBe('browser_exited');
 
+    // The logger abbreviates a leading home dir to `~` (tildify), so compare the
+    // log fields against the tildified paths. On a normal CI runner tmpdir() is
+    // outside $HOME and tildify is a no-op; in an agentic sandbox tmpdir() is
+    // relocated under $HOME, so the raw path would never match. See fix for
+    // sandbox tmpdir portability.
+    const home = homedir();
     expect(find('Browser resolved')?.properties).toMatchObject({
-      executable: join(dir, 'fake-browser'),
+      executable: tildify(join(dir, 'fake-browser'), home),
       source: 'SLACKCLI_BROWSER',
     });
     expect(find('Browser profile')?.properties).toMatchObject({
-      profile_dir: profileDir,
+      profile_dir: tildify(profileDir, home),
       profile_state: 'created',
       source: 'option',
     });
     const launch = find('Launching browser');
-    expect(launch?.properties.args).toContain(`--user-data-dir=${profileDir}`);
+    expect(launch?.properties.args).toContain(`--user-data-dir=${tildify(profileDir, home)}`);
     expect(launch?.properties.start_url_origin).toBe('https://acme.slack.com');
     const exited = find('exited before exposing');
     expect(exited?.level).toBe('warning');

@@ -23,9 +23,10 @@ describe('emoji command', () => {
     expect(names).toContain('get');
   });
 
-  it('gives list the --limit, --no-aliases, --workspace and --json options', () => {
+  it('gives list the --limit, --filter, --no-aliases, --workspace and --json options', () => {
     const opts = longOptions('list');
     expect(opts).toContain('--limit');
+    expect(opts).toContain('--filter');
     expect(opts).toContain('--no-aliases');
     expect(opts).toContain('--workspace');
     expect(opts).toContain('--json');

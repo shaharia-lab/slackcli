@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { fetchCustomEmoji, getCustomEmoji, normalizeEmojiMap, parseEmojiLimit } from './emoji.ts';
+import { fetchCustomEmoji, filterEmojiByName, getCustomEmoji, normalizeEmojiMap, parseEmojiLimit } from './emoji.ts';
+import type { CustomEmoji } from '../types/index.ts';
 import type { SlackClient } from './slack-client.ts';
 
 function createMockClient(
@@ -116,5 +117,54 @@ describe('parseEmojiLimit', () => {
 
   it('rejects zero', () => {
     expect(parseEmojiLimit('0')).toEqual({ error: 'Limit must be a positive integer' });
+  });
+});
+
+describe('filterEmojiByName', () => {
+  const emoji: CustomEmoji[] = [
+    { name: 'kiro', is_alias: false, url: 'https://emoji.example/kiro.png' },
+    { name: 'kiro-cli', is_alias: false, url: 'https://emoji.example/kiro-cli.png' },
+    { name: 'scumbag-kiro', is_alias: true, alias_for: 'kiro' },
+    { name: 'party-parrot', is_alias: false, url: 'https://emoji.example/pp.gif' },
+    { name: 'KIROV', is_alias: false, url: 'https://emoji.example/kirov.png' },
+  ];
+
+  it('keeps only names containing the substring', () => {
+    expect(filterEmojiByName(emoji, 'parrot').emoji?.map(e => e.name)).toEqual(['party-parrot']);
+  });
+
+  it('matches a substring anywhere in the name, not just the prefix', () => {
+    // The composer autocomplete behaviour the issue cites: `:kiro` surfaces
+    // scumbag-kiro too, not only names that start with it.
+    expect(filterEmojiByName(emoji, 'kiro').emoji?.map(e => e.name))
+      .toEqual(['kiro', 'kiro-cli', 'scumbag-kiro', 'KIROV']);
+  });
+
+  it('is case-insensitive on both the needle and the name', () => {
+    expect(filterEmojiByName(emoji, 'KIRO').emoji?.map(e => e.name))
+      .toEqual(['kiro', 'kiro-cli', 'scumbag-kiro', 'KIROV']);
+  });
+
+  it('strips surrounding colons the way emoji get does', () => {
+    // `--filter :kiro:` and `--filter kiro` must behave identically.
+    expect(filterEmojiByName(emoji, ':kiro:').emoji?.map(e => e.name))
+      .toEqual(['kiro', 'kiro-cli', 'scumbag-kiro', 'KIROV']);
+    expect(filterEmojiByName(emoji, ':parrot').emoji?.map(e => e.name)).toEqual(['party-parrot']);
+  });
+
+  it('returns an empty list when nothing matches', () => {
+    expect(filterEmojiByName(emoji, 'zzz').emoji).toEqual([]);
+  });
+
+  it('rejects an empty or colons/whitespace-only value instead of matching everything', () => {
+    expect(filterEmojiByName(emoji, '')).toEqual({ error: 'Filter must not be empty' });
+    expect(filterEmojiByName(emoji, '   ')).toEqual({ error: 'Filter must not be empty' });
+    expect(filterEmojiByName(emoji, '::')).toEqual({ error: 'Filter must not be empty' });
+  });
+
+  it('does not mutate the input list', () => {
+    const before = emoji.length;
+    filterEmojiByName(emoji, 'kiro');
+    expect(emoji).toHaveLength(before);
   });
 });

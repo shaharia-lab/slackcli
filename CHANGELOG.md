@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A shared `writeText()` sink in `src/lib/formatter.ts` (twin of `writeJson()`) replaces `console.log` at every command result print across the command layer; `success()` and `info()` route through it too
   - A guard test (`src/output-sink.test.ts`) fails the build if any `src/commands/` file reintroduces `console.log`, so the hazard cannot creep back one call site at a time
   - Closes the non-JSON half of the stdout-drain hazard that [#73](https://github.com/shaharia-lab/slackcli/issues/73) fixed for JSON and [#77](https://github.com/shaharia-lab/slackcli/issues/77) tracked
+- **`--dry-run` text previews no longer truncate on a slow pipe**: `emitDryRun`'s human-readable preview now writes through the shared `writeText()` sink instead of `console.log`, closing the last command-result stdout print that bypassed the backpressure-safe path, and the guard test (`src/output-sink.test.ts`) now scans every non-test file in `src/commands/` and `src/lib/` (exempting the interactive-prompt helper by name) so a new shared helper is covered by default and the hazard cannot return (#377, follow-up to #373)
 
 ## [0.14.0] - 2026-10-03
 

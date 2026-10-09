@@ -173,12 +173,13 @@ describe('emitDryRun', () => {
   });
 
   it('prints the text preview otherwise', () => {
-    const lines: string[] = [];
-    spyOn(console, 'log').mockImplementation((line: string) => { lines.push(line); });
+    let out = '';
+    spyOn(process.stdout, 'write').mockImplementation(((chunk: string) => { out += chunk; return true; }) as any);
+    const log = spyOn(console, 'log').mockImplementation(() => {});
     emitDryRun({
       dry_run: true, action: 'leave channel', workspace: WORKSPACE, target: { kind: 'channel', id: 'C1' }, payload: {},
     }, false);
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain('Dry run: nothing was sent.');
+    expect(out).toContain('Dry run: nothing was sent.');
+    expect(log).not.toHaveBeenCalled();
   });
 });

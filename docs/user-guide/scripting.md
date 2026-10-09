@@ -15,8 +15,9 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 
 The writing commands support it too — `messages send`, `messages edit`,
 `messages draft`, `messages send-draft`, `messages delete-draft`, the `usergroups` write verbs (`create`, `update`, `add`,
-`remove`, `enable`, `disable`), and the `conversations` membership write/self
-verbs (`members add`, `members remove`, `join`, `leave`) — where it returns the
+`remove`, `enable`, `disable`), the `conversations` membership write/self
+verbs (`members add`, `members remove`, `join`, `leave`), and
+`conversations mark-read` — where it returns the
 identity of what was just written instead of the human success line.
 
 JSON goes to **stdout**. Progress spinners, warnings, error messages, and the
@@ -131,7 +132,7 @@ list` returns plain IDs, so it has no `--fields`.
 
 Every command that changes something in Slack takes `--dry-run`:
 `messages send`, `edit`, `react`, `draft`, `send-draft`, `delete-draft`;
-`conversations members add`, `members remove`, `join`, `leave`; and
+`conversations members add`, `members remove`, `join`, `leave`, `mark-read`; and
 `usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.
 
 A dry run does everything except the write: it picks the workspace, resolves
@@ -163,6 +164,7 @@ With `--json` the preview is one object on stdout:
 - `action` names the write: `send message`, `edit message`, `add reaction`,
   `create draft`, `send draft`, `delete draft`, `add channel members`,
   `remove channel members`, `join channel`, `leave channel`,
+  `mark conversation read`,
   `create user group`, `update user group`, `add user group members`,
   `remove user group members`, `enable user group`, `disable user group`.
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
@@ -454,6 +456,9 @@ done
   terminal and `--yes` is absent, so an unattended job must pass `--yes`
   explicitly. With `--json` the refusal is a `confirmation_required` error
   object. See [User groups](usergroups.md).
+- **`conversations mark-read` needs `--yes`.** Same rule: it refuses to run
+  with a non-zero exit when stdin is not a terminal and `--yes` is absent. `mark-read --json` returns `previous_last_read`; keep it if
+  the run may need to be undone. See [Conversations](conversations.md).
 - **`--dry-run` never needs `--yes`.** It changes nothing, so it never prompts
   and is not refused when stdin is not a terminal. See [`--dry-run`](#--dry-run).
 - **`files download` needs `--yes` to write outside the working directory.** An

@@ -408,6 +408,14 @@ export interface UnreadSummary {
   cursors?: Record<string, UnreadCursor>;
 }
 
+// What `conversations mark-read` reports. `previous_last_read` is the read
+// cursor before the write, or null when Slack did not report one.
+export interface MarkReadResult {
+  channel_id: string;
+  ts: string;
+  previous_last_read: string | null;
+}
+
 // Canvas types
 export interface SlackCanvas {
   id: string;

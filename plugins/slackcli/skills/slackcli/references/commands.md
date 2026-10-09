@@ -22,9 +22,9 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 - IDs accept Slack URLs (channel, DM, user, canvas, file). Timestamps accept
   `p1234567890123456`, `1234567890123456`, `1234567890.123456`.
 - `--permalink <url>` replaces channel + timestamp on `messages send|react|edit|draft`,
-  `conversations read|get`. A reply link targets the parent thread.
+  `conversations read|get|mark-read`. A reply link targets the parent thread.
 - `--dry-run` on every Slack write (`messages send|edit|react|draft|send-draft|delete-draft`,
-  `conversations members add|remove`, `join`, `leave`, every `usergroups` write):
+  `conversations members add|remove`, `join`, `leave`, `mark-read`, every `usergroups` write):
   resolves and validates, writes nothing, never prompts or needs `--yes`, exits 0.
   With `--json`: `{dry_run: true, action, workspace: {name,id,profile}, target: {kind,id?,name?,ts?,thread_ts?}, payload}`.
 - Exit `0` success (empty result is success), `1` failure.
@@ -54,6 +54,7 @@ conversations read <channel|#name|url> [--limit=100] [--thread-ts=TS] [--exclude
 conversations read --permalink=URL [--json]        # that message's thread
 conversations get <channel> <ts> | --permalink=URL [--json]
 conversations unread [--types=channels|dms|groups] [--messages [--max-conversations=10] [--limit=20]] [--json]
+conversations mark-read <channel|#name|url> --ts=TS | --permalink=URL [--yes] [--dry-run] [--json]
 ```
 
 JSON: `list` → `conversations[]`, `users[]`, `next_cursor` (null on last page).
@@ -65,6 +66,8 @@ call: `unread_channels[]{…,last_read,latest,messages[],has_more?}` (messages n
 oldest first; no `messages` key past `--max-conversations`), `threads.items[]{channel_id,thread_ts,
 root,unread_replies[],has_more?}` (no `items` key if Slack's thread view failed), and `users[]`.
 Standard token: `get` resolves top-level messages only; use `read --thread-ts=<parent>`.
+`mark-read` → `{channel_id,ts,previous_last_read}`; moves the read cursor to that message (never threads).
+Undo: mark again with `--ts=<previous_last_read>` (null when Slack reports none). Needs `--yes` unattended.
 
 ## messages
 

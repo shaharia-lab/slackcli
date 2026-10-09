@@ -298,6 +298,7 @@ slackcli conversations read --permalink="$LINK"          # reads that message's 
 slackcli conversations get C1234567890 1234567890.123456
 slackcli conversations unread
 slackcli conversations unread --messages                  # the unread messages too (browser auth)
+slackcli conversations mark-read C1234567890 --ts 1234567890.123456   # acknowledge what you read
 ```
 
 📄 [conversations](docs/user-guide/conversations.md)

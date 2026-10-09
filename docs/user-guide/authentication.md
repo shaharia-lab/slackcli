@@ -44,6 +44,7 @@ Useful scopes, by what you want to do:
 | Read history | `channels:history`, `groups:history`, `im:history`, `mpim:history` |
 | Send / edit messages | `chat:write` |
 | React | `reactions:write` |
+| Mark a conversation as read | `channels:write`, `groups:write`, `im:write`, `mpim:write` |
 | Upload files | `files:write` |
 | Search messages | `search:read` (user tokens only) |
 | Read canvases | `files:read` |

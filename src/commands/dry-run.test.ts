@@ -139,7 +139,7 @@ describe('--dry-run', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  // All 16 writes: a preview, exit 0, no prompt, reads only.
+  // All 17 writes: a preview, exit 0, no prompt, reads only.
   it.each([
     [['messages', 'send', '--recipient-id', 'C0123456789', '--message', 'Deploy done'], 'send message'],
     [['messages', 'edit', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100', '--message', 'Fixed'], 'edit message'],
@@ -150,6 +150,7 @@ describe('--dry-run', () => {
     [['conversations', 'members', 'remove', 'C0123456789', 'U0123456789'], 'remove channel members'],
     [['conversations', 'join', 'C0123456789'], 'join channel'],
     [['conversations', 'leave', 'C0123456789'], 'leave channel'],
+    [['conversations', 'mark-read', 'C0123456789', '--ts', '1712345678.000100'], 'mark conversation read'],
     [['usergroups', 'create', 'Platform'], 'create user group'],
     [['usergroups', 'update', 'S0123456789', '--name', 'Platform'], 'update user group'],
     [['usergroups', 'add', 'S0123456789', 'U0123456789'], 'add user group members'],

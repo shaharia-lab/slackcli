@@ -831,6 +831,12 @@ export class SlackClient {
   // which request() throws on. We catch that specific case and return the
   // payload so callers can treat it as the no-op success Slack intends,
   // re-throwing any genuine error.
+  // Move the read cursor of a conversation to `ts` (conversations.mark). A
+  // write: it changes what the authenticated user sees as unread.
+  async markConversation(channel: string, ts: string): Promise<any> {
+    return this.request('conversations.mark', { channel, ts });
+  }
+
   async leaveConversation(channel: string): Promise<any> {
     try {
       return await this.request('conversations.leave', { channel });

@@ -958,6 +958,54 @@ describe('SlackClient.getConversationMembers', () => {
   });
 });
 
+describe('SlackClient.markConversation', () => {
+  it('sends conversations.mark with the channel and ts', async () => {
+    const requests: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({ url: String(input), body: String(init?.body ?? '') });
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+
+    const response = await client.markConversation('C123', '1712345678.123456');
+
+    expect(response).toEqual({ ok: true });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toContain('/api/conversations.mark');
+    const body = new URLSearchParams(requests[0].body);
+    expect(body.get('channel')).toBe('C123');
+    expect(body.get('ts')).toBe('1712345678.123456');
+  });
+
+  it('throws on a Slack error and does not retry the write on a 5xx', async () => {
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts += 1;
+      return new Response('upstream', { status: 503 });
+    }) as unknown as typeof fetch;
+
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+
+    await expect(client.markConversation('C123', '1712345678.123456')).rejects.toThrow();
+    expect(attempts).toBe(1);
+  });
+});
+
 describe('SlackClient.leaveConversation', () => {
   // Slack's conversations.leave returns { ok: false, not_in_channel: true } with
   // NO `error` field when you were already out. request() throws on ok:false, so

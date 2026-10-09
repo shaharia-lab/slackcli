@@ -63,6 +63,7 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   invalid_array_arg: 'invalid_input',
   invalid_form_data: 'invalid_input',
   invalid_ts: 'invalid_input',
+  invalid_timestamp: 'invalid_input',
   invalid_ts_latest: 'invalid_input',
   invalid_ts_oldest: 'invalid_input',
   invalid_cursor: 'invalid_input',

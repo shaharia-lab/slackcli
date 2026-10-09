@@ -18,6 +18,7 @@ import { isReadMethod } from './retry.ts';
 
 class TestSlackClient extends SlackClient {
   public readonly calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  private uploadCounter = 0;
 
   constructor() {
     super({
@@ -34,17 +35,19 @@ class TestSlackClient extends SlackClient {
     this.calls.push({ method, params });
 
     if (method === 'files.getUploadURLExternal') {
+      this.uploadCounter += 1;
       return {
         ok: true,
-        upload_url: 'https://uploads.slack.test/file',
-        file_id: 'F123',
+        upload_url: `https://uploads.slack.test/file/${this.uploadCounter}`,
+        file_id: `F${this.uploadCounter}`,
       };
     }
 
     if (method === 'files.completeUploadExternal') {
+      const files = JSON.parse(params.files as string) as Array<{ id: string; title: string }>;
       return {
         ok: true,
-        files: [{ id: 'F123' }],
+        files: files.map((f) => ({ id: f.id, title: f.title })),
       };
     }
 
@@ -133,14 +136,14 @@ describe('SlackClient.uploadFileExternal', () => {
         {
           method: 'files.completeUploadExternal',
           params: {
-            files: JSON.stringify([{ id: 'F123', title: 'report.txt' }]),
+            files: JSON.stringify([{ id: 'F1', title: 'report.txt' }]),
             channel_id: 'C123',
             initial_comment: 'Here is the file',
           },
         },
       ]);
       expect(uploadRequest).toEqual({
-        url: 'https://uploads.slack.test/file',
+        url: 'https://uploads.slack.test/file/1',
         bodyText: 'Quarterly report',
         contentType: 'application/octet-stream',
       });
@@ -160,6 +163,184 @@ describe('SlackClient.uploadFileExternal', () => {
 
     expect(client.calls).toEqual([]);
   });
+
+describe('SlackClient.uploadFilesExternal', () => {
+  it('uploads several files and shares them in one message with a single comment', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-multi-upload-'));
+    const a = join(dir, 'a.txt');
+    const b = join(dir, 'b.txt');
+    const c = join(dir, 'c.txt');
+    await Bun.write(a, 'alpha');
+    await Bun.write(b, 'bravo!');
+    await Bun.write(c, 'charlie');
+
+    const uploads: Array<{ url: string; bodyText: string }> = [];
+    globalThis.fetch = (async (input, init) => {
+      uploads.push({
+        url: String(input),
+        bodyText: new TextDecoder().decode(init?.body as Uint8Array),
+      });
+      return new Response('', { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const client = new TestSlackClient();
+
+      const result = await client.uploadFilesExternal('C123', [a, b, c], {
+        initial_comment: 'Three files',
+        thread_ts: '1712345678.000100',
+      });
+
+      // One getUploadURLExternal + PUT per file, then exactly ONE
+      // completeUploadExternal listing every uploaded file against one comment.
+      expect(client.calls).toEqual([
+        { method: 'files.getUploadURLExternal', params: { filename: 'a.txt', length: 5 } },
+        { method: 'files.getUploadURLExternal', params: { filename: 'b.txt', length: 6 } },
+        { method: 'files.getUploadURLExternal', params: { filename: 'c.txt', length: 7 } },
+        {
+          method: 'files.completeUploadExternal',
+          params: {
+            files: JSON.stringify([
+              { id: 'F1', title: 'a.txt' },
+              { id: 'F2', title: 'b.txt' },
+              { id: 'F3', title: 'c.txt' },
+            ]),
+            channel_id: 'C123',
+            initial_comment: 'Three files',
+            thread_ts: '1712345678.000100',
+          },
+        },
+      ]);
+      expect(uploads.map((u) => u.url)).toEqual([
+        'https://uploads.slack.test/file/1',
+        'https://uploads.slack.test/file/2',
+        'https://uploads.slack.test/file/3',
+      ]);
+      expect(uploads.map((u) => u.bodyText)).toEqual(['alpha', 'bravo!', 'charlie']);
+      expect(result.files?.map((f) => f.id)).toEqual(['F1', 'F2', 'F3']);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('validates every file before any Slack call, so one bad path posts nothing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-multi-badpath-'));
+    const good = join(dir, 'good.txt');
+    await Bun.write(good, 'ok');
+
+    let fetchCalled = false;
+    globalThis.fetch = (async (_input, _init) => {
+      fetchCalled = true;
+      return new Response('', { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const client = new TestSlackClient();
+
+      await expect(
+        client.uploadFilesExternal('C123', [good, join(dir, 'nope.txt')], {
+          initial_comment: 'should not post',
+        }),
+      ).rejects.toThrow(/File not found: .*nope\.txt/);
+
+      // Nothing was uploaded and no message was completed: all-or-nothing.
+      expect(client.calls).toEqual([]);
+      expect(fetchCalled).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('names the file whose PUT failed and never completes the upload', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-multi-putfail-'));
+    const a = join(dir, 'first.txt');
+    const b = join(dir, 'second.txt');
+    await Bun.write(a, 'one');
+    await Bun.write(b, 'two');
+
+    // First PUT succeeds, second fails with a non-2xx.
+    let call = 0;
+    globalThis.fetch = (async (_input, _init) => {
+      call += 1;
+      return new Response('', { status: call === 1 ? 200 : 500 });
+    }) as typeof fetch;
+
+    try {
+      const client = new TestSlackClient();
+
+      await expect(
+        client.uploadFilesExternal('C123', [a, b], { initial_comment: 'partial' }),
+      ).rejects.toThrow('File upload failed for second.txt: HTTP 500');
+
+      // Two upload URLs were requested, but completeUploadExternal was NEVER
+      // called, so Slack posts no partial message.
+      expect(client.calls.map((c) => c.method)).toEqual([
+        'files.getUploadURLExternal',
+        'files.getUploadURLExternal',
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('names the file whose upload-URL request failed, keeping the Slack error code', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-multi-urlfail-'));
+    const a = join(dir, 'first.txt');
+    const b = join(dir, 'second.txt');
+    await Bun.write(a, 'one');
+    await Bun.write(b, 'two');
+
+    // A subclass that fails files.getUploadURLExternal on the SECOND file with
+    // a Slack error carrying slackData — exactly how request() surfaces e.g.
+    // file_upload_size_restricted. The PUT never runs for a URL that failed.
+    class UrlFailClient extends TestSlackClient {
+      private urlCalls = 0;
+      override async request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+        if (method === 'files.getUploadURLExternal') {
+          this.urlCalls += 1;
+          if (this.urlCalls === 2) {
+            this.calls.push({ method, params });
+            const err = new Error('Slack API error: An API error occurred: file_upload_size_restricted');
+            (err as any).slackData = { ok: false, error: 'file_upload_size_restricted' };
+            throw err;
+          }
+        }
+        return super.request(method, params);
+      }
+    }
+
+    globalThis.fetch = (async (_input, _init) => new Response('', { status: 200 })) as typeof fetch;
+
+    try {
+      const client = new UrlFailClient();
+
+      // The message names the file AND the step...
+      const err = await client
+        .uploadFilesExternal('C123', [a, b], { initial_comment: 'partial' })
+        .then(() => { throw new Error('expected a rejection'); }, (e: unknown) => e);
+      expect((err as Error).message).toBe(
+        'Upload URL request failed for second.txt: Slack API error: An API error occurred: file_upload_size_restricted',
+      );
+      // ...while the Slack error code is preserved on slackData, so --json still
+      // reports the same `code` / `slack_error`.
+      expect((err as any).slackData?.error).toBe('file_upload_size_restricted');
+
+      // completeUploadExternal was never called: no partial message posted.
+      expect(client.calls.map((c) => c.method)).toEqual([
+        'files.getUploadURLExternal',
+        'files.getUploadURLExternal',
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an empty file list', async () => {
+    const client = new TestSlackClient();
+    await expect(client.uploadFilesExternal('C123', [])).rejects.toThrow('No files to upload');
+    expect(client.calls).toEqual([]);
+  });
+});
 });
 
 describe('SlackClient.fetchFile', () => {

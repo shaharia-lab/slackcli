@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`messages send --file` is repeatable, so several files share ONE message**: pass `--file` once per attachment (`--file chart.png --file table.csv --file report.pdf`) and all of them post to a single message with the one `--message` as the comment, matching the Slack UI — instead of looping `send --file` and posting a separate message per file (#364)
+  - All-or-nothing: every path is validated before the first upload, and any per-file failure names the file and the step and posts nothing
+  - `--json` is additive — always emits `file_ids`, with `file_id` kept as the first; the dry-run preview adds a `files` list and `total_size` alongside the existing `file`/`file_size` for the first file
+  - A single `--file` is unchanged
 - **`conversations unread` reports unread thread activity**: with browser auth the output now says whether the threads you follow have unread replies or mentions, so a reply in a thread no longer hides behind "All caught up!" when its channel has nothing unread at the top level (#264)
   - `--json` adds `threads: { has_unreads, mention_count }` next to `unread_channels`; the text output adds a `Threads:` line
   - A workspace-wide summary taken from the same `client.counts` response: no extra API call, and `--types` does not filter it

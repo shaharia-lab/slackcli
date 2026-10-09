@@ -97,6 +97,21 @@ function slackErrorCode(error: any): string | undefined {
   return typeof code === 'string' && code ? code : undefined;
 }
 
+// Name the file (and the step) in a per-file upload failure, so a multi-file
+// upload says WHICH file failed. The error is enriched IN PLACE and re-thrown,
+// so its type, `slackData`, and every other property are preserved — `--json`
+// still reports the same `code`/`slack_error`, only the human message gains the
+// filename. `message` is a plain data property on Error, so assigning it is safe
+// across SlackTransportError and the plain Errors request() throws.
+function throwNamingFile(error: unknown, filename: string, step: string): never {
+  if (error instanceof Error) {
+    error.message = `${step} for ${filename}: ${error.message}`;
+    throw error;
+  }
+  // Non-Error throwables (rare) still get the file and step named.
+  throw new Error(`${step} for ${filename}: ${String(error)}`);
+}
+
 // `@slack/web-api` failures that never produced a Slack answer: no response at
 // all, a non-2xx one, or a 429 the SDK was told not to wait out. Typed like the
 // browser path's, so a caller can tell "Slack could not be reached" from "Slack
@@ -504,37 +519,83 @@ export class SlackClient {
     initial_comment?: string;
     thread_ts?: string;
   } = {}): Promise<ExternalUploadCompleteResponse> {
-    const { filename, size } = await checkUploadFile(filePath);
-    const uploadUrlResponse = await this.request('files.getUploadURLExternal', {
-      filename,
-      length: size,
-    }) as ExternalUploadUrlResponse;
+    return this.uploadFilesExternal(channel, [filePath], options);
+  }
 
-    if (!uploadUrlResponse.upload_url || !uploadUrlResponse.file_id) {
-      throw new Error('Slack API error: missing upload URL or file ID');
+  // Upload one or more local files and share them in a SINGLE message, the way
+  // the Slack UI attaches several files to one post. files.completeUploadExternal
+  // takes a `files` array and a single `initial_comment`, so each path gets its
+  // own getUploadURLExternal + PUT, then one completeUploadExternal call lists
+  // every uploaded file id against the one comment/thread.
+  //
+  // All-or-nothing: every path is validated up front, and any failure (a bad
+  // path, an upload-URL error, a thrown or non-2xx PUT) throws before
+  // completeUpload is called, naming the file and the step while keeping the
+  // error's type and slackData intact. Slack never shares an upload ticket that
+  // completeUpload did not reference, so a mid-way failure leaves no partial
+  // message posted.
+  async uploadFilesExternal(channel: string, filePaths: string[], options: {
+    initial_comment?: string;
+    thread_ts?: string;
+  } = {}): Promise<ExternalUploadCompleteResponse> {
+    if (filePaths.length === 0) {
+      throw new InvalidInputError('No files to upload');
     }
 
-    const fileBytes = await readFile(filePath);
-    const uploadStartedAt = performance.now();
-    const uploadResponse = await fetch(uploadUrlResponse.upload_url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-      },
-      body: fileBytes,
-    });
-    logger.info('File upload returned HTTP {http_status}', {
-      http_status: uploadResponse.status,
-      bytes: size,
-      duration_ms: Math.round(performance.now() - uploadStartedAt),
-    });
+    // Validate every file before any Slack call, so a bad path aborts the whole
+    // upload before a single byte is sent.
+    const files = await Promise.all(
+      filePaths.map(async (filePath) => ({ filePath, ...(await checkUploadFile(filePath)) })),
+    );
 
-    if (!uploadResponse.ok) {
-      throw new Error(`File upload failed: HTTP ${uploadResponse.status}`);
+    const uploaded: Array<{ id: string; title: string }> = [];
+    for (const { filePath, filename, size } of files) {
+      let uploadUrlResponse: ExternalUploadUrlResponse;
+      try {
+        uploadUrlResponse = await this.request('files.getUploadURLExternal', {
+          filename,
+          length: size,
+        }) as ExternalUploadUrlResponse;
+      } catch (error) {
+        // e.g. file_upload_size_restricted — name the file while keeping the
+        // error's type and slackData so --json still reports the same code.
+        throwNamingFile(error, filename, 'Upload URL request failed');
+      }
+
+      if (!uploadUrlResponse.upload_url || !uploadUrlResponse.file_id) {
+        throw new Error(`Slack API error: missing upload URL or file ID for ${filename}`);
+      }
+
+      const fileBytes = await readFile(filePath);
+      const uploadStartedAt = performance.now();
+      let uploadResponse: Response;
+      try {
+        uploadResponse = await fetch(uploadUrlResponse.upload_url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+          },
+          body: fileBytes,
+        });
+      } catch (error) {
+        // A thrown fetch (network error) names the file too, not just a non-2xx.
+        throwNamingFile(error, filename, 'File upload failed');
+      }
+      logger.info('File upload returned HTTP {http_status}', {
+        http_status: uploadResponse.status,
+        bytes: size,
+        duration_ms: Math.round(performance.now() - uploadStartedAt),
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`File upload failed for ${filename}: HTTP ${uploadResponse.status}`);
+      }
+
+      uploaded.push({ id: uploadUrlResponse.file_id, title: filename });
     }
 
     const params: Record<string, string> = {
-      files: JSON.stringify([{ id: uploadUrlResponse.file_id, title: filename }]),
+      files: JSON.stringify(uploaded),
       channel_id: channel,
     };
     if (options.initial_comment) params.initial_comment = options.initial_comment;

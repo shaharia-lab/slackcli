@@ -50,6 +50,47 @@ describe('messages command', () => {
     );
   });
 
+  it('exposes a --file option on messages send', () => {
+    expect(longOptions('send')).toContain('--file');
+  });
+
+  it('collects a repeated --file into an array (several attachments, one message)', async () => {
+    const command = createMessagesCommand();
+    const send = command.commands.find((candidate) => candidate.name() === 'send')!;
+    let captured: string[] | undefined;
+    // A no-op action lets parsing complete; the collected --file array is read
+    // from the parsed options the action receives.
+    send.exitOverride().configureOutput({ writeErr: () => {} })
+      .action((options: { file?: string[] }) => { captured = options.file; });
+
+    await command.parseAsync([
+      'send',
+      '--recipient-id=C123',
+      '--message=hi',
+      '--file', 'a.txt',
+      '--file', 'b.txt',
+      '--file', 'c.txt',
+    ], { from: 'user' });
+
+    expect(captured).toEqual(['a.txt', 'b.txt', 'c.txt']);
+  });
+
+  it('rejects --file with --blocks rather than silently dropping the blocks', async () => {
+    const command = createMessagesCommand();
+    command.commands.find((candidate) => candidate.name() === 'send')!
+      .exitOverride()
+      .configureOutput({ writeErr: () => {} });
+
+    await expect(command.parseAsync([
+      'send',
+      '--recipient-id=C123',
+      '--message=Fallback text',
+      '--file', 'a.png',
+      '--file', 'b.png',
+      '--blocks=[]',
+    ], { from: 'user' })).rejects.toThrow(/cannot be used with option/);
+  });
+
   it('exposes an edit subcommand taking channel, timestamp, and message', () => {
     expect(subcommand('edit')).toBeDefined();
     expect(longOptions('edit')).toContain('--channel-id');

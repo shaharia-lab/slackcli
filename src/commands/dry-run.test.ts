@@ -202,7 +202,18 @@ describe('--dry-run', () => {
     const file = join(dir, 'report.txt');
     await Bun.write(file, 'Quarterly report');
     const preview = await runJson(['messages', 'send', '--recipient-id', 'C0123456789', '--file', file, '--message', 'Here']);
-    expect(preview.payload).toEqual({ file, file_size: 16, comment: 'Here' });
+    // Additive shape: the original `file`/`file_size` (now the first file) plus
+    // the full `files` list and total size.
+    expect(preview.payload).toEqual({ file, file_size: 16, files: [file], total_size: 16, comment: 'Here' });
+  });
+
+  it('previews a multi-file upload with its first file, list, total size and comment', async () => {
+    const a = join(dir, 'a.txt');
+    const b = join(dir, 'b.txt');
+    await Bun.write(a, 'alpha');       // 5 bytes
+    await Bun.write(b, 'bravo!');      // 6 bytes
+    const preview = await runJson(['messages', 'send', '--recipient-id', 'C0123456789', '--file', a, '--file', b, '--message', 'Both']);
+    expect(preview.payload).toEqual({ file: a, file_size: 5, files: [a, b], total_size: 11, comment: 'Both' });
   });
 
   it('previews a send to a user without opening the DM', async () => {

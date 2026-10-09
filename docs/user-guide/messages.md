@@ -42,6 +42,9 @@ slackcli messages send --permalink="https://myteam.slack.com/archives/C123456789
 # With a file attached
 slackcli messages send --recipient-id=C1234567890 --message="Here is the file" --file=./report.pdf
 
+# With several files on ONE message (repeat --file)
+slackcli messages send --recipient-id=C1234567890 --message="Weekly report" --file=./chart.png --file=./table.csv --file=./report.pdf
+
 # Message text from a file
 slackcli messages send --recipient-id=C1234567890 --message-file=./release-notes.md
 
@@ -56,14 +59,17 @@ printf '%s' "$REPORT" | slackcli messages send --recipient-id=C1234567890 --mess
 | `--message-file <path>` | Read the message text from a UTF-8 file, or from standard input with `-`; cannot be combined with `--message` |
 | `--thread-ts <ts>` | Post as a reply in this thread |
 | `--permalink <url>` | Replaces `--recipient-id` and `--thread-ts` |
-| `--file <path>` | Attach a file; the message text becomes the comment |
+| `--file <path>` | Attach a file; the message text becomes the comment. Repeatable — pass `--file` once per attachment to share several files in one message (all-or-nothing) |
 | `--blocks <json\|@file>` | Block Kit JSON array; cannot be combined with `--file` |
 | `--json` | Print the delivered message as JSON instead of the human line |
 
 A `--recipient-id` starting with `U` opens a DM first. File uploads need upload
 permission in the workspace — `files:write` for standard tokens. Uploads go
 through Slack's external-upload flow; empty files, directories, and missing
-paths are rejected before anything is sent.
+paths are rejected before anything is sent. Repeating `--file` attaches several
+files to one message, and the upload is all-or-nothing: every path is validated
+before the first file is sent, and if any file fails the error names it and no
+message is posted.
 
 On success the message timestamp is printed — capture it if you want to edit or
 react to the message later, or use `--json` to get it as structured data.
@@ -139,8 +145,10 @@ is delivered. If that lookup fails — a token without the scope, say — the ke
 is **omitted** rather than emitted as `null`; the send itself still succeeded.
 Test for the key rather than assuming it.
 
-With `--file`, the upload flow returns the attached file rather than a message
-timestamp, so that branch emits `channel_id` and `file_id` only.
+With `--file`, the upload flow returns the attached files rather than a message
+timestamp, so that branch emits `channel_id`, `file_id`, and `file_ids` only.
+`file_ids` lists every uploaded file; `file_id` is the first of them, so a
+single-file caller reads it unchanged.
 
 A failure with `--json` writes nothing to stdout and exits `1`; the last line of
 stderr is a JSON error object with a stable `code`. See

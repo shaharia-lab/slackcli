@@ -166,7 +166,9 @@ With `--json` the preview is one object on stdout:
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
   for display and left out when the lookup fails.
 - `payload` is exactly what would be sent: the message `text` and `blocks`;
-  `file`, `file_size` and `comment` for an upload; the `emoji`; the `add` or
+  `file`, `file_size`, the `files` list, `total_size` and `comment` for an
+  upload (`file`/`file_size` describe the first file, `files`/`total_size` cover
+  the whole set — one or many); the `emoji`; the `add` or
   `remove` user IDs for a channel; for a user group, the fields to set, or
   `{ added, removed, next, noop }` where `next` is the full member list the
   write would send. `team` appears when `--team` is passed.

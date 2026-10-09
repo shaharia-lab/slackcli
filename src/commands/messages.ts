@@ -3,7 +3,7 @@ import ora from 'ora';
 import { readFile } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { fetchDrafts, loadActiveDraft, parseDraftLimit, sendDraft, validateSendableDraft } from '../lib/drafts.ts';
-import { error, formatDraftList, success, warning, writeJson } from '../lib/formatter.ts';
+import { error, formatDraftList, success, warning, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import {
   type ResolvedThreadTarget,
@@ -538,7 +538,7 @@ export function createMessagesCommand(): Command {
           return;
         }
         if (drafts.length > 0) {
-          console.log('\n' + formatDraftList(drafts));
+          writeText('\n' + formatDraftList(drafts));
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to list drafts' });

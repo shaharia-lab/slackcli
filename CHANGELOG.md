@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Surrounding colons are stripped as in `emoji get` (`--filter :kiro:` equals `--filter kiro`); an empty value fails with `invalid_input` instead of matching everything
 - **Releases are announced on Discord**: after a stable release is published and the Homebrew tap is updated, the release workflow posts the version, a link to the GitHub Release, the release notes and the Homebrew install hint to the Shaharia Lab Discord release channel. Pre-release tags are not announced, a re-run does not post twice, and a Discord failure never fails the release (#358)
 
+### Fixed
+- **Large text output no longer truncates on a slow pipe**: every command's human-readable (non-`--json`) result is now written through `process.stdout.write` with backpressure instead of `console.log`, so output over ~64 KiB piped to a slow reader arrives in full — matching the `--json` path and fixing the silent truncation at the pipe-buffer boundary (exit code 0, no error) (#373)
+  - A shared `writeText()` sink in `src/lib/formatter.ts` (twin of `writeJson()`) replaces `console.log` at every command result print across the command layer; `success()` and `info()` route through it too
+  - A guard test (`src/output-sink.test.ts`) fails the build if any `src/commands/` file reintroduces `console.log`, so the hazard cannot creep back one call site at a time
+  - Closes the non-JSON half of the stdout-drain hazard that [#73](https://github.com/shaharia-lab/slackcli/issues/73) fixed for JSON and [#77](https://github.com/shaharia-lab/slackcli/issues/77) tracked
+
 ## [0.14.0] - 2026-10-03
 
 ### Added

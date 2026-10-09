@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { formatChannelList, formatConversationHistory, formatUnreadChannels, formatUnreadThreads, warning, writeJson } from '../lib/formatter.ts';
+import { formatChannelList, formatConversationHistory, formatUnreadChannels, formatUnreadThreads, warning, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { fetchMessage } from '../lib/message.ts';
@@ -395,11 +395,11 @@ export function createConversationsCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatChannelList(channels, users));
+        writeText('\n' + formatChannelList(channels, users));
 
         if (nextCursor) {
-          console.log(chalk.dim('\nMore results available. Next page:'));
-          console.log(chalk.cyan(`  slackcli conversations list --cursor "${nextCursor}"\n`));
+          writeText(chalk.dim('\nMore results available. Next page:'));
+          writeText(chalk.cyan(`  slackcli conversations list --cursor "${nextCursor}"\n`));
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch conversations', hint: 'Run "slackcli auth list" to check your authentication.' });
@@ -529,7 +529,7 @@ export function createConversationsCommand(): Command {
             })),
           }, fields));
         } else {
-          console.log('\n' + formatConversationHistory(channelId, messages, users));
+          writeText('\n' + formatConversationHistory(channelId, messages, users));
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch messages' });
@@ -613,7 +613,7 @@ export function createConversationsCommand(): Command {
             })),
           }, fields));
         } else {
-          console.log('\n' + formatConversationHistory(channelId, [msg], users));
+          writeText('\n' + formatConversationHistory(channelId, [msg], users));
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch message' });
@@ -672,9 +672,9 @@ export function createConversationsCommand(): Command {
           return;
         }
 
-        if (channels.length > 0) console.log('\n' + formatUnreadChannels(channels));
+        if (channels.length > 0) writeText('\n' + formatUnreadChannels(channels));
         if (threads && threadsUnread) {
-          console.log((channels.length > 0 ? '' : '\n') + formatUnreadThreads(threads));
+          writeText((channels.length > 0 ? '' : '\n') + formatUnreadThreads(threads));
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch unread conversations' });
@@ -742,13 +742,13 @@ export function createConversationsCommand(): Command {
           return;
         }
 
-        console.log('');
-        console.log(chalk.bold(`👥 Members of ${channelId} (${trimmed.length})`));
-        trimmed.forEach((id) => console.log(`  ${id}`));
+        writeText('');
+        writeText(chalk.bold(`👥 Members of ${channelId} (${trimmed.length})`));
+        trimmed.forEach((id) => writeText(`  ${id}`));
 
         if (nextCursor) {
-          console.log(chalk.dim('\nMore results available. Next page:'));
-          console.log(chalk.cyan(`  slackcli conversations members list ${channelId} --cursor "${nextCursor}"\n`));
+          writeText(chalk.dim('\nMore results available. Next page:'));
+          writeText(chalk.cyan(`  slackcli conversations members list ${channelId} --cursor "${nextCursor}"\n`));
         }
       } catch (err: any) {
         // Honest degradation: on an enterprise grid, conversations.members is

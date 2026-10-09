@@ -7,6 +7,7 @@ import {
   formatPeopleSearchResults,
   formatPaginationHint,
   writeJson,
+  writeText,
 } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
@@ -154,11 +155,11 @@ export function createSearchCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatSearchMessages(query, matches, total));
+        writeText('\n' + formatSearchMessages(query, matches, total));
 
         const pagination = response.messages?.pagination;
         if (pagination) {
-          console.log(formatPaginationHint(pagination.page, pagination.page_count));
+          writeText(formatPaginationHint(pagination.page, pagination.page_count));
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to search messages' });
@@ -214,7 +215,7 @@ export function createSearchCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatChannelSearchResults(query, channels, total));
+        writeText('\n' + formatChannelSearchResults(query, channels, total));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to search channels' });
       }
@@ -291,7 +292,7 @@ export function createSearchCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatPeopleSearchResults(query, people, total));
+        writeText('\n' + formatPeopleSearchResults(query, people, total));
 
         // Mirror `users info`/`users list`: when --resolve-fields is set, show the
         // labelled custom fields in text output too, not only in --json.
@@ -299,10 +300,10 @@ export function createSearchCommand(): Command {
           people.forEach((p: any, i: number) => {
             const entries = Object.entries(resolvedByPerson![i]).filter(([, v]) => v);
             if (entries.length === 0) return;
-            console.log(`  ${p.name || p.id} fields:`);
-            for (const [label, value] of entries) console.log(`    ${label}: ${value}`);
+            writeText(`  ${p.name || p.id} fields:`);
+            for (const [label, value] of entries) writeText(`    ${label}: ${value}`);
           });
-          console.log('');
+          writeText('');
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to search people' });

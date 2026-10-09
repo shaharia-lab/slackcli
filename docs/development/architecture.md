@@ -323,21 +323,31 @@ Each is dependency-free and pure, so each is directly testable:
 
 ## Output
 
-`src/lib/formatter.ts` holds every chalk-coloured renderer plus `success()`,
-`error()`, `info()`, `warning()`.
+`src/lib/formatter.ts` holds every chalk-coloured renderer plus `writeText()`,
+`writeJson()`, `success()`, `error()`, `info()`, `warning()`.
 
-One rule with teeth — read the comment above `writeJson()` before changing
-anything about output:
+Every command result print goes through one of two stdout sinks —
+`writeJson()` for `--json` and `writeText()` for text — never `console.log`.
+Both use `process.stdout.write`; `success()` and `info()` are built on
+`writeText()`. Diagnostics stay off stdout: `error()` and `warning()` write to
+stderr (so `--json` stdout carries exactly one object), and an error hint that
+accompanies them uses `console.error`.
 
-> **Never call `process.exit()` after `writeJson()`.** `ora` materialises Bun's
-> Node-compat `WriteStream` at import time, which routes stdout through an async
-> path. Exiting immediately drops everything past the 64 KiB pipe buffer, giving
-> you silently truncated JSON *with exit code 0*. Set `process.exitCode` and
-> return instead.
+One rule with teeth — read the comment above `writeJson()`/`writeText()` before
+changing anything about output:
 
-That is [issue #73](https://github.com/shaharia-lab/slackcli/issues/73), and
-[#77](https://github.com/shaharia-lab/slackcli/issues/77) tracks the same hazard
-on the non-JSON paths.
+> **Never call `process.exit()` after `writeJson()` or `writeText()`.** `ora`
+> materialises Bun's Node-compat `WriteStream` at import time, which routes
+> stdout through an async path. Exiting immediately drops everything past the
+> 64 KiB pipe buffer, giving you silently truncated output *with exit code 0* —
+> invalid JSON on the `--json` path, a short list on the text path. Set
+> `process.exitCode` and return instead.
+
+That is [issue #73](https://github.com/shaharia-lab/slackcli/issues/73) for the
+JSON path and [#373](https://github.com/shaharia-lab/slackcli/issues/373) for the
+text path (the hazard [#77](https://github.com/shaharia-lab/slackcli/issues/77)
+tracked). `console.log` is the trap both sinks exist to avoid, so a guard test
+(`src/output-sink.test.ts`) fails the build if any `src/commands/` file calls it.
 
 ### Failures
 

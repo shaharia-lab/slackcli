@@ -3,7 +3,9 @@ import ora from 'ora';
 import { readFile } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { fetchDrafts, loadActiveDraft, parseDraftLimit, sendDraft, validateSendableDraft } from '../lib/drafts.ts';
-import { error, formatDraftList, success, warning, writeJson, writeText } from '../lib/formatter.ts';
+import {
+  error, formatDraftList, formatScheduledConfirmation, formatScheduledList, success, warning, writeJson, writeText,
+} from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import {
   type ResolvedThreadTarget,
@@ -15,16 +17,18 @@ import {
   checkUploadFile,
   DRAFT_CREATE_AUTH_MESSAGE,
   DRAFT_DELETE_AUTH_MESSAGE,
+  SCHEDULED_MESSAGES_AUTH_MESSAGE,
   type SlackClient,
 } from '../lib/slack-client.ts';
 import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
-import type { DryRunTarget } from '../types/index.ts';
+import type { DryRunTarget, ScheduledMessageSummary } from '../types/index.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { confirmWrite } from './usergroups.ts';
 import { failCommand } from '../lib/command-errors.ts';
-import { InvalidInputError } from '../lib/cli-errors.ts';
+import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 import { resolveIdentifier } from '../lib/name-resolver.ts';
 import { resolveMessageText } from '../lib/message-input.ts';
+import { parseScheduleTime } from '../lib/schedule-time.ts';
 
 // Help text shared by several commands below.
 const THREAD_TS_NOTE =
@@ -42,6 +46,7 @@ const RECIPIENT_NOTE =
   '--recipient-id takes a channel ID (C...), a user ID (U..., opens a DM), a Slack URL, ' +
   'a channel name (#general) or a user (@alice, alice@example.com). A bare name must match ' +
   'only a channel or only a user; if both exist, add # or @.';
+const LIMIT_NOTE = '--limit must be a positive integer (default 100).';
 const MESSAGE_ID_FORMATS_NOTE =
   '--channel-id takes a channel ID, a Slack URL or a channel name; --timestamp takes 1712345678.123456 or p1712345678123456.';
 
@@ -143,7 +148,7 @@ const HELP = {
       '{ draft_count, drafts: [{ draft_id, channel_id, text, date_created, file_ids, thread_ts?, date_scheduled? }] }. ' +
       'No drafts gives { draft_count: 0, drafts: [] }.',
     browserOnly: true,
-    notes: ['--limit must be a positive integer (default 100).'],
+    notes: [LIMIT_NOTE],
   },
   draft: {
     summary: 'Create an unsent draft for a human to review',
@@ -203,6 +208,91 @@ const HELP = {
     browserOnly: true,
     confirms: true,
     dryRun: true,
+  },
+  schedule: {
+    summary: 'Schedule a message to be posted later',
+    description:
+      'Hand a message to Slack to post at a future time, in a channel, a DM or a thread. Slack delivers it, ' +
+      'so nothing has to stay running. List what is pending with "messages list-scheduled" and cancel with ' +
+      '"messages delete-scheduled". To post now, use "messages send".',
+    examples: [
+      'slackcli messages schedule --recipient-id C0123456789 --message "Standup in 10 minutes" --at "2026-10-12 09:50"',
+      'slackcli messages schedule --recipient-id="#general" --message "Deploy window closed" --in 2h',
+      'slackcli messages schedule --recipient-id C0123456789 --message-file ./notes.md --at 2026-10-12T09:50:00+02:00 --json',
+      'slackcli messages schedule --recipient-id U0123456789 --message "Reminder" --in 1h30m --dry-run',
+    ],
+    json:
+      '{ channel_id, scheduled_message_id, post_at, thread_ts? }. post_at is Unix seconds; ' +
+      'thread_ts is there only for a reply in a thread. channel_id is always the resolved ID.',
+    standardOnly: true,
+    notes: [
+      'Exactly one of --at or --in is required. --at takes Unix seconds, ISO 8601 with an offset or Z ' +
+        '(2026-10-12T09:50:00+02:00), or a local date and time ("2026-10-12 09:50", seconds optional) ' +
+        'read in this machine\'s timezone. --in takes minutes, hours and days, each at most once: 45m, 2h, 3d, 1h30m.',
+      'The time must be in the future and at most 120 days ahead. A date that does not exist, or a local ' +
+        'time skipped when the clocks go forward, is refused; a local time that happens twice when the clocks ' +
+        'go back is read as the first of the two. The resolved time is always echoed with its timezone.',
+      'Slack allows 30 scheduled messages per channel in any 5-minute window, and a scheduled message ' +
+        'cannot carry a file.',
+      RECIPIENT_NOTE,
+      CHANNEL_NAME_NOTE,
+      USER_NAME_NOTE,
+      THREAD_TS_NOTE,
+      '--permalink replaces --recipient-id and --thread-ts: a message link schedules a reply in its thread, ' +
+        'a channel link schedules in the channel.',
+      MESSAGE_TEXT_NOTE,
+      STDIN_NOTE,
+      'With --blocks the message text is the notification fallback.',
+      'Schedules immediately, with no confirmation prompt.',
+      'A dry run to a user ID does not open the DM; it previews the user as the target.',
+    ],
+    dryRun: true,
+  },
+  listScheduled: {
+    summary: 'List your pending scheduled messages',
+    fields: 'each item of scheduled_messages',
+    description:
+      'List the messages waiting to be posted, sorted by the time they will post. Use it to find the ID ' +
+      'for "messages delete-scheduled".',
+    examples: [
+      'slackcli messages list-scheduled',
+      'slackcli messages list-scheduled --recipient-id C0123456789 --limit 25 --json',
+    ],
+    json:
+      '{ scheduled_count, scheduled_messages: [{ scheduled_message_id, channel_id, post_at, date_created, text }] }. ' +
+      'post_at and date_created are Unix seconds. None pending gives { scheduled_count: 0, scheduled_messages: [] }.',
+    standardOnly: true,
+    notes: [
+      'Slack returns only the messages scheduled with the token in use; ones scheduled in the Slack app ' +
+        'or by another app are not listed.',
+      '--recipient-id keeps one conversation; it takes what "messages send" takes (ID, Slack URL, ' +
+        '#channel, @handle or email). A user is looked up as your DM with them, which opens that DM ' +
+        'if it does not exist yet.',
+      LIMIT_NOTE,
+      'With more pending than --limit, the soonest ones are kept.',
+    ],
+  },
+  deleteScheduled: {
+    summary: 'Cancel a pending scheduled message',
+    description:
+      'Cancel a scheduled message before it is posted. Get the ID from "messages schedule" or ' +
+      '"messages list-scheduled".',
+    examples: [
+      'slackcli messages delete-scheduled Q0123ABCDEF',
+      'slackcli messages delete-scheduled Q0123ABCDEF --yes --json',
+      'slackcli messages delete-scheduled Q0123ABCDEF --dry-run',
+    ],
+    json: '{ scheduled_message_id, channel_id, deleted: true }.',
+    standardOnly: true,
+    confirms: true,
+    dryRun: true,
+    notes: [
+      'Exception to the rule above: the pending list is read (chat.scheduledMessages.list) before the prompt, ' +
+        'to find the message\'s channel, so a refusal still makes that read, but cancels nothing.',
+      'An ID that is not in the pending list (already posted, already cancelled, or scheduled with another ' +
+        'token) exits 1 with the error code not_found.',
+      'Slack refuses to cancel a message in the last 60 seconds before it posts.',
+    ],
   },
 } satisfies Record<string, CommandHelp>;
 
@@ -300,9 +390,13 @@ function resolveTargetArg(
 // The recipient of a send or draft: --recipient-id (an ID, link or name) or
 // --permalink, resolved to a channel or user ID. A user's DM is not opened
 // yet, so a dry run can stop here without opening it.
+//
+// `check` runs on the client before anything is asked of Slack, for a command
+// that must refuse an auth type before its first call.
 async function resolveRecipient(
   options: { permalink?: string; recipientId?: string; threadTs?: string; workspace?: string },
   spinner: ReturnType<typeof ora>,
+  check?: (client: SlackClient) => void,
 ): Promise<{ client: SlackClient; recipientId: string; target: ResolvedThreadTarget }> {
   const target = resolveThreadTarget(
     { permalink: options.permalink, channelId: options.recipientId, threadTs: options.threadTs },
@@ -311,6 +405,7 @@ async function resolveRecipient(
   );
 
   const client = await getAuthenticatedClient(options.workspace);
+  check?.(client);
   warnOnWorkspaceMismatch(client, target.workspace);
 
   const recipientId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
@@ -323,6 +418,27 @@ async function openRecipient(client: SlackClient, recipientId: string, spinner: 
   spinner.text = 'Opening direct message...';
   const dmResponse = await client.openConversation(recipientId);
   return dmResponse.channel.id;
+}
+
+// The scheduled-message commands refuse browser session tokens before any
+// Slack call: name resolution would otherwise run first and then fail anyway.
+function requireSchedulingAuth(client: SlackClient): void {
+  client.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+}
+
+// The pending scheduled message with this ID. Slack's cancel call needs the
+// channel as well as the ID, and the pending list is the only place to get it.
+async function loadScheduledMessage(client: SlackClient, id: string): Promise<ScheduledMessageSummary> {
+  const pending = await client.listScheduledMessages();
+  const found = pending.find((message) => message.scheduled_message_id === id);
+  if (!found) {
+    throw new NotFoundError(
+      `Scheduled message ${id} is not pending`,
+      'It may already be posted or cancelled, or scheduled with another token. ' +
+        'Run "slackcli messages list-scheduled" to see what is pending.',
+    );
+  }
+  return found;
 }
 
 export function createMessagesCommand(): Command {
@@ -703,6 +819,167 @@ export function createMessagesCommand(): Command {
         else success(`Deleted draft ${draftId}`);
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to delete draft' });
+      }
+    });
+
+  // Schedule a message for later
+  describeCommand(messages.command('schedule'), HELP.schedule)
+    .option('--recipient-id <id>', 'Channel/user ID, Slack URL, #channel, @handle or email')
+    .option('--message <text>', 'Message text content')
+    .addOption(
+      new Option('--message-file <path>', 'Read the message text from a UTF-8 file, or stdin with -')
+        .conflicts('message')
+    )
+    .option('--thread-ts <timestamp>', 'Thread to schedule a reply in (1234567890.123456 or p1234567890123456)')
+    .option('--permalink <url>', 'Slack message link; schedules a reply in that message\'s thread (replaces --recipient-id and --thread-ts)')
+    .option('--blocks <json|@file>', 'Block Kit JSON array, inline or loaded from @file')
+    .option('--at <time>', 'When to post: Unix seconds, ISO 8601 with an offset, or a local "YYYY-MM-DD HH:MM"')
+    .option('--in <duration>', 'How long from now to post: 45m, 2h, 3d, 1h30m')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output the scheduled message as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (options) => {
+      const spinner = ora('Scheduling message...').start();
+
+      try {
+        const message = await resolveMessageText(options);
+        const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
+        // After the text is read, so a slow pipe on stdin does not eat into --in.
+        const postAt = parseScheduleTime({ at: options.at, in: options.in });
+        const { client, recipientId, target } = await resolveRecipient(options, spinner, requireSchedulingAuth);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(
+              client,
+              'schedule message',
+              recipientTarget(recipientId, target.threadTs),
+              { post_at: postAt, text: message, blocks },
+              { lookupName: true },
+            ),
+            options.json,
+          );
+          return;
+        }
+
+        const channelId = await openRecipient(client, recipientId, spinner);
+
+        spinner.text = 'Scheduling message...';
+        const response = await client.scheduleMessage(channelId, message, postAt, {
+          thread_ts: target.threadTs,
+          blocks,
+        });
+        const scheduled = {
+          channel_id: channelId,
+          scheduled_message_id: response.scheduled_message_id as string,
+          post_at: typeof response.post_at === 'number' ? response.post_at : postAt,
+          ...(target.threadTs ? { thread_ts: target.threadTs } : {}),
+        };
+
+        spinner.succeed('Message scheduled');
+        if (options.json) {
+          writeJson(scheduled);
+        } else {
+          writeText(formatScheduledConfirmation(scheduled));
+        }
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to schedule message' });
+      }
+    });
+
+  // List pending scheduled messages
+  describeCommand(messages.command('list-scheduled'), HELP.listScheduled)
+    .option('--recipient-id <id>', 'Only this conversation: channel/user ID, Slack URL, #channel, @handle or email')
+    .option('--limit <number>', 'Maximum number of scheduled messages to return', '100')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output scheduled messages as JSON', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
+    .action(async (options) => {
+      const spinner = ora('Fetching scheduled messages...').start();
+
+      try {
+        const fields = fieldsOption(options);
+        const limit = parseDraftLimit(options.limit);
+
+        let client: SlackClient;
+        let channel: string | undefined;
+        if (options.recipientId === undefined) {
+          client = await getAuthenticatedClient(options.workspace);
+          requireSchedulingAuth(client);
+        } else {
+          const recipient = await resolveRecipient(
+            { recipientId: options.recipientId, workspace: options.workspace },
+            spinner,
+            requireSchedulingAuth,
+          );
+          client = recipient.client;
+          channel = await openRecipient(client, recipient.recipientId, spinner);
+        }
+
+        spinner.text = 'Fetching scheduled messages...';
+        const scheduled = await client.listScheduledMessages({ channel, limit });
+        spinner.succeed(
+          scheduled.length === 0 ? 'No scheduled messages found' : `Found ${scheduled.length} scheduled messages`,
+        );
+
+        if (options.json) {
+          writeJson(applyFields(
+            'messages list-scheduled',
+            { scheduled_count: scheduled.length, scheduled_messages: scheduled },
+            fields,
+          ));
+          return;
+        }
+        if (scheduled.length > 0) {
+          writeText('\n' + formatScheduledList(scheduled));
+        }
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to list scheduled messages' });
+      }
+    });
+
+  // Cancel a pending scheduled message
+  describeCommand(messages.command('delete-scheduled'), HELP.deleteScheduled)
+    .argument('<scheduled-message-id>', 'ID returned by messages schedule or list-scheduled')
+    .option('--yes', 'Confirm cancelling without a prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output the cancelled message ID as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (rawId, options) => {
+      const spinner = ora('Loading scheduled message...').start();
+      try {
+        const id = rawId.trim();
+        if (!id) throw new InvalidInputError('Scheduled message ID cannot be empty');
+        const client = await getAuthenticatedClient(options.workspace);
+        requireSchedulingAuth(client);
+        const pending = await loadScheduledMessage(client, id);
+        spinner.stop();
+        if (options.dryRun) {
+          emitDryRun(
+            await buildPreview(
+              client,
+              'delete scheduled message',
+              { kind: 'scheduled_message', id },
+              { channel_id: pending.channel_id, post_at: pending.post_at },
+            ),
+            options.json,
+          );
+          return;
+        }
+        if (!(await confirmWrite(`Cancel scheduled message ${id} in ${pending.channel_id}?`, options.yes, options.json))) {
+          // confirmWrite() set the exit code and, under --json, reported the refusal.
+          if (!options.json) error('Scheduled message was not cancelled');
+          return;
+        }
+        spinner.start('Cancelling scheduled message...');
+        await client.deleteScheduledMessage(pending.channel_id, id);
+        spinner.succeed('Scheduled message cancelled');
+        const result = { scheduled_message_id: id, channel_id: pending.channel_id, deleted: true };
+        if (options.json) writeJson(result);
+        else success(`Cancelled scheduled message ${id}`);
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to cancel scheduled message' });
       }
     });
 

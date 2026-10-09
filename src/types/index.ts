@@ -170,6 +170,30 @@ export interface DraftSummary {
   date_scheduled?: number;
 }
 
+// One pending scheduled message as `chat.scheduledMessages.list` returns it.
+export interface SlackScheduledMessage {
+  id?: string;
+  channel_id?: string;
+  post_at?: number;
+  date_created?: number;
+  text?: string;
+}
+
+export interface SlackScheduledMessageListResponse {
+  ok: boolean;
+  scheduled_messages?: SlackScheduledMessage[];
+  response_metadata?: { next_cursor?: string };
+}
+
+// The projection emitted by `messages list-scheduled`.
+export interface ScheduledMessageSummary {
+  scheduled_message_id: string;
+  channel_id: string;
+  post_at: number;
+  date_created: number;
+  text: string;
+}
+
 export interface SlackAuthTestResponse {
   ok: boolean;
   url: string;
@@ -558,7 +582,7 @@ export interface DryRunWorkspace {
 }
 
 export interface DryRunTarget {
-  // channel | user | message | draft | usergroup
+  // channel | user | message | draft | usergroup | scheduled_message
   kind: string;
   // Absent only when the write creates the target (usergroups create).
   id?: string;

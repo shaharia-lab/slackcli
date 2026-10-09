@@ -168,6 +168,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Upload a file with a message | `slackcli messages send --file=./report.pdf …` | [messages](docs/user-guide/messages.md) |
 | Post rich Block Kit content | `slackcli messages send --blocks=@blocks.json …` | [messages](docs/user-guide/messages.md) |
 | Review active drafts | `slackcli messages list-drafts` | [messages](docs/user-guide/messages.md) |
+| Post a message later | `slackcli messages schedule --in=2h …` | [messages](docs/user-guide/messages.md#messages-schedule) |
 | Script it / feed an AI agent | `… --json \| jq` | [scripting & JSON](docs/user-guide/scripting.md) |
 | Juggle several workspaces | `slackcli conversations list --workspace=automation-bot` | [workspaces](docs/user-guide/workspaces.md) |
 | Fix something that broke | `slackcli auth whoami` | [troubleshooting](docs/user-guide/troubleshooting.md) |
@@ -230,7 +231,8 @@ flowchart LR
 
 Browser session tokens can create, list, send, and delete **drafts**, which a Slack app simply cannot do, and
 they back `saved list` and `conversations unread` with Slack's own native endpoints
-rather than approximations. Slack app tokens are more stable and survive a browser logout.
+rather than approximations. Slack app tokens are more stable and survive a browser logout, and
+only they can **schedule** a message for later.
 
 `slackcli auth extract-tokens` prints the manual walkthrough.
 The security model, the OAuth scopes each command needs, and what `login-auto` does with
@@ -306,7 +308,7 @@ slackcli conversations mark-read C1234567890 --ts 1234567890.123456   # acknowle
 </details>
 
 <details>
-<summary><code>messages</code> — send, reply, edit, react, and manage drafts</summary>
+<summary><code>messages</code> — send, reply, edit, react, schedule, and manage drafts</summary>
 
 <br>
 
@@ -324,12 +326,17 @@ slackcli messages draft --recipient-id=C123 --message="Draft for later"
 slackcli messages list-drafts --json
 slackcli messages send-draft Dr123 --yes --json               # post, then remove draft
 slackcli messages delete-draft Dr456 --yes                    # discard draft
+slackcli messages schedule --recipient-id=C123 --message="Standup in 10" --at="2026-10-12 09:50"
+slackcli messages schedule --recipient-id=C123 --message="Window closed" --in=2h --json
+slackcli messages list-scheduled --json
+slackcli messages delete-scheduled Q123 --yes                 # cancel before it posts
 ```
 
 > [!NOTE]
 > Draft commands require browser session tokens. Slack exposes
 > no public API for drafts, so these commands use undocumented web-client endpoints that
-> may change without notice.
+> may change without notice. The scheduling commands are the reverse: they use Slack's
+> public API and require a Slack app token (`xoxb`/`xoxp`).
 
 📄 [messages](docs/user-guide/messages.md)
 

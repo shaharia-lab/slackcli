@@ -72,6 +72,8 @@ function answer(method: string, params: Record<string, unknown>): unknown {
       return { ok: true, channels: [{ id: 'C0123456789', name: 'deploys' }] };
     case 'users.list':
       return { ok: true, members: [{ id: 'U0123456789', name: 'alice' }] };
+    case 'chat.scheduledMessages.list':
+      return { ok: true, scheduled_messages: [{ id: 'Q0123ABCDEF', channel_id: 'C0123456789', post_at: 1791791400 }] };
     case 'users.lookupByEmail':
       return { ok: true, user: { id: 'U0123456789' } };
     default:
@@ -139,7 +141,7 @@ describe('--dry-run', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  // All 17 writes: a preview, exit 0, no prompt, reads only.
+  // The 17 writes that work on browser tokens: a preview, exit 0, no prompt, reads only.
   it.each([
     [['messages', 'send', '--recipient-id', 'C0123456789', '--message', 'Deploy done'], 'send message'],
     [['messages', 'edit', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100', '--message', 'Fixed'], 'edit message'],
@@ -165,6 +167,19 @@ describe('--dry-run', () => {
       workspace: { name: 'Acme Corp', id: 'T0123456789', profile: 'acme' },
     });
     expect(Object.keys(preview).sort()).toEqual(['action', 'dry_run', 'payload', 'target', 'workspace']);
+    expect(methods.every((method) => READ_METHODS.has(method))).toBe(true);
+    expect(stderr).not.toContain('[y/N]');
+  });
+
+  // The two scheduled-message writes (#379) need a standard token.
+  it.each([
+    [['messages', 'schedule', '--recipient-id', 'C0123456789', '--message', 'Standup', '--in', '1h'], 'schedule message'],
+    [['messages', 'delete-scheduled', 'Q0123ABCDEF'], 'delete scheduled message'],
+  ])('%j previews without writing', async (argv, action) => {
+    const preview = await runJson(argv, STANDARD);
+    expect(preview).toMatchObject({ dry_run: true, action, workspace: { name: 'Acme Corp', id: 'T0123456789' } });
+    expect(Object.keys(preview).sort()).toEqual(['action', 'dry_run', 'payload', 'target', 'workspace']);
+    expect(methods.length).toBeGreaterThan(0);
     expect(methods.every((method) => READ_METHODS.has(method))).toBe(true);
     expect(stderr).not.toContain('[y/N]');
   });

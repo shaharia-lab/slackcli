@@ -10,11 +10,12 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 `search messages`, `search channels`,
 `search people`, `saved list`, `canvas list`, `canvas read`, `team info`,
 `usergroups list`, `usergroups read`, `emoji list`, `emoji get`, `files info`,
-`files read`, `users info`, `users list`, `messages list-drafts`, `auth whoami`,
-`auth list`.
+`files read`, `users info`, `users list`, `messages list-drafts`,
+`messages list-scheduled`, `auth whoami`, `auth list`.
 
 The writing commands support it too — `messages send`, `messages edit`,
-`messages draft`, `messages send-draft`, `messages delete-draft`, the `usergroups` write verbs (`create`, `update`, `add`,
+`messages draft`, `messages send-draft`, `messages delete-draft`, `messages schedule`,
+`messages delete-scheduled`, the `usergroups` write verbs (`create`, `update`, `add`,
 `remove`, `enable`, `disable`), the `conversations` membership write/self
 verbs (`members add`, `members remove`, `join`, `leave`), and
 `conversations mark-read` — where it returns the
@@ -124,6 +125,7 @@ Useful field sets, and what each command projects:
 | `emoji get` | the emoji record | `name,url` |
 | `team info` | the workspace record | `id,name,domain` |
 | `messages list-drafts` | each of `drafts` | `draft_id,channel_id,text` |
+| `messages list-scheduled` | each of `scheduled_messages` | `scheduled_message_id,channel_id,post_at` |
 
 Each command's `--help` lists its full `--json` shape. `conversations members
 list` returns plain IDs, so it has no `--fields`.
@@ -131,7 +133,8 @@ list` returns plain IDs, so it has no `--fields`.
 ## `--dry-run`
 
 Every command that changes something in Slack takes `--dry-run`:
-`messages send`, `edit`, `react`, `draft`, `send-draft`, `delete-draft`;
+`messages send`, `edit`, `react`, `draft`, `send-draft`, `delete-draft`,
+`schedule`, `delete-scheduled`;
 `conversations members add`, `members remove`, `join`, `leave`, `mark-read`; and
 `usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.
 
@@ -162,16 +165,19 @@ With `--json` the preview is one object on stdout:
 ```
 
 - `action` names the write: `send message`, `edit message`, `add reaction`,
-  `create draft`, `send draft`, `delete draft`, `add channel members`,
+  `create draft`, `send draft`, `delete draft`, `schedule message`,
+  `delete scheduled message`, `add channel members`,
   `remove channel members`, `join channel`, `leave channel`,
   `mark conversation read`,
   `create user group`, `update user group`, `add user group members`,
   `remove user group members`, `enable user group`, `disable user group`.
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
-  `message` (with `ts`), `draft` or `usergroup`. `thread_ts` is set for a
+  `message` (with `ts`), `draft`, `scheduled_message` or `usergroup`. `thread_ts` is set for a
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
   for display and left out when the lookup fails.
 - `payload` is exactly what would be sent: the message `text` and `blocks`;
+  `post_at` (Unix seconds) for a scheduled message, and for cancelling one the
+  `channel_id` and `post_at` of the message found;
   `file`, `file_size`, the `files` list, `total_size` and `comment` for an
   upload (`file`/`file_size` describe the first file, `files`/`total_size` cover
   the whole set — one or many); the `emoji`; the `add` or
@@ -181,10 +187,10 @@ With `--json` the preview is one object on stdout:
 - `messages react` has no `--json`, so its preview is text only.
 
 A dry run may make read calls (resolving a user group, reading its members,
-loading a draft, naming the target) but no write call. A failure is the real
+loading a draft, finding a scheduled message, naming the target) but no write call. A failure is the real
 command's failure: invalid input, a missing file, bad Block Kit JSON, an
-unknown group or a draft command on an app token exits `1` with the same
-error. **Slack checks permissions only on the real write**, so a dry run can
+unknown group, a draft command on an app token or a scheduled-message command
+on a browser session exits `1` with the same error. **Slack checks permissions only on the real write**, so a dry run can
 pass where the write is then refused (`missing_scope`, `not_in_channel`, …).
 
 ## Exit codes
@@ -220,13 +226,13 @@ failure line is left out, so that last line parses on its own:
 | `code` | When | What to do |
 |---|---|---|
 | `auth_failed` | Slack refused the stored credentials (`invalid_auth`, `token_expired`, `token_revoked`, `not_authed`, `account_inactive`), a download returned Slack's sign-in page, or no workspace is configured | Log in again; `hint` has the command |
-| `not_found` | The channel, user, message, file, draft, user group, profile or log run does not exist (`channel_not_found`, `user_not_found`, …), or a channel name, `@handle` or email matched nothing | Fix the ID or name |
+| `not_found` | The channel, user, message, file, draft, pending scheduled message, user group, profile or log run does not exist (`channel_not_found`, `user_not_found`, `invalid_scheduled_message_id`, …), or a channel name, `@handle` or email matched nothing | Fix the ID or name |
 | `permission_denied` | The identity may not do this (`missing_scope`, `not_in_channel`, `restricted_action`, `enterprise_is_restricted`, …) | Join the channel, add the scope, or use another profile |
-| `rate_limited` | Slack throttled the call (HTTP 429, `ratelimited`) | Wait, then retry |
-| `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, a channel name or handle that matches more than one ID, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
+| `rate_limited` | Slack throttled the call (HTTP 429, `ratelimited`), or too many messages were scheduled for one channel in a short window (`restricted_too_many`) | Wait, then retry |
+| `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, a channel name or handle that matches more than one ID, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a `--at` or `--in` that is unreadable, in the past or more than 120 days ahead (also Slack's `time_in_past`, `time_too_far`), a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
 | `network` | Slack could not be reached, or answered with a 5xx | Retry |
 | `confirmation_required` | A write needs `--yes` when stdin is not a terminal, or the prompt was declined | Pass `--yes` once the write is confirmed |
-| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth; Slack's `not_allowed_token_type` | Use a profile of the other type |
+| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
 | `unknown` | Anything else | Read `message` |
 
 ```bash
@@ -459,6 +465,10 @@ done
 - **`conversations mark-read` needs `--yes`.** Same rule: it refuses to run
   with a non-zero exit when stdin is not a terminal and `--yes` is absent. `mark-read --json` returns `previous_last_read`; keep it if
   the run may need to be undone. See [Conversations](conversations.md).
+- **`messages delete-scheduled` needs `--yes`.** Same rule: it refuses to cancel
+  with a non-zero exit when stdin is not a terminal and `--yes` is absent. It
+  reads the pending list before asking, so a refusal still makes that one read.
+  See [Messages](messages.md#messages-delete-scheduled).
 - **`--dry-run` never needs `--yes`.** It changes nothing, so it never prompts
   and is not refused when stdin is not a terminal. See [`--dry-run`](#--dry-run).
 - **`files download` needs `--yes` to write outside the working directory.** An

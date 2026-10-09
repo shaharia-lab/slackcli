@@ -171,6 +171,8 @@ uses `describeCommand()` from `src/lib/help.ts`, never a bare `.description()`:
   Required exactly when the command has `--json`.
 - `confirms: true` on a command with `--yes` (adds the standard confirmation
   note); `browserOnly: true` on a command that needs browser session tokens;
+  `standardOnly: true` on one that needs an app token (and add it to
+  `STANDARD_ONLY` in `src/program.test.ts`);
   `dryRun: true` on a command with `--dry-run` (adds the standard dry-run note);
   `fields: 'each item of <list key>'` (or `'the … record'`) on a command with
   `--fields` (adds the standard `--fields` note).

@@ -3,7 +3,7 @@ import type {
   SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThread, UnreadThreads,
   SlackTeam, SlackUsergroup, UsergroupMember,
-  CustomEmoji, DraftSummary, IdentityResult, ProfileCheck,
+  CustomEmoji, DraftSummary, IdentityResult, ProfileCheck, ScheduledMessageSummary,
   DryRunPreview, DryRunTarget,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
@@ -73,6 +73,58 @@ export function formatDraftList(drafts: DraftSummary[], nowMs: number = Date.now
     output += `  ${position} ${chalk.bold(draft.channel_id)} ${ageLabel}\n`;
     output += `     ${preview}\n`;
     output += `     ${chalk.dim(metadata.join(' | '))}\n\n`;
+  });
+
+  return output;
+}
+
+// An absolute time with its timezone name, e.g. "Mon 12 Oct 2026, 09:50 CEST".
+// Used wherever a scheduled time is echoed: a local time typed without an
+// offset is ambiguous to the reader unless the zone it resolved in is shown.
+// Seconds appear only when they are not zero. `timeZone` is for tests; the
+// default is the machine's timezone.
+export function formatScheduleTime(postAt: number, timeZone?: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'short',
+    timeZone,
+  }).formatToParts(new Date(postAt * 1000));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  const seconds = part('second') === '00' ? '' : `:${part('second')}`;
+  const date = `${part('weekday')} ${part('day')} ${part('month')} ${part('year')}`;
+  return `${date}, ${part('hour')}:${part('minute')}${seconds} ${part('timeZoneName')}`;
+}
+
+// What `messages schedule` prints once Slack has accepted the message.
+export function formatScheduledConfirmation(
+  scheduled: { channel_id: string; scheduled_message_id: string; post_at: number; thread_ts?: string },
+  timeZone?: string,
+): string {
+  const lines = [
+    chalk.bold(`Scheduled for ${formatScheduleTime(scheduled.post_at, timeZone)}`),
+    `  Target: ${scheduled.channel_id}`,
+  ];
+  if (scheduled.thread_ts) lines.push(`  Thread: ${scheduled.thread_ts}`);
+  lines.push(`  ID:     ${scheduled.scheduled_message_id}`);
+  return lines.join('\n');
+}
+
+export function formatScheduledList(messages: ScheduledMessageSummary[], timeZone?: string): string {
+  let output = chalk.bold(`⏰ Scheduled Messages (${messages.length})\n\n`);
+
+  messages.forEach((message, index) => {
+    const preview = truncateText(message.text.replace(/\s+/g, ' ').trim(), 120);
+    const position = chalk.dim(`${index + 1}.`);
+    output += `  ${position} ${chalk.bold(message.channel_id)} ${chalk.dim(formatScheduleTime(message.post_at, timeZone))}\n`;
+    output += `     ${preview}\n`;
+    output += `     ${chalk.dim(`id: ${message.scheduled_message_id}`)}\n\n`;
   });
 
   return output;
@@ -771,7 +823,7 @@ export function formatDryRun(preview: DryRunPreview): string {
   ];
   if (preview.target.thread_ts) rows.push(['Thread', preview.target.thread_ts]);
   for (const [key, value] of Object.entries(preview.payload)) {
-    rows.push([dryRunLabel(key), formatDryRunValue(value)]);
+    rows.push([dryRunLabel(key), formatDryRunField(key, value)]);
   }
 
   const width = Math.max(...rows.map(([label]) => label.length)) + 1;
@@ -790,6 +842,7 @@ function formatDryRunTarget(target: DryRunTarget): string {
   if (target.name) text = target.id ? `${text} (${target.name})` : target.name;
   if (target.kind === 'user') text += ', direct message';
   if (target.kind === 'draft') text = `draft ${text}`;
+  if (target.kind === 'scheduled_message') text = `scheduled message ${text}`;
   if (target.ts) text += `, message ${target.ts}`;
   return text;
 }
@@ -797,6 +850,12 @@ function formatDryRunTarget(target: DryRunTarget): string {
 function dryRunLabel(key: string): string {
   const words = key.replaceAll('_', ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// A post_at is Unix seconds; a reader needs the time it stands for beside it.
+function formatDryRunField(key: string, value: unknown): string {
+  if (key === 'post_at' && typeof value === 'number') return `${value} (${formatScheduleTime(value)})`;
+  return formatDryRunValue(value);
 }
 
 function formatDryRunValue(value: unknown): string {

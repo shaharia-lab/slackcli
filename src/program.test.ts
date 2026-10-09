@@ -17,6 +17,14 @@ const BROWSER_ONLY = new Set([
   'slackcli messages delete-draft',
 ]);
 
+// Commands that only work with a standard app token (#379): Slack refuses its
+// scheduling API to browser session tokens. Their help must say so.
+const STANDARD_ONLY = new Set([
+  'slackcli messages schedule',
+  'slackcli messages list-scheduled',
+  'slackcli messages delete-scheduled',
+]);
+
 // Every command that writes to Slack takes --dry-run (#328). A new write
 // command belongs here; commands that only change local state do not.
 const SLACK_WRITES = new Set([
@@ -26,6 +34,8 @@ const SLACK_WRITES = new Set([
   'slackcli messages draft',
   'slackcli messages send-draft',
   'slackcli messages delete-draft',
+  'slackcli messages schedule',
+  'slackcli messages delete-scheduled',
   'slackcli conversations members add',
   'slackcli conversations members remove',
   'slackcli conversations join',
@@ -129,6 +139,7 @@ describe('command tree help (#324)', () => {
     // A --yes flag means the command gates on confirmation.
     expect(Boolean(help.confirms)).toBe(has(cmd, '--yes'));
     expect(Boolean(help.browserOnly)).toBe(BROWSER_ONLY.has(path));
+    expect(Boolean(help.standardOnly)).toBe(STANDARD_ONLY.has(path));
     // The Slack writes, and only they, take --dry-run and say so in help.
     expect({ path, dryRun: has(cmd, '--dry-run') }).toEqual({ path, dryRun: SLACK_WRITES.has(path) });
     expect(Boolean(help.dryRun)).toBe(SLACK_WRITES.has(path));
@@ -147,6 +158,11 @@ describe('command tree help (#324)', () => {
   it('names only real commands in the --fields table', () => {
     const paths = new Set(runnable.map(commandPath));
     for (const path of FIELDS_COMMANDS) expect({ path, exists: paths.has(path) }).toEqual({ path, exists: true });
+  });
+
+  it('names only real commands in the standard-only list', () => {
+    const paths = new Set(runnable.map(commandPath));
+    for (const path of STANDARD_ONLY) expect({ path, exists: paths.has(path) }).toEqual({ path, exists: true });
   });
 
   it('names every Slack write in the dry-run list', () => {

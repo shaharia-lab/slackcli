@@ -14,6 +14,10 @@ import {
   formatPaginationHint,
   formatFileSize,
   formatDraftList,
+  formatDryRun,
+  formatScheduledConfirmation,
+  formatScheduledList,
+  formatScheduleTime,
   formatMessage,
   formatTimestamp,
   writeJson,
@@ -1194,5 +1198,113 @@ describe('formatWorkspace', () => {
   it('never prints a token', () => {
     const out = formatWorkspace(browser, true, 'acme', { status: 'ok', user: 'alice', user_id: 'U1' });
     expect(out).not.toContain('secret');
+  });
+});
+
+describe('scheduled message output (#379)', () => {
+  const plain = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, '');
+  // Monday 12 October 2026, 07:50:00 UTC.
+  const POST_AT = Date.UTC(2026, 9, 12, 7, 50, 0) / 1000;
+
+  it.each([
+    ['Europe/Berlin', 'Mon 12 Oct 2026, 09:50 CEST'],
+    ['UTC', 'Mon 12 Oct 2026, 07:50 UTC'],
+    ['America/New_York', 'Mon 12 Oct 2026, 03:50 GMT-4'],
+    ['Asia/Kolkata', 'Mon 12 Oct 2026, 13:20 GMT+5:30'],
+  ])('echoes the absolute time in %s with the timezone name', (zone, expected) => {
+    expect(formatScheduleTime(POST_AT, zone)).toBe(expected);
+  });
+
+  it('shows seconds only when they are not zero, and midnight as 00', () => {
+    expect(formatScheduleTime(POST_AT + 15, 'UTC')).toBe('Mon 12 Oct 2026, 07:50:15 UTC');
+    expect(formatScheduleTime(Date.UTC(2026, 9, 12, 0, 5, 0) / 1000, 'UTC')).toBe('Mon 12 Oct 2026, 00:05 UTC');
+  });
+
+  it('rolls the date with the timezone', () => {
+    expect(formatScheduleTime(Date.UTC(2026, 9, 12, 23, 30, 0) / 1000, 'Europe/Berlin'))
+      .toBe('Tue 13 Oct 2026, 01:30 CEST');
+  });
+
+  it('uses the machine timezone by default', () => {
+    const saved = process.env.TZ;
+    try {
+      process.env.TZ = 'Europe/Berlin';
+      expect(formatScheduleTime(POST_AT)).toBe('Mon 12 Oct 2026, 09:50 CEST');
+    } finally {
+      // Deleting TZ does not undo the change; `bun test` runs in UTC.
+      process.env.TZ = saved ?? 'UTC';
+    }
+  });
+
+  it('confirms a scheduled message with its time, target and ID', () => {
+    const text = plain(formatScheduledConfirmation(
+      { channel_id: 'C0123456789', scheduled_message_id: 'Q0123ABCDEF', post_at: POST_AT },
+      'Europe/Berlin',
+    ));
+    expect(text).toBe('Scheduled for Mon 12 Oct 2026, 09:50 CEST\n  Target: C0123456789\n  ID:     Q0123ABCDEF');
+  });
+
+  it('adds the thread to the confirmation of a threaded reply', () => {
+    const text = plain(formatScheduledConfirmation(
+      { channel_id: 'C0123456789', scheduled_message_id: 'Q0123ABCDEF', post_at: POST_AT, thread_ts: '1712345678.000100' },
+      'UTC',
+    ));
+    expect(text.split('\n')).toEqual([
+      'Scheduled for Mon 12 Oct 2026, 07:50 UTC',
+      '  Target: C0123456789',
+      '  Thread: 1712345678.000100',
+      '  ID:     Q0123ABCDEF',
+    ]);
+  });
+
+  it('lists pending messages with channel, time, a one-line preview and the ID', () => {
+    const text = plain(formatScheduledList([
+      { scheduled_message_id: 'Q1', channel_id: 'C0123456789', post_at: POST_AT, date_created: 1, text: 'Standup\nin 10   minutes' },
+      { scheduled_message_id: 'Q2', channel_id: 'D0123456789', post_at: POST_AT + 3600, date_created: 1, text: '' },
+      { scheduled_message_id: 'Q3', channel_id: 'C0123456789', post_at: POST_AT + 7200, date_created: 1, text: 'x'.repeat(200) },
+    ], 'UTC'));
+
+    expect(text).toContain('Scheduled Messages (3)');
+    expect(text).toContain('  1. C0123456789 Mon 12 Oct 2026, 07:50 UTC\n     Standup in 10 minutes\n     id: Q1\n');
+    expect(text).toContain('  2. D0123456789 Mon 12 Oct 2026, 08:50 UTC\n     [no text]\n     id: Q2\n');
+    expect(text).toContain(`     ${'x'.repeat(120)}...\n     id: Q3\n`);
+  });
+
+  it('shows the time a post_at stands for in a dry-run preview, and names a scheduled message target', () => {
+    const saved = process.env.TZ;
+    try {
+      process.env.TZ = 'Europe/Berlin';
+      const schedule = plain(formatDryRun({
+        dry_run: true,
+        action: 'schedule message',
+        workspace: { name: 'Acme Corp', id: 'T0123456789', profile: 'acme' },
+        target: { kind: 'channel', id: 'C0123456789', name: '#deploys' },
+        payload: { post_at: POST_AT, text: 'Standup' },
+      }));
+      expect(schedule).toContain(`  Post at:   ${POST_AT} (Mon 12 Oct 2026, 09:50 CEST)`);
+      expect(schedule).toContain('  Text:      Standup');
+
+      const cancel = plain(formatDryRun({
+        dry_run: true,
+        action: 'delete scheduled message',
+        workspace: { name: 'Acme Corp', id: 'T0123456789', profile: 'acme' },
+        target: { kind: 'scheduled_message', id: 'Q0123ABCDEF' },
+        payload: { channel_id: 'C0123456789' },
+      }));
+      expect(cancel).toContain('  Target:     scheduled message Q0123ABCDEF');
+    } finally {
+      process.env.TZ = saved ?? 'UTC';
+    }
+  });
+
+  it('leaves a post_at that is not a number as it is', () => {
+    const text = plain(formatDryRun({
+      dry_run: true,
+      action: 'x',
+      workspace: { name: 'Acme Corp', id: 'T0123456789', profile: 'acme' },
+      target: { kind: 'channel', id: 'C0123456789' },
+      payload: { post_at: 'later' },
+    }));
+    expect(text).toContain('  Post at:   later');
   });
 });

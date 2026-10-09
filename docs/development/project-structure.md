@@ -44,7 +44,7 @@ They hold no Slack API knowledge.
 | `conversations.ts` | `list`, `read`, `get`, `unread`, `mark-read`, `members list`/`add`/`remove`, `join`, `leave` |
 | `files.ts` | `info`, `read`, `download` |
 | `logs.ts` | `path`, `show`, `clear` |
-| `messages.ts` | `send`, `react`, `edit`, `draft`, `list-drafts` |
+| `messages.ts` | `send`, `react`, `edit`, `draft`, `list-drafts`, `send-draft`, `delete-draft`, `schedule`, `list-scheduled`, `delete-scheduled` |
 | `saved.ts` | `list` |
 | `search.ts` | `messages`, `channels`, `people` |
 | `update.ts` | (default action), `check` |
@@ -66,6 +66,7 @@ They hold no Slack API knowledge.
 | `name-resolver.ts` | Channel names (`#general`) and user handles / emails → IDs. `parseNameReference()` is pure, so an ID or URL never reaches Slack; `resolveIdentifier()` is the per-argument entry point commands call after `slack-url-parser.ts` (it also drops the `@`/`#` from a prefixed ID), and `resolveUserList()` resolves a `<users...>` list with one shared `users.list` scan. Exact, case-insensitive matches only; nothing found throws `NotFoundError`, several matches `InvalidInputError`. `lazyClient()` lets write commands create a client only when a lookup needs one, so their no-auth confirmation refusal is unchanged. |
 | `message-input.ts` | Resolves the text of `messages send`/`edit`/`draft` from `--message`, `--message-file <path>` or `--message-file -` (stdin). The stdin read is bounded (1 MB, 5 minutes, a zero-length chunk ends it); stdin and the TTY check are injectable for tests. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks (drafts). |
+| `schedule-time.ts` | `parseScheduleTime()`: the `--at` / `--in` of `messages schedule` → Slack's `post_at` (Unix seconds). Strict regexes instead of `Date.parse` or a date library; refuses impossible dates, skipped local times, the past and anything beyond `MAX_SCHEDULE_DAYS` (120). Pure, with an injected clock. |
 | `drafts.ts` | Validates draft-list limits, extracts text from `rich_text`, and projects undocumented responses into the public command contract. |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
 | `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
@@ -98,7 +99,7 @@ They hold no Slack API knowledge.
 
 Every shared interface: `AuthType`, `TokenType`, `StandardAuthConfig`,
 `BrowserAuthConfig`, `WorkspaceConfig`, `WorkspacesData`, `SlackChannel`,
-`SlackUser`, `SlackFile`, `SlackMessage`, `SlackDraft`, `DraftSummary`, `SlackAuthTestResponse`, `SavedItem`,
+`SlackUser`, `SlackFile`, `SlackMessage`, `SlackDraft`, `DraftSummary`, `SlackScheduledMessage`, `ScheduledMessageSummary`, `SlackAuthTestResponse`, `SavedItem`,
 `SearchMatch`, `ChannelSearchResult`, `PeopleSearchResult`, `UnreadChannel`, `UnreadCursor`, `UnreadThread`, `UnreadThreads`, `UnreadSummary`,
 `SlackCanvas`, and the per-command option interfaces.
 

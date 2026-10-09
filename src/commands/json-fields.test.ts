@@ -96,6 +96,9 @@ const ANSWERS: Record<string, unknown> = {
       blocks: [{ type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'hi' }] }] }],
     }],
   },
+  listScheduledMessages: [
+    { scheduled_message_id: 'Q0123ABCDEF', channel_id: 'C0123456789', post_at: 1791791400, date_created: 1791000000, text: 'Standup' },
+  ],
   searchModules: {
     ok: true,
     items: [{ id: 'U0123456789', name: 'alice', real_name: 'Alice', profile: { email: 'alice@example.com' } }],
@@ -260,6 +263,7 @@ describe('--fields, in process', () => {
     'files info': 'id',
     'files read': 'content',
     'messages list-drafts': 'draft_id',
+    'messages list-scheduled': 'scheduled_message_id',
     'saved list': 'type',
     'search channels': 'id',
     'search messages': 'ts',

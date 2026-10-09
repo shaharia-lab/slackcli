@@ -4,6 +4,7 @@ import {
   BROWSER_ONLY_NOTE,
   CONFIRM_NOTE,
   FIELDS_NOTE,
+  STANDARD_ONLY_NOTE,
   commandPath,
   describeCommand,
   formatHelpSections,
@@ -81,6 +82,18 @@ describe('formatHelpSections', () => {
       CONFIRM_NOTE,
       'own note',
     ]);
+  });
+
+  it('puts the standard-only note where the browser-only one goes', () => {
+    const help = { summary: 's', json: '{ ok }', standardOnly: true, confirms: true, dryRun: true, notes: ['own note'] };
+    expect(helpNotes(help).slice(0, 3)).toEqual([
+      'With --json, stdout is one JSON object: { ok }',
+      STANDARD_ONLY_NOTE,
+      CONFIRM_NOTE,
+    ]);
+    expect(helpNotes(help).at(-1)).toBe('own note');
+    expect(STANDARD_ONLY_NOTE).toContain('xoxb or xoxp');
+    expect(helpNotes({ summary: 's' })).toEqual([]);
   });
 
   it('adds the --fields note after the other standard notes', () => {

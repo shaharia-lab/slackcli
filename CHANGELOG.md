@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Schedule a message to be posted later**: `messages schedule` hands a message to Slack to post at a future time, `messages list-scheduled` shows what is pending and `messages delete-scheduled <id>` cancels one, so a script or agent no longer has to stay alive or own a cron job to post later (#379)
+  - `schedule` takes the target and content options of `messages send` except `--file`, plus exactly one of `--at <time>` (Unix seconds, ISO 8601 with an offset or `Z`, or a local `"YYYY-MM-DD HH:MM"` read in the machine's timezone) or `--in <duration>` (`45m`, `2h`, `3d`, `1h30m`)
+  - The resolved time is always echoed with its timezone, and `--json` returns `{ channel_id, scheduled_message_id, post_at, thread_ts? }`
+  - A time that is unreadable, in the past, more than 120 days ahead or not a real date fails with `invalid_input` before any Slack call
+  - `list-scheduled` takes `--recipient-id`, `--limit` and `--fields`; `delete-scheduled` needs only the ID, asks for confirmation (`--yes`) and reports `not_found` for an ID that is not pending
+  - `--dry-run` on `schedule` and `delete-scheduled`, `--workspace` on all three
+  - Standard app tokens (`xoxb`/`xoxp`) only: with browser session tokens all three fail with `unsupported_auth_type`, because Slack refuses its scheduling API to them
 - **`conversations unread --messages` returns the unread messages themselves**: one call now gives, for each unread conversation, the messages newer than its read cursor, plus the followed threads with unread replies, so "what did I miss" no longer needs one `conversations read` per channel with a guessed `--oldest` (#361)
   - `--max-conversations <n>` (default 10) caps how many conversations are read, mentions first; `--limit <n>` (default 20) caps the messages per conversation and the replies per thread
   - `--json` is additive: each item of `unread_channels` gains `last_read`, `latest`, `messages` and, when `--limit` cut it short, `has_more`; `threads` gains `items` (`{ channel_id, thread_ts, root, unread_replies }`); `users` lists the authors. `--fields` still projects `unread_channels`

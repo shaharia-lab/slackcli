@@ -7,8 +7,10 @@ import { resetSync } from '@logtape/logtape';
 import {
   checkUploadFile,
   DRAFT_CREATE_AUTH_MESSAGE,
+  SCHEDULED_MESSAGES_AUTH_MESSAGE,
   SlackClient,
   SlackTransportError,
+  toScheduledMessageSummary,
 } from './slack-client.ts';
 import { InvalidInputError, UnsupportedAuthTypeError } from './cli-errors.ts';
 import { AUTH_ERROR_CODES, SlackAuthError } from './auth-errors.ts';
@@ -2002,5 +2004,193 @@ describe('SlackClient.lookupUserByEmail', () => {
 
   it('is a read method, so a 5xx or network failure is retried', () => {
     expect(isReadMethod('users.lookupByEmail')).toBe(true);
+  });
+});
+
+describe('SlackClient scheduled messages (#379)', () => {
+  type Call = { method: string; params: Record<string, unknown> };
+
+  // A standard-auth client whose transport is replaced by canned answers.
+  function standardClient(answers: unknown[] = [{ ok: true }]): { client: SlackClient; calls: Call[] } {
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    });
+    const calls: Call[] = [];
+    let next = 0;
+    spyOn(client, 'request').mockImplementation(async (method: string, params: Record<string, unknown> = {}) => {
+      calls.push({ method, params });
+      const answer = answers[Math.min(next, answers.length - 1)];
+      next += 1;
+      return answer;
+    });
+    return { client, calls };
+  }
+
+  const pending = (id: string, postAt: number, extra: Record<string, unknown> = {}) => ({
+    id,
+    channel_id: 'C123',
+    post_at: postAt,
+    date_created: 1791000000,
+    text: `text of ${id}`,
+    ...extra,
+  });
+
+  it('schedules with channel, text and post_at, adding thread_ts and blocks only when given', async () => {
+    const { client, calls } = standardClient([{ ok: true, scheduled_message_id: 'Q1', post_at: 1791791400 }]);
+    const blocks = [{ type: 'divider' }];
+
+    const response = await client.scheduleMessage('C123', 'Standup', 1791791400);
+    await client.scheduleMessage('C123', 'Standup', 1791791400, { thread_ts: '1712345678.000100', blocks });
+
+    expect(response).toEqual({ ok: true, scheduled_message_id: 'Q1', post_at: 1791791400 });
+    expect(calls).toEqual([
+      { method: 'chat.scheduleMessage', params: { channel: 'C123', text: 'Standup', post_at: 1791791400 } },
+      {
+        method: 'chat.scheduleMessage',
+        params: { channel: 'C123', text: 'Standup', post_at: 1791791400, thread_ts: '1712345678.000100', blocks },
+      },
+    ]);
+  });
+
+  it('lists one page with no channel filter and maps Slack\'s fields to the reported ones', async () => {
+    const { client, calls } = standardClient([{
+      ok: true,
+      scheduled_messages: [pending('Q2', 1791800000), pending('Q1', 1791791400)],
+      response_metadata: { next_cursor: '' },
+    }]);
+
+    const found = await client.listScheduledMessages();
+
+    expect(calls).toEqual([{ method: 'chat.scheduledMessages.list', params: { limit: 100 } }]);
+    // Soonest first, whatever order Slack answered in.
+    expect(found).toEqual([
+      { scheduled_message_id: 'Q1', channel_id: 'C123', post_at: 1791791400, date_created: 1791000000, text: 'text of Q1' },
+      { scheduled_message_id: 'Q2', channel_id: 'C123', post_at: 1791800000, date_created: 1791000000, text: 'text of Q2' },
+    ]);
+  });
+
+  it('follows cursors to the end and passes the channel filter on every page', async () => {
+    const { client, calls } = standardClient([
+      { ok: true, scheduled_messages: [pending('Q3', 30)], response_metadata: { next_cursor: 'c1' } },
+      { ok: true, scheduled_messages: [pending('Q1', 10)], response_metadata: { next_cursor: 'c2' } },
+      { ok: true, scheduled_messages: [pending('Q2', 20)] },
+    ]);
+
+    const found = await client.listScheduledMessages({ channel: 'C123' });
+
+    expect(calls.map((call) => call.params)).toEqual([
+      { limit: 100, channel: 'C123' },
+      { limit: 100, channel: 'C123', cursor: 'c1' },
+      { limit: 100, channel: 'C123', cursor: 'c2' },
+    ]);
+    expect(found.map((message) => message.scheduled_message_id)).toEqual(['Q1', 'Q2', 'Q3']);
+  });
+
+  it('reads every page before applying the limit, so the soonest ones win wherever they are', async () => {
+    const { client, calls } = standardClient([
+      { ok: true, scheduled_messages: [pending('Q4', 40), pending('Q5', 50)], response_metadata: { next_cursor: 'c1' } },
+      { ok: true, scheduled_messages: [pending('Q3', 30), pending('Q2', 20)], response_metadata: { next_cursor: 'c2' } },
+      { ok: true, scheduled_messages: [pending('Q1', 10)] },
+    ]);
+
+    const found = await client.listScheduledMessages({ limit: 3 });
+
+    // The first page alone already holds two; stopping there would miss Q1-Q3.
+    expect(calls).toHaveLength(3);
+    expect(found.map((message) => message.scheduled_message_id)).toEqual(['Q1', 'Q2', 'Q3']);
+  });
+
+  it('returns everything when the limit is larger than what is pending', async () => {
+    const { client } = standardClient([{ ok: true, scheduled_messages: [pending('Q2', 20), pending('Q1', 10)] }]);
+    const found = await client.listScheduledMessages({ limit: 100 });
+    expect(found.map((message) => message.scheduled_message_id)).toEqual(['Q1', 'Q2']);
+  });
+
+  it('stops on a cursor that repeats instead of looping', async () => {
+    const { client, calls } = standardClient([
+      { ok: true, scheduled_messages: [pending('Q1', 10)], response_metadata: { next_cursor: 'same' } },
+      { ok: true, scheduled_messages: [pending('Q2', 20)], response_metadata: { next_cursor: 'same' } },
+    ]);
+
+    const found = await client.listScheduledMessages();
+
+    expect(calls).toHaveLength(2);
+    expect(found).toHaveLength(2);
+  });
+
+  it('gives up after 100 pages of a cursor that never ends', async () => {
+    let page = 0;
+    const { client } = standardClient();
+    const request = spyOn(client, 'request').mockImplementation(async () => {
+      page += 1;
+      return { ok: true, scheduled_messages: [], response_metadata: { next_cursor: `c${page}` } };
+    });
+
+    expect(await client.listScheduledMessages()).toEqual([]);
+    expect(request).toHaveBeenCalledTimes(100);
+  });
+
+  it('returns an empty list for an answer with no scheduled_messages', async () => {
+    const { client } = standardClient([{ ok: true }]);
+    expect(await client.listScheduledMessages()).toEqual([]);
+  });
+
+  it('leaves out an entry it could not show or cancel, and keeps the rest', async () => {
+    const { client } = standardClient([{
+      ok: true,
+      scheduled_messages: [
+        pending('Q1', 10),
+        { channel_id: 'C123', post_at: 20 },
+        pending('', 30),
+        pending('Q4', 40, { channel_id: undefined }),
+        pending('Q5', 50, { post_at: 'soon' }),
+        null,
+        pending('Q7', 70, { text: undefined, date_created: undefined }),
+      ],
+    }]);
+
+    expect(await client.listScheduledMessages()).toEqual([
+      { scheduled_message_id: 'Q1', channel_id: 'C123', post_at: 10, date_created: 1791000000, text: 'text of Q1' },
+      { scheduled_message_id: 'Q7', channel_id: 'C123', post_at: 70, date_created: 0, text: '' },
+    ]);
+    expect(toScheduledMessageSummary({})).toBeUndefined();
+    expect(toScheduledMessageSummary({ id: 'Q1', channel_id: 'C1', post_at: Number.NaN })).toBeUndefined();
+  });
+
+  it('cancels by channel and scheduled message ID', async () => {
+    const { client, calls } = standardClient();
+
+    await client.deleteScheduledMessage('C123', 'Q1');
+
+    expect(calls).toEqual([{
+      method: 'chat.deleteScheduledMessage',
+      params: { channel: 'C123', scheduled_message_id: 'Q1' },
+    }]);
+  });
+
+  it('treats only the list call as safe to repeat', () => {
+    expect(isReadMethod('chat.scheduledMessages.list')).toBe(true);
+    expect(isReadMethod('chat.scheduleMessage')).toBe(false);
+    expect(isReadMethod('chat.deleteScheduledMessage')).toBe(false);
+  });
+
+  it('refuses all three on browser session tokens before making a request', async () => {
+    const browser = new TestSlackClient();
+
+    expect(() => browser.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE)).toThrow(UnsupportedAuthTypeError);
+    await expect(browser.scheduleMessage('C123', 'hi', 1791791400)).rejects.toThrow(UnsupportedAuthTypeError);
+    await expect(browser.listScheduledMessages()).rejects.toThrow(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+    await expect(browser.deleteScheduledMessage('C123', 'Q1')).rejects.toThrow(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+    expect(browser.calls).toEqual([]);
+    // The refusal names the token type that does work.
+    expect(SCHEDULED_MESSAGES_AUTH_MESSAGE).toContain('standard Slack app token (xoxb or xoxp)');
+  });
+
+  it('lets a standard token through the guard', () => {
+    expect(() => standardClient().client.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE)).not.toThrow();
   });
 });

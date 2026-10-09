@@ -90,8 +90,8 @@ Read [references/commands.md](references/commands.md) before choosing commands.
   (`search channels`, `search people`) and use the ID. Reuse the `channel_id`
   from `--json` output. Pasted Slack URLs also work; `--permalink` targets one
   message or its thread.
-- Confirm before anything visible to others: send, edit, react, draft, upload,
-  any `usergroups` write. Show target and text, get a yes, then run. Add
+- Confirm before anything visible to others: send, edit, react, draft, schedule,
+  upload, any `usergroups` write. Show target and text, get a yes, then run. Add
   `--yes` to `usergroups` writes only after that confirmation.
 - Unsure of the target or text? Run the same command with `--dry-run --json`
   first: it resolves and validates everything, writes nothing, never prompts,
@@ -109,6 +109,8 @@ Read [references/commands.md](references/commands.md) before choosing commands.
   with `--types`/`--limit` instead of retrying.
 - Auth errors mid-task: back to phase 2. Drafts and reply lookup by timestamp
   need a browser profile; say so instead of retrying on a standard token.
+  Scheduling (`messages schedule|list-scheduled|delete-scheduled`) is the
+  reverse: it needs an app-token profile.
 
 ## Security
 

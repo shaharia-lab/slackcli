@@ -183,6 +183,13 @@ Browser auth does not have this limitation.
 
 Slack apps cannot create or list drafts. Use a browser-authenticated profile.
 
+## Scheduling fails with `require a standard Slack app token`
+
+`messages schedule`, `list-scheduled` and `delete-scheduled` use Slack's public
+scheduling API, which Slack refuses to browser session tokens. Use a profile
+logged in with `auth login --token=xoxb-…` (or `xoxp-…`) and pick it with
+`--workspace`. See [Messages](messages.md#messages-schedule).
+
 ## Truncated output when piping
 
 Output is written with backpressure on every path, so a large result piped to a

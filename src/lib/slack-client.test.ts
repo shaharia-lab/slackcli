@@ -2090,17 +2090,24 @@ describe('SlackClient scheduled messages (#379)', () => {
     expect(found.map((message) => message.scheduled_message_id)).toEqual(['Q1', 'Q2', 'Q3']);
   });
 
-  it('stops following cursors once the limit is reached, and returns no more than it', async () => {
+  it('reads every page before applying the limit, so the soonest ones win wherever they are', async () => {
     const { client, calls } = standardClient([
-      { ok: true, scheduled_messages: [pending('Q1', 10), pending('Q2', 20)], response_metadata: { next_cursor: 'c1' } },
-      { ok: true, scheduled_messages: [pending('Q3', 30), pending('Q4', 40)], response_metadata: { next_cursor: 'c2' } },
-      { ok: true, scheduled_messages: [pending('Q5', 50)] },
+      { ok: true, scheduled_messages: [pending('Q4', 40), pending('Q5', 50)], response_metadata: { next_cursor: 'c1' } },
+      { ok: true, scheduled_messages: [pending('Q3', 30), pending('Q2', 20)], response_metadata: { next_cursor: 'c2' } },
+      { ok: true, scheduled_messages: [pending('Q1', 10)] },
     ]);
 
     const found = await client.listScheduledMessages({ limit: 3 });
 
-    expect(calls).toHaveLength(2);
+    // The first page alone already holds two; stopping there would miss Q1-Q3.
+    expect(calls).toHaveLength(3);
     expect(found.map((message) => message.scheduled_message_id)).toEqual(['Q1', 'Q2', 'Q3']);
+  });
+
+  it('returns everything when the limit is larger than what is pending', async () => {
+    const { client } = standardClient([{ ok: true, scheduled_messages: [pending('Q2', 20), pending('Q1', 10)] }]);
+    const found = await client.listScheduledMessages({ limit: 100 });
+    expect(found.map((message) => message.scheduled_message_id)).toEqual(['Q1', 'Q2']);
   });
 
   it('stops on a cursor that repeats instead of looping', async () => {

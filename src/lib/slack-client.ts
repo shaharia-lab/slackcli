@@ -697,15 +697,15 @@ export class SlackClient {
   }
 
   // The pending scheduled messages (standard auth only), soonest first. Slack
-  // returns only the ones scheduled with the calling token. Cursors are
-  // followed until `limit` messages are collected, or to the end without one.
+  // returns only the ones scheduled with the calling token. Every page is read
+  // before `limit` is applied: Slack documents no order for this list, so the
+  // soonest `limit` messages can only be picked from all of them.
   async listScheduledMessages(options: { channel?: string; limit?: number } = {}): Promise<ScheduledMessageSummary[]> {
     this.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
 
-    const limit = options.limit ?? Number.POSITIVE_INFINITY;
     const found: ScheduledMessageSummary[] = [];
     let cursor: string | undefined;
-    for (let page = 0; page < SCHEDULED_MAX_PAGES && found.length < limit; page++) {
+    for (let page = 0; page < SCHEDULED_MAX_PAGES; page++) {
       const params: Record<string, any> = { limit: SCHEDULED_PAGE_SIZE };
       if (options.channel) params.channel = options.channel;
       if (cursor) params.cursor = cursor;
@@ -727,7 +727,7 @@ export class SlackClient {
     }
 
     found.sort((a, b) => a.post_at - b.post_at || a.scheduled_message_id.localeCompare(b.scheduled_message_id));
-    return Number.isFinite(limit) ? found.slice(0, limit) : found;
+    return options.limit === undefined ? found : found.slice(0, options.limit);
   }
 
   // Cancel a pending scheduled message (standard auth only).

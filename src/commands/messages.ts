@@ -269,6 +269,7 @@ const HELP = {
         '#channel, @handle or email). A user is looked up as your DM with them, which opens that DM ' +
         'if it does not exist yet.',
       LIMIT_NOTE,
+      'With more pending than --limit, the soonest ones are kept.',
     ],
   },
   deleteScheduled: {

@@ -438,7 +438,8 @@ slackcli messages list-scheduled --recipient-id C0123456789 --limit 25 --json
 Lists the messages waiting to be posted, sorted by the time they will post.
 `--recipient-id` keeps one conversation and accepts what `messages send` does;
 a user is looked up as your DM with them, which opens that DM if it does not
-exist yet. The default `--limit` is `100`; it must be a positive integer.
+exist yet. The default `--limit` is `100`; it must be a positive integer, and
+it keeps the soonest that many of everything pending.
 
 Slack returns only the messages scheduled **with the token in use**. A message
 scheduled in the Slack app, or by another app, is not listed.

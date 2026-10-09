@@ -111,12 +111,14 @@ function offsetMs(raw: string, zone: string): number {
   const digits = zone.slice(1).replace(':', '');
   const hours = Number(digits.slice(0, 2));
   const minutes = Number(digits.slice(2));
+  const total = hours * 60 + minutes;
+  const sign = zone.startsWith('-') ? -1 : 1;
   // The widest real offsets are -12:00 and +14:00.
-  if (hours > 14 || minutes > 59) {
+  const widest = sign < 0 ? 12 * 60 : 14 * 60;
+  if (minutes > 59 || total > widest) {
     throw new InvalidInputError(`--at "${raw}" has a UTC offset that does not exist (${zone}).`);
   }
-  const sign = zone.startsWith('-') ? -1 : 1;
-  return sign * (hours * 60 + minutes) * 60_000;
+  return sign * total * 60_000;
 }
 
 // A time with no offset is read in the machine's timezone. Reading it back

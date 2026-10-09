@@ -111,9 +111,18 @@ describe('parseScheduleTime --at', () => {
 
   it.each([
     '2026-10-12T09:50:00+15:00',
+    '2026-10-12T09:50:00+14:30',
+    '2026-10-12T09:50:00+14:01',
+    '2026-10-12T09:50:00-14:00',
+    '2026-10-12T09:50:00-12:01',
     '2026-10-12T09:50:00+02:60',
   ])('refuses the offset in %p', (value) => {
     expect(refusal(() => at(value))).toContain('UTC offset that does not exist');
+  });
+
+  it('accepts the widest real offsets, +14:00 and -12:00', () => {
+    expect(at('2026-10-12T09:50:00+14:00')).toBe(Date.UTC(2026, 9, 11, 19, 50, 0) / 1000);
+    expect(at('2026-10-12T09:50:00-12:00')).toBe(Date.UTC(2026, 9, 12, 21, 50, 0) / 1000);
   });
 
   it.each([

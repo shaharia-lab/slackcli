@@ -65,7 +65,7 @@ Standard token: `get` resolves top-level messages only; use `read --thread-ts=<p
 ## messages
 
 ```
-messages send --recipient-id=<C…|U…|url|"#name"|@handle|email> (--message=T | --message-file=F|-) [--thread-ts=TS] [--file=PATH] [--blocks=JSON|@file] [--json]
+messages send --recipient-id=<C…|U…|url|"#name"|@handle|email> (--message=T | --message-file=F|-) [--thread-ts=TS] [--file=PATH]… [--blocks=JSON|@file] [--json]
 messages send --permalink=URL --message=T          # reply in that thread
 messages edit (--channel-id=C --timestamp=TS | --permalink=URL) (--message=T | --message-file=F|-) [--json]
 messages react (--channel-id=C --timestamp=TS | --permalink=URL) --emoji=NAME
@@ -77,10 +77,11 @@ messages list-drafts [--limit=100] [--json]                                  # b
 
 `U…`, `@handle` or email recipient opens a DM. Any channel or user argument takes
 `"#name"` / `name` / `@handle` / email (exact match; quote `#`); a bare name that is
-both a channel and a user is refused. `--file` and `--blocks` are exclusive. `--emoji` without
+both a channel and a user is refused. `--file` is repeatable (one per attachment; several files
+share one message, all-or-nothing) and is exclusive with `--blocks`. `--emoji` without
 colons. Only the authenticated identity's messages can be edited.
 JSON: `send` → `{channel_id, ts, permalink?}` (`permalink` omitted if lookup fails);
-with `--file` → `{channel_id, file_id}`. `edit` → `{channel_id, ts}`. `draft` → `{channel_id, draft_id}`.
+with `--file` → `{channel_id, file_id, file_ids}` (`file_id` is the first of `file_ids`). `edit` → `{channel_id, ts}`. `draft` → `{channel_id, draft_id}`.
 `list-drafts` → `{draft_count, drafts[]{draft_id,channel_id,text,date_created,file_ids,thread_ts?,date_scheduled?}}`.
 `send-draft` → `{channel_id,ts,permalink?}`; on cleanup failure it also returns
 `cleanup_error` and exits nonzero. `delete-draft` → `{draft_id,deleted:true}`.

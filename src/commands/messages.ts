@@ -65,10 +65,12 @@ const HELP = {
       'slackcli messages send --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message "Fixed"',
       'slackcli messages send --recipient-id U0123456789 --message-file ./note.md --json',
       'slackcli messages send --recipient-id C0123456789 --message-file - < ./report.txt',
+      'slackcli messages send --recipient-id C0123456789 --message "Charts" --file a.png --file b.png --file c.pdf',
       'slackcli messages send --recipient-id C0123456789 --message "Deploy done" --dry-run',
     ],
     json:
-      '{ channel_id, ts, permalink? } for a post; { channel_id, file_id } with --file. ' +
+      '{ channel_id, ts, permalink? } for a post; ' +
+      '{ channel_id, file_id, file_ids } with --file (file_id is the first of file_ids). ' +
       'permalink is omitted when its lookup fails. channel_id is always the resolved ID.',
     notes: [
       RECIPIENT_NOTE,
@@ -80,6 +82,9 @@ const HELP = {
       'One of --message or --message-file is required; they are mutually exclusive. ' +
         'With --file the text becomes the file comment.',
       STDIN_NOTE,
+      '--file is repeatable: pass it once per attachment (--file a.png --file b.png) to share ' +
+        'several files in ONE message. It is all-or-nothing — if any file fails, the error names ' +
+        'which one and at which step, and no message is posted.',
       '--blocks cannot be combined with --file; the message text is the notification fallback.',
       'Sends immediately, with no confirmation prompt.',
       'A dry run to a user ID does not open the DM; it previews the user as the target.',
@@ -333,7 +338,13 @@ export function createMessagesCommand(): Command {
     )
     .option('--thread-ts <timestamp>', 'Thread to reply in (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link; replies in that message\'s thread (replaces --recipient-id and --thread-ts)')
-    .option('--file <path>', 'Attach a file to the message')
+    .addOption(
+      // Repeatable: pass --file once per attachment to share several files in
+      // ONE message (--file a.png --file b.csv), the way the Slack UI attaches
+      // multiple files to a single post. The collector always yields an array.
+      new Option('--file <path>', 'Attach a file to the message (repeatable: pass --file once per attachment to share several files in one message)')
+        .argParser<string[]>((value, previous) => (previous ?? []).concat([value]))
+    )
     .addOption(
       new Option('--blocks <json|@file>', 'Block Kit JSON array, inline or loaded from @file')
         .conflicts('file')
@@ -349,11 +360,26 @@ export function createMessagesCommand(): Command {
         const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
         const { client, recipientId, target } = await resolveRecipient(options, spinner);
 
+        // --file is repeatable, so options.file is a string[] (or undefined).
+        const filePaths: string[] | undefined = options.file;
+
         if (options.dryRun) {
-          const file = options.file ? await checkUploadFile(options.file) : undefined;
-          const payload = file
-            ? { file: options.file, file_size: file.size, comment: message }
-            : { text: message, blocks };
+          let payload: Record<string, unknown>;
+          if (filePaths) {
+            const files = await Promise.all(filePaths.map((p: string) => checkUploadFile(p)));
+            // Additive shape: keep the original single-file `file`/`file_size`
+            // (now the FIRST file) so existing consumers keep working, and add
+            // the full `files` list plus the total size.
+            payload = {
+              file: filePaths[0],
+              file_size: files[0].size,
+              files: filePaths,
+              total_size: files.reduce((sum, f) => sum + f.size, 0),
+              comment: message,
+            };
+          } else {
+            payload = { text: message, blocks };
+          }
           spinner.stop();
           emitDryRun(
             await buildPreview(client, 'send message', recipientTarget(recipientId, target.threadTs), payload, { lookupName: true }),
@@ -365,22 +391,23 @@ export function createMessagesCommand(): Command {
         const channelId = await openRecipient(client, recipientId, spinner);
 
         spinner.text = 'Sending message...';
-        if (options.file) {
-          const upload = await client.uploadFileExternal(channelId, options.file, {
+        if (filePaths) {
+          const upload = await client.uploadFilesExternal(channelId, filePaths, {
             initial_comment: message,
             thread_ts: target.threadTs,
           });
 
           spinner.succeed('Message sent successfully!');
           if (options.json) {
-            // The upload flow returns the attached file, not a message ts, so
+            // The upload flow returns the attached files, not a message ts, so
             // this branch cannot offer ts/permalink the way a post can.
-            writeJson({
-              channel_id: channelId,
-              file_id: upload.files?.[0]?.id,
-            });
+            // Additive shape: always emit `file_ids`, and keep `file_id` as the
+            // first one so single-file consumers keep working unchanged.
+            const ids = upload.files?.map((f) => f.id) ?? [];
+            writeJson({ channel_id: channelId, file_id: ids[0], file_ids: ids });
           } else {
-            success('File uploaded successfully');
+            const count = upload.files?.length ?? filePaths.length;
+            success(count === 1 ? 'File uploaded successfully' : `${count} files uploaded successfully`);
           }
           return;
         }

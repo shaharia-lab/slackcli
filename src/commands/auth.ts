@@ -18,7 +18,7 @@ import {
   getDefaultWorkspaceId,
   migrateSecrets,
 } from '../lib/workspaces.ts';
-import { success, error, info, warning, formatWorkspace, formatIdentity, writeJson } from '../lib/formatter.ts';
+import { success, error, info, warning, formatWorkspace, formatIdentity, writeJson, writeText } from '../lib/formatter.ts';
 import chalk from 'chalk';
 import { parseCurlCommand, type ParsedCurlResult } from '../lib/curl-parser.ts';
 import { resolveCurlInput, type CurlInputResult } from '../lib/curl-input.ts';
@@ -247,23 +247,23 @@ function reportCurlInputFailure(
     case 'clipboard-failed':
       clipboardSpinner.fail('Failed to read clipboard');
       error(result.message);
-      console.log(chalk.yellow('\n💡 Tip: Try the interactive mode instead:'));
-      console.log(chalk.cyan('   slackcli auth parse-curl --login\n'));
+      console.error(chalk.yellow('\n💡 Tip: Try the interactive mode instead:'));
+      console.error(chalk.cyan('   slackcli auth parse-curl --login\n'));
       return;
     case 'not-curl':
       clipboardSpinner.succeed('Read from clipboard');
       error('Clipboard content does not appear to be a cURL command');
-      console.log(chalk.yellow('\n💡 Tip: Make sure you copied the cURL command from browser DevTools'));
-      console.log(chalk.yellow('   Right-click on request → Copy → Copy as cURL\n'));
+      console.error(chalk.yellow('\n💡 Tip: Make sure you copied the cURL command from browser DevTools'));
+      console.error(chalk.yellow('   Right-click on request → Copy → Copy as cURL\n'));
       return;
     case 'empty':
       error('No cURL command provided. Usage:');
-      console.log('\n  Interactive mode (recommended):');
-      console.log(chalk.cyan('    slackcli auth parse-curl --login'));
-      console.log('\n  From clipboard:');
-      console.log(chalk.cyan('    slackcli auth parse-curl --from-clipboard --login'));
-      console.log('\n  Piped input:');
-      console.log(chalk.cyan('    pbpaste | slackcli auth parse-curl --login'));
+      console.error('\n  Interactive mode (recommended):');
+      console.error(chalk.cyan('    slackcli auth parse-curl --login'));
+      console.error('\n  From clipboard:');
+      console.error(chalk.cyan('    slackcli auth parse-curl --from-clipboard --login'));
+      console.error('\n  Piped input:');
+      console.error(chalk.cyan('    pbpaste | slackcli auth parse-curl --login'));
       return;
   }
 }
@@ -291,13 +291,13 @@ async function loginWithParsedTokens(parsed: ParsedCurlResult, secretBackend: Se
 }
 
 function printLoginHint(parsed: ParsedCurlResult): void {
-  console.log(chalk.bold('To login with these tokens, run:\n'));
-  console.log(chalk.cyan('  slackcli auth parse-curl --login'));
-  console.log(chalk.gray('\nOr manually:\n'));
-  console.log(`  slackcli auth login-browser \\`);
-  console.log(`    --xoxd="${parsed.xoxd}" \\`);
-  console.log(`    --xoxc="${parsed.xoxc}" \\`);
-  console.log(`    --workspace-url="${parsed.workspaceUrl}"\n`);
+  writeText(chalk.bold('To login with these tokens, run:\n'));
+  writeText(chalk.cyan('  slackcli auth parse-curl --login'));
+  writeText(chalk.gray('\nOr manually:\n'));
+  writeText(`  slackcli auth login-browser \\`);
+  writeText(`    --xoxd="${parsed.xoxd}" \\`);
+  writeText(`    --xoxc="${parsed.xoxc}" \\`);
+  writeText(`    --workspace-url="${parsed.workspaceUrl}"\n`);
 }
 
 // `auth list` keeps its own text failure (the error as the hint line); under
@@ -405,7 +405,7 @@ export function createAuthCommand(): Command {
       // argv, and it is the host the session cookie would be sent to.
       if (options.workspaceUrl && !isSlackWorkspaceUrl(options.workspaceUrl)) {
         error('--workspace-url must be an https URL on a slack.com host');
-        console.log(chalk.dim('   e.g. https://myteam.slack.com'));
+        console.error(chalk.dim('   e.g. https://myteam.slack.com'));
         process.exit(1);
       }
 
@@ -448,8 +448,8 @@ export function createAuthCommand(): Command {
         error(err.message);
 
         if (err instanceof AutoLoginError && err.reason === 'browser_not_found') {
-          console.log(chalk.yellow('\n💡 Or extract tokens manually:'));
-          console.log(chalk.cyan('   slackcli auth parse-curl --login\n'));
+          console.error(chalk.yellow('\n💡 Or extract tokens manually:'));
+          console.error(chalk.cyan('   slackcli auth parse-curl --login\n'));
         }
         process.exit(1);
       }
@@ -494,12 +494,12 @@ export function createAuthCommand(): Command {
           return;
         }
 
-        console.log(chalk.bold(`\n📋 Authenticated Workspaces (${entries.length}):\n`));
+        writeText(chalk.bold(`\n📋 Authenticated Workspaces (${entries.length}):\n`));
 
         const checkOf = new Map(checks?.map(({ profile, check }) => [profile, check]));
         entries.forEach(({ key, config }, idx) => {
           const isDefault = key === defaultKey;
-          console.log(`${idx + 1}. ${formatWorkspace(config, isDefault, key, checkOf.get(key))}\n`);
+          writeText(`${idx + 1}. ${formatWorkspace(config, isDefault, key, checkOf.get(key))}\n`);
         });
       } catch (err: any) {
         reportListFailure(err, options.json, spinner);
@@ -536,7 +536,7 @@ export function createAuthCommand(): Command {
         return;
       }
 
-      console.log(`\n${formatIdentity(identity)}\n`);
+      writeText(`\n${formatIdentity(identity)}\n`);
       if (identity.status === 'auth_failed') {
         error(`${identity.error.code}: ${identity.error.meaning}`, `To fix: ${identity.error.fix}`);
       } else if (identity.status === 'unreachable') {
@@ -593,7 +593,7 @@ export function createAuthCommand(): Command {
             warning(
               `Left ${cleared.path} alone — slackcli did not create it, so it was not deleted.`
             );
-            console.log(chalk.dim('   Remove it yourself if it holds a Slack session.'));
+            writeText(chalk.dim('   Remove it yourself if it holds a Slack session.'));
           }
         }
 
@@ -607,30 +607,30 @@ export function createAuthCommand(): Command {
   // Extract tokens guide
   describeCommand(auth.command('extract-tokens'), HELP.extractTokens)
     .action(() => {
-      console.log(chalk.bold('\n✨ Easiest: let slackcli do it\n'));
-      console.log(chalk.cyan('   slackcli auth login-auto'));
-      console.log(chalk.dim('   Opens a browser, you sign in, tokens are captured automatically.'));
-      console.log(chalk.dim('   Enrols every workspace you are signed into.\n'));
-      console.log(chalk.bold('🔍 Or extract them by hand:\n'));
-      console.log('1. Open your Slack workspace in a web browser');
-      console.log('2. Open Developer Tools (F12 or Cmd+Option+I)');
-      console.log('3. Go to the Network tab');
-      console.log('4. Refresh the page or send a message');
-      console.log('5. Look for any Slack API request (e.g., conversations.list)');
-      console.log('\n📝 Extract the tokens:');
-      console.log('   - xoxd token: In the "Cookie" header, look for d=xoxd-...');
-      console.log('   - xoxc token: In the request payload, look for "token":"xoxc-..."');
-      console.log('\n✨ Use the tokens:');
-      console.log('   slackcli auth login-browser \\');
-      console.log('     --xoxd=xoxd-... \\');
-      console.log('     --xoxc=xoxc-... \\');
-      console.log('     --workspace-url=https://yourteam.slack.com\n');
-      console.log('\n💡 Or use the easy way:');
-      console.log('   Right-click on any Slack API request → Copy → Copy as cURL');
-      console.log('   Then run: slackcli auth parse-curl --login');
-      console.log('   (Interactive mode - just paste and press Enter twice)\n');
-      console.log('   Or: slackcli auth parse-curl --from-clipboard --login');
-      console.log('   (Reads directly from your clipboard)\n');
+      writeText(chalk.bold('\n✨ Easiest: let slackcli do it\n'));
+      writeText(chalk.cyan('   slackcli auth login-auto'));
+      writeText(chalk.dim('   Opens a browser, you sign in, tokens are captured automatically.'));
+      writeText(chalk.dim('   Enrols every workspace you are signed into.\n'));
+      writeText(chalk.bold('🔍 Or extract them by hand:\n'));
+      writeText('1. Open your Slack workspace in a web browser');
+      writeText('2. Open Developer Tools (F12 or Cmd+Option+I)');
+      writeText('3. Go to the Network tab');
+      writeText('4. Refresh the page or send a message');
+      writeText('5. Look for any Slack API request (e.g., conversations.list)');
+      writeText('\n📝 Extract the tokens:');
+      writeText('   - xoxd token: In the "Cookie" header, look for d=xoxd-...');
+      writeText('   - xoxc token: In the request payload, look for "token":"xoxc-..."');
+      writeText('\n✨ Use the tokens:');
+      writeText('   slackcli auth login-browser \\');
+      writeText('     --xoxd=xoxd-... \\');
+      writeText('     --xoxc=xoxc-... \\');
+      writeText('     --workspace-url=https://yourteam.slack.com\n');
+      writeText('\n💡 Or use the easy way:');
+      writeText('   Right-click on any Slack API request → Copy → Copy as cURL');
+      writeText('   Then run: slackcli auth parse-curl --login');
+      writeText('   (Interactive mode - just paste and press Enter twice)\n');
+      writeText('   Or: slackcli auth parse-curl --from-clipboard --login');
+      writeText('   (Reads directly from your clipboard)\n');
     });
 
   // Parse cURL command to extract tokens
@@ -656,21 +656,21 @@ export function createAuthCommand(): Command {
         }
         const curlInput = resolved.input;
 
-        console.log(chalk.bold('\n🔍 Parsing cURL command...\n'));
+        writeText(chalk.bold('\n🔍 Parsing cURL command...\n'));
 
         // Parse the cURL command
         const parsed = parseCurlCommand(curlInput);
 
         // Display extracted tokens
         success('✅ Successfully extracted tokens!\n');
-        console.log(chalk.bold('Workspace:'));
-        console.log(`  Name: ${chalk.cyan(parsed.workspaceName)}`);
-        console.log(`  URL:  ${chalk.cyan(parsed.workspaceUrl)}\n`);
+        writeText(chalk.bold('Workspace:'));
+        writeText(`  Name: ${chalk.cyan(parsed.workspaceName)}`);
+        writeText(`  URL:  ${chalk.cyan(parsed.workspaceUrl)}\n`);
 
         const tokenLength = (token: string) => chalk.gray(`(${token.length} chars)`);
-        console.log(chalk.bold('Tokens:'));
-        console.log(`  xoxd: ${chalk.green(parsed.xoxd.substring(0, 20))}...${tokenLength(parsed.xoxd)}`);
-        console.log(`  xoxc: ${chalk.green(parsed.xoxc.substring(0, 20))}...${tokenLength(parsed.xoxc)}\n`);
+        writeText(chalk.bold('Tokens:'));
+        writeText(`  xoxd: ${chalk.green(parsed.xoxd.substring(0, 20))}...${tokenLength(parsed.xoxd)}`);
+        writeText(`  xoxc: ${chalk.green(parsed.xoxc.substring(0, 20))}...${tokenLength(parsed.xoxc)}\n`);
 
         // If --login flag is set, authenticate directly
         if (options.login) {
@@ -680,8 +680,8 @@ export function createAuthCommand(): Command {
         }
       } catch (err: any) {
         error('Failed to parse cURL command', err.message);
-        console.log(chalk.yellow('\n💡 Tip: Right-click on a Slack API request in browser DevTools'));
-        console.log(chalk.yellow('   → Copy → Copy as cURL, then paste here\n'));
+        console.error(chalk.yellow('\n💡 Tip: Right-click on a Slack API request in browser DevTools'));
+        console.error(chalk.yellow('   → Copy → Copy as cURL, then paste here\n'));
         process.exit(1);
       }
     });

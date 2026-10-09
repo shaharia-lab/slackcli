@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ora, { type Ora } from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatCanvasList, formatCanvasContent, warning, writeJson } from '../lib/formatter.ts';
+import { error, formatCanvasList, formatCanvasContent, warning, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { canvasHtmlToMarkdown } from '../lib/canvas-parser.ts';
 import {
@@ -172,7 +172,7 @@ export function createCanvasCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatCanvasList(files));
+        writeText('\n' + formatCanvasList(files));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch canvases' });
       }
@@ -212,7 +212,7 @@ export function createCanvasCommand(): Command {
         // Raw mode: output HTML directly
         if (options.raw) {
           spinner.succeed(title);
-          console.log(html);
+          writeText(html);
           return;
         }
 
@@ -236,7 +236,7 @@ export function createCanvasCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatCanvasContent(file, markdown));
+        writeText('\n' + formatCanvasContent(file, markdown));
       } catch (err: any) {
         reportCanvasReadFailure(spinner, err, options.json);
       }

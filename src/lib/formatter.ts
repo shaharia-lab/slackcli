@@ -26,6 +26,25 @@ export function writeJson(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + '\n');
 }
 
+// Write a formatted text result to stdout, with a trailing newline (so callers
+// pass the body exactly as they did to console.log).
+//
+// This is the text-path twin of writeJson, and exists for the same reason:
+// console.log routes through Bun's async Node-compat WriteStream, which drops
+// everything past the 64 KiB pipe buffer when the process exits before the
+// stream drains — silently truncating a large result into a slow reader with
+// exit code 0 (issue #373; the JSON path is #73). process.stdout.write shares
+// that async path but completes because callers return and let the process exit
+// naturally, which drains pending writes. So the same rule applies: never call
+// process.exit() after writeText() — set process.exitCode and return instead.
+//
+// Every command result print goes through this one sink rather than
+// console.log, both to fix the truncation and to keep it fixed: a guard test
+// fails the build if a command file calls console.log directly.
+export function writeText(text: string): void {
+  process.stdout.write(text + '\n');
+}
+
 function formatDraftAge(createdAt: number, nowMs: number): string {
   const seconds = Math.max(0, Math.floor(nowMs / 1000 - createdAt));
   if (seconds < 60) return 'just now';
@@ -322,7 +341,7 @@ export function formatConversationHistory(
 
 // Success message
 export function success(message: string): void {
-  console.log(chalk.green('✅'), message);
+  writeText(`${chalk.green('✅')} ${message}`);
 }
 
 // Error message
@@ -335,7 +354,7 @@ export function error(message: string, hint?: string): void {
 
 // Info message
 export function info(message: string): void {
-  console.log(chalk.blue('ℹ️'), message);
+  writeText(`${chalk.blue('ℹ️')} ${message}`);
 }
 
 // Warning message. Written to stderr so diagnostics never contaminate stdout —

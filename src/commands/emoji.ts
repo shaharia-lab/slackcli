@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { formatEmoji, formatEmojiList, writeJson } from '../lib/formatter.ts';
+import { formatEmoji, formatEmojiList, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import { fetchCustomEmoji, filterEmojiByName, getCustomEmoji, parseEmojiLimit } from '../lib/emoji.ts';
@@ -114,7 +114,7 @@ export function createEmojiCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatEmojiList(emojiList));
+        writeText('\n' + formatEmojiList(emojiList));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch custom emoji' });
       }
@@ -151,7 +151,7 @@ export function createEmojiCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatEmoji(found));
+        writeText('\n' + formatEmoji(found));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch custom emoji' });
       }

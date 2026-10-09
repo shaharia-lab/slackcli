@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { error, info, success, warning, writeJson } from '../lib/formatter.ts';
+import { error, info, success, warning, writeJson, writeText } from '../lib/formatter.ts';
 import { resolveLogDir } from '../lib/logger.ts';
 import {
   clearLogs,
@@ -95,7 +95,7 @@ export function createLogsCommand(): Command {
         return;
       }
 
-      console.log(path);
+      writeText(path);
       if (!exists) {
         warning(loggingIsOff()
           ? 'No log file yet: logging is turned off (SLACKCLI_LOG_LEVEL=off).'
@@ -158,7 +158,7 @@ export function createLogsCommand(): Command {
         return;
       }
 
-      console.log(formatRunsText(runs));
+      writeText(formatRunsText(runs));
     });
 
   describeCommand(logs.command('clear'), HELP.clear)

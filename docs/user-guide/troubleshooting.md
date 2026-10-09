@@ -183,13 +183,15 @@ Browser auth does not have this limitation.
 
 Slack apps cannot create or list drafts. Use a browser-authenticated profile.
 
-## Truncated JSON when piping
+## Truncated output when piping
 
-If output looks cut off around 64 KiB, you have hit
-[issue #77](https://github.com/shaharia-lab/slackcli/issues/77), which affects
-non-JSON stdout paths (`canvas --raw`, human-readable output). `--json` output is
-not affected. Redirect to a file as a workaround, and add a comment on the issue
-with what you ran.
+Output is written with backpressure on every path, so a large result piped to a
+slow reader arrives in full — neither `--json` nor the human-readable text paths
+truncate at the ~64 KiB pipe buffer. The text path was fixed in
+[issue #373](https://github.com/shaharia-lab/slackcli/issues/373) (the JSON path
+in [#73](https://github.com/shaharia-lab/slackcli/issues/73)); if you still see
+output cut off around 64 KiB, that is a regression worth a comment on #373 with
+what you ran.
 
 ## `slackcli update` does nothing or fails
 

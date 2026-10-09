@@ -3,7 +3,7 @@ import ora from 'ora';
 import { open, rm } from 'node:fs/promises';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { isAuthPage } from '../lib/canvas-parser.ts';
-import { error, formatFileSize, warning, writeJson } from '../lib/formatter.ts';
+import { error, formatFileSize, warning, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { resolveOutputPath } from '../lib/output-path.ts';
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
@@ -252,7 +252,7 @@ export function createFilesCommand(): Command {
           writeJson(applyFields('files info', file, fields));
           return;
         }
-        console.log('\n' + formatFileInfo(file));
+        writeText('\n' + formatFileInfo(file));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch file metadata' });
       }

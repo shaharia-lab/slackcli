@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { writeJson } from '../lib/formatter.ts';
+import { writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
@@ -121,23 +121,23 @@ export function createUsersCommand(): Command {
           return;
         }
 
-        console.log('');
-        console.log(`  Name:     ${u.real_name || u.name}`);
-        console.log(`  Handle:   @${u.name}`);
-        console.log(`  ID:       ${u.id}`);
-        console.log(`  Email:    ${u.profile?.email || '(none)'}`);
-        console.log(`  Title:    ${u.profile?.title || '(none)'}`);
-        console.log(`  Status:   ${statusOf(u)}`);
-        console.log(`  Deleted:  ${u.deleted === true}`);
-        console.log(`  Admin:    ${u.is_admin === true}`);
-        console.log(`  TZ:       ${u.tz || '(none)'} (${u.tz_label || 'n/a'}, offset ${u.tz_offset ?? 'n/a'})`);
+        writeText('');
+        writeText(`  Name:     ${u.real_name || u.name}`);
+        writeText(`  Handle:   @${u.name}`);
+        writeText(`  ID:       ${u.id}`);
+        writeText(`  Email:    ${u.profile?.email || '(none)'}`);
+        writeText(`  Title:    ${u.profile?.title || '(none)'}`);
+        writeText(`  Status:   ${statusOf(u)}`);
+        writeText(`  Deleted:  ${u.deleted === true}`);
+        writeText(`  Admin:    ${u.is_admin === true}`);
+        writeText(`  TZ:       ${u.tz || '(none)'} (${u.tz_label || 'n/a'}, offset ${u.tz_offset ?? 'n/a'})`);
         if (resolvedFields) {
-          console.log('  Fields:');
+          writeText('  Fields:');
           for (const [label, value] of Object.entries(resolvedFields)) {
-            if (value) console.log(`    ${label}: ${value}`);
+            if (value) writeText(`    ${label}: ${value}`);
           }
         }
-        console.log('');
+        writeText('');
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch user' });
       }
@@ -202,12 +202,12 @@ export function createUsersCommand(): Command {
           return;
         }
 
-        console.log('');
+        writeText('');
         for (const r of rows) {
           const flag = r.deleted ? '✗' : ' ';
-          console.log(`  ${flag} ${r.id}  ${(r.name || '').padEnd(24)} ${r.status.padEnd(22)} ${r.email}`);
+          writeText(`  ${flag} ${r.id}  ${(r.name || '').padEnd(24)} ${r.status.padEnd(22)} ${r.email}`);
         }
-        console.log('');
+        writeText('');
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to list users' });
       }

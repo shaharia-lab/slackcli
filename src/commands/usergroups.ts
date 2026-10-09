@@ -6,6 +6,7 @@ import {
   formatUsergroup,
   formatUsergroupList,
   writeJson,
+  writeText,
 } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
@@ -346,7 +347,7 @@ export function createUsergroupsCommand(): Command {
           writeJson(applyFields('usergroups list', { usergroup_count: groups.length, usergroups: groups }, fields));
           return;
         }
-        console.log('\n' + formatUsergroupList(groups));
+        writeText('\n' + formatUsergroupList(groups));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch user groups' });
       }
@@ -377,7 +378,7 @@ export function createUsergroupsCommand(): Command {
           writeJson(applyFields('usergroups read', { ...group, member_ids: ids, members }, fields));
           return;
         }
-        console.log('\n' + formatUsergroup(group, members));
+        writeText('\n' + formatUsergroup(group, members));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to read user group' });
       }
@@ -430,7 +431,7 @@ export function createUsergroupsCommand(): Command {
           writeJson(group);
           return;
         }
-        console.log('\n' + formatUsergroup(group, []));
+        writeText('\n' + formatUsergroup(group, []));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to create user group' });
       }
@@ -493,7 +494,7 @@ export function createUsergroupsCommand(): Command {
           writeJson(updated);
           return;
         }
-        console.log('\n' + formatUsergroup(updated, []));
+        writeText('\n' + formatUsergroup(updated, []));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to update user group' });
       }

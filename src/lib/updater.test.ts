@@ -290,10 +290,10 @@ describe('performUpdate on a Homebrew install', () => {
     ['Linuxbrew', '/home/linuxbrew/.linuxbrew/bin/slackcli'],
   ])('refuses without any network call for %s (%s)', async (_label, execPath) => {
     Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
-    const log = spyOn(console, 'log').mockImplementation(() => {});
+    const log = spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       await expect(performUpdate()).resolves.toBeUndefined();
-      expect(log.mock.calls.flat().join('\n')).toContain('Installed via Homebrew — run: brew upgrade slackcli');
+      expect(log.mock.calls.flat().join('')).toContain('Installed via Homebrew — run: brew upgrade slackcli');
     } finally {
       log.mockRestore();
     }
@@ -355,7 +355,7 @@ describe('performUpdate on an unwritable install folder', () => {
     const cacheDir = await mkdtemp(join(tmpdir(), 'slackcli-cache-'));
     dirs.push(cacheDir);
     setUpdateCacheDirForTesting(cacheDir);
-    log = spyOn(console, 'log').mockImplementation(() => {});
+    log = spyOn(process.stdout, 'write').mockImplementation(() => true);
   });
 
   afterEach(async () => {
@@ -418,7 +418,7 @@ describe('performUpdate on an unwritable install folder', () => {
     stubRelease('v0.0.1');
 
     await expect(performUpdate()).resolves.toBeUndefined();
-    expect(log.mock.calls.flat().join('\n')).toContain('Already on latest version');
+    expect(log.mock.calls.flat().join('')).toContain('Already on latest version');
     expect(fetchCalls).toHaveLength(1);
   });
 
@@ -643,11 +643,11 @@ describe('checkForUpdates', () => {
       new Response(JSON.stringify({ tag_name: 'v99.0.0', name: 'v99.0.0', body: '', assets: [] }), {
         status: 200,
       })) as unknown as typeof fetch;
-    const log = spyOn(console, 'log').mockImplementation(() => {});
+    const log = spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       const result = await checkForUpdates(false);
       expect(result.updateAvailable).toBe(true);
-      return log.mock.calls.flat().join('\n');
+      return log.mock.calls.flat().join('');
     } finally {
       log.mockRestore();
     }

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { formatSavedItems, writeJson } from '../lib/formatter.ts';
+import { formatSavedItems, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { enrichSavedItems } from '../lib/saved.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
@@ -74,7 +74,7 @@ export function createSavedCommand(): Command {
           return;
         }
 
-        console.log('\n' + formatSavedItems(items, users));
+        writeText('\n' + formatSavedItems(items, users));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to fetch saved items' });
       }

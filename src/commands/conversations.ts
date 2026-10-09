@@ -324,7 +324,8 @@ const HELP = {
       'To undo, mark the conversation again with --ts set to previous_last_read. That needs a non-null value.',
       'The timestamp is not checked against the conversation\'s messages. One older than the current cursor ' +
         'moves the cursor back, so later messages count as unread again.',
-      'Thread read state is not changed: threads keep their own cursor.',
+      'Thread read state is not changed: threads keep their own cursor. A link to a thread reply marks the ' +
+        'conversation up to that reply\'s own timestamp.',
       'It changes the read state of the authenticated user. An app token needs a conversation write scope ' +
         '(channels:write, groups:write, im:write or mpim:write).',
     ],

@@ -251,7 +251,8 @@ The target message is always explicit. Give `<channel>` and `--ts`, or
 `--permalink`, fails with `invalid_input` before anything is sent. There is no
 "mark everything read" form. `<channel>` accepts an ID, a Slack link or a
 [channel name](links-and-timestamps.md#channel-names-and-user-handles), and `--ts` accepts
-`1712345678.123456` and `p1712345678123456`.
+`1712345678.123456` and `p1712345678123456`. A link to a thread reply marks the
+conversation up to that reply's own timestamp, not its parent's.
 
 Like the other mutating commands it confirms first (or takes `--yes` when
 non-interactive), and `--dry-run` prints the conversation, the timestamp and

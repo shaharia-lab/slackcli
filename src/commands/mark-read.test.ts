@@ -129,6 +129,13 @@ describe('conversations mark-read, in process', () => {
       expect(JSON.parse(stdout).ts).toBe('1712345678.123456');
     });
 
+    it('marks up to the linked reply itself, not its thread parent, for a reply link', async () => {
+      await run(['--permalink', `${PERMALINK}?thread_ts=1712340000.000100&cid=C0123456789`, '--yes', '--json']);
+
+      expect(marks()).toEqual([['conversations.mark', { channel: 'C0123456789', ts: '1712345678.123456' }]]);
+      expect(JSON.parse(stdout).ts).toBe('1712345678.123456');
+    });
+
     it('accepts the p-prefixed timestamp form for --ts', async () => {
       await run(['C0123456789', '--ts', 'p1712345678123456', '--yes', '--json']);
 

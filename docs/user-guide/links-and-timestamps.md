@@ -97,7 +97,8 @@ slackcli messages react --permalink="https://myteam.slack.com/archives/C12345678
 ```
 
 Available on `messages send`, `messages react`, `messages edit`,
-`messages draft`, `conversations read`, and `conversations get`.
+`messages draft`, `conversations read`, `conversations get`, and
+`conversations mark-read`.
 
 Rules worth knowing:
 

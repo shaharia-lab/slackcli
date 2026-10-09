@@ -22,7 +22,8 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 - IDs accept Slack URLs (channel, DM, user, canvas, file). Timestamps accept
   `p1234567890123456`, `1234567890123456`, `1234567890.123456`.
 - `--permalink <url>` replaces channel + timestamp on `messages send|react|edit|draft`,
-  `conversations read|get|mark-read`. A reply link targets the parent thread.
+  `conversations read|get|mark-read`. A reply link targets the parent thread
+  (`get` and `mark-read` use the linked message's own timestamp).
 - `--dry-run` on every Slack write (`messages send|edit|react|draft|send-draft|delete-draft`,
   `conversations members add|remove`, `join`, `leave`, `mark-read`, every `usergroups` write):
   resolves and validates, writes nothing, never prompts or needs `--yes`, exits 0.

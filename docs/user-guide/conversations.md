@@ -115,8 +115,10 @@ slackcli conversations unread --json
 
 Conversations with mentions sort first, then alphabetically. `--json` gives
 `{ unread_channels: [...] }`. When no conversation and no thread is unread the
-command prints "All caught up!" on stderr and writes nothing to stdout, even
-with `--json`.
+command prints "All caught up!" on stderr and exits `0`. The text output then
+writes nothing to stdout; `--json` still prints one object with an empty list,
+`{ "unread_channels": [] }` (plus `threads` with browser auth), so
+`jq '.unread_channels | length'` works in every case.
 
 **Unread threads.** With browser auth the command also says whether the threads
 you follow have unread replies or mentions, which Slack counts separately from

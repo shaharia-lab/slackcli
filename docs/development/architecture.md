@@ -30,8 +30,8 @@ Every command calls `describeCommand(cmd, HELP.<name>)` from `src/lib/help.ts`
 instead of a bare `.description()`. It sets `.summary()` (the one-liner in the
 parent's list), `.description()`, and appends `Examples` and `Notes` after the
 options. Standard notes come from fields, so the wording stays the same
-everywhere: `json` (the `--json` output shape), `browserOnly` and `confirms`
-(the `--yes` / TTY / non-TTY rule).
+everywhere: `json` (the `--json` output shape), `browserOnly`, `standardOnly`
+and `confirms` (the `--yes` / TTY / non-TTY rule).
 
 The root help replaces Commander's list of groups with a tree of every
 command, rendered from `program.commands` (`renderCommandTree()`), and a
@@ -152,6 +152,7 @@ endpoints. Each divergence is one method, and each is a deliberate trade:
 |---|---|---|
 | `createDraft` | `drafts.create` | throws — no public API exists |
 | `listDrafts` | `drafts.list` | throws — no public API exists |
+| `scheduleMessage`, `listScheduledMessages`, `deleteScheduledMessage` | throws — Slack answers `not_allowed_token_type` (`requireStandardAuth()`) | `chat.scheduleMessage`, `chat.scheduledMessages.list`, `chat.deleteScheduledMessage` |
 | `listSavedItems` | `saved.list` | `stars.list` |
 | `searchModules` | `search.modules` | list + client-side filter (capped at 1000) |
 | `getUnreadCounts` | `client.counts` (channels, DMs and the `threads` summary) | `conversations.list` unread fields — no thread equivalent |

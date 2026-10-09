@@ -24,6 +24,12 @@ standard auth), fetching an arbitrary thread reply by timestamp alone
 (`conversations get`), and reading the unread messages and unread thread replies
 in one call (`conversations unread --messages`).
 
+One feature goes the other way and needs a standard token: scheduling a message
+for later (`messages schedule`, `messages list-scheduled`,
+`messages delete-scheduled`). Slack answers its scheduling API with
+`not_allowed_token_type` on a browser session, so those commands refuse a
+browser profile before calling Slack.
+
 ## 1. Standard Slack app tokens
 
 Create an app at [api.slack.com/apps](https://api.slack.com/apps), add the OAuth

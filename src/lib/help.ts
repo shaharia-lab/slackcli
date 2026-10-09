@@ -21,6 +21,8 @@ export interface CommandHelp {
   json?: string;
   /** Rendered as a standard note: the command needs browser session tokens. */
   browserOnly?: boolean;
+  /** Rendered as a standard note: the command needs a standard app token. */
+  standardOnly?: boolean;
   /** Rendered as the standard confirmation-rule note for gated writes. */
   confirms?: boolean;
   /** Rendered as the standard note for a write command's --dry-run. */
@@ -39,6 +41,10 @@ export const HELP_WIDTH = 80;
 export const BROWSER_ONLY_NOTE =
   'Browser session tokens only (auth login-auto, login-browser or parse-curl). ' +
   'With an app token (xoxb/xoxp) it fails, because Slack offers no app API for it.';
+
+export const STANDARD_ONLY_NOTE =
+  'Standard app tokens only (xoxb or xoxp, from auth login). With browser session tokens it ' +
+  'fails before calling Slack, because Slack refuses its scheduling API to them.';
 
 export const CONFIRM_NOTE =
   'Asks for confirmation (y/N on stderr) in a terminal. --yes skips the prompt. ' +
@@ -100,6 +106,7 @@ export function helpNotes(help: CommandHelp): string[] {
   const notes: string[] = [];
   if (help.json) notes.push(`With --json, stdout is one JSON object: ${help.json}`);
   if (help.browserOnly) notes.push(BROWSER_ONLY_NOTE);
+  if (help.standardOnly) notes.push(STANDARD_ONLY_NOTE);
   if (help.confirms) notes.push(CONFIRM_NOTE);
   if (help.dryRun) notes.push(DRY_RUN_NOTE);
   if (help.fields) notes.push(FIELDS_NOTE(help.fields));

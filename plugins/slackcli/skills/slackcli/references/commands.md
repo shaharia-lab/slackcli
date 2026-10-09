@@ -5,8 +5,8 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 
 ## Everywhere
 
-- `--json`: every read command, plus `messages send|edit|draft` and `usergroups`
-  writes. JSON on stdout; spinners, warnings, errors on stderr. A failure with
+- `--json`: every read command, plus `messages send|edit|draft|schedule|delete-scheduled`
+  and `usergroups` writes. JSON on stdout; spinners, warnings, errors on stderr. A failure with
   `--json` exits 1 and ends stderr with one line
   `{"error":{"code","message","hint"?,"retryable","slack_error"?}}`: branch on
   `code`, never on message text.
@@ -24,7 +24,7 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 - `--permalink <url>` replaces channel + timestamp on `messages send|react|edit|draft`,
   `conversations read|get|mark-read`. A reply link targets the parent thread
   (`get` and `mark-read` use the linked message's own timestamp).
-- `--dry-run` on every Slack write (`messages send|edit|react|draft|send-draft|delete-draft`,
+- `--dry-run` on every Slack write (`messages send|edit|react|draft|send-draft|delete-draft|schedule|delete-scheduled`,
   `conversations members add|remove`, `join`, `leave`, `mark-read`, every `usergroups` write):
   resolves and validates, writes nothing, never prompts or needs `--yes`, exits 0.
   With `--json`: `{dry_run: true, action, workspace: {name,id,profile}, target: {kind,id?,name?,ts?,thread_ts?}, payload}`.
@@ -81,6 +81,9 @@ messages draft --recipient-id=C (--message=T | --message-file=F|-) [--json]    #
 messages send-draft Dr… [--yes] [--json]                                     # post, then delete draft
 messages delete-draft Dr… [--yes] [--json]                                   # discard draft
 messages list-drafts [--limit=100] [--json]                                  # browser auth only
+messages schedule --recipient-id=<…> (--message=T | --message-file=F|-) (--at=TIME | --in=DUR) [--thread-ts=TS] [--blocks=JSON|@file] [--json]   # app token only
+messages list-scheduled [--recipient-id=<…>] [--limit=100] [--json]          # app token only
+messages delete-scheduled Q… [--yes] [--json]                                # app token only; cancel
 ```
 
 `U…`, `@handle` or email recipient opens a DM. Any channel or user argument takes
@@ -93,6 +96,14 @@ with `--file` → `{channel_id, file_id, file_ids}` (`file_id` is the first of `
 `list-drafts` → `{draft_count, drafts[]{draft_id,channel_id,text,date_created,file_ids,thread_ts?,date_scheduled?}}`.
 `send-draft` → `{channel_id,ts,permalink?}`; on cleanup failure it also returns
 `cleanup_error` and exits nonzero. `delete-draft` → `{draft_id,deleted:true}`.
+Scheduling (app token `xoxb`/`xoxp` only; a browser profile → `unsupported_auth_type`):
+`--at` takes Unix seconds, ISO 8601 with offset/`Z`, or local `"YYYY-MM-DD HH:MM"` (machine
+timezone); `--in` takes `45m`, `2h`, `3d`, `1h30m`. Exactly one; must be future and ≤120 days,
+else `invalid_input`. No `--file`. `schedule` → `{channel_id, scheduled_message_id, post_at, thread_ts?}`
+(`post_at` Unix seconds). `list-scheduled` → `{scheduled_count, scheduled_messages[]{scheduled_message_id,
+channel_id,post_at,date_created,text}}`, only messages scheduled with this token. `delete-scheduled`
+→ `{scheduled_message_id, channel_id, deleted:true}`; an ID not pending → `not_found`; Slack
+refuses a cancel in the last 60 s before posting.
 
 ## search
 
@@ -158,7 +169,7 @@ slackcli canvas read F123 --json | jq -r .markdown > canvas.md
 | `auth_failed` | `No workspace configured`; `invalid_auth` `not_authed` `token_revoked`; sign-in page on canvas read | No workspace: authenticate (phase 2). Browser: `auth login-auto --headless`; standard: re-login. `hint` has the command |
 | `not_found` | `Workspace not found`, `channel_not_found`, unknown user group | `auth list` / fix the ID |
 | `invalid_input` | `matches multiple profiles`, bad flag value or link | `auth list` and pass the profile key / fix the input |
-| `unsupported_auth_type` | `not_allowed_token_type` on search; drafts on an app token | Needs `xoxp` or browser auth |
+| `unsupported_auth_type` | `not_allowed_token_type` on search; drafts on an app token; scheduling on a browser profile | Needs `xoxp` or browser auth; scheduling needs an app-token profile |
 | `permission_denied` | `not_in_channel`, `missing_scope` | Join the channel or add the scope |
 | `confirmation_required` | a write without `--yes` | Confirm with user, add `--yes` |
 | `rate_limited` / `network` | throttled / Slack unreachable | Wait and retry |

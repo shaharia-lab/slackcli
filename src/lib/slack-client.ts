@@ -6,7 +6,10 @@ import { readFile, stat } from 'node:fs/promises';
 import type {
   DryRunWorkspace,
   SlackAuthTestResponse,
+  ScheduledMessageSummary,
   SlackDraftListResponse,
+  SlackScheduledMessage,
+  SlackScheduledMessageListResponse,
   WorkspaceConfig,
 } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
@@ -217,6 +220,35 @@ export const DRAFT_CREATE_AUTH_MESSAGE = 'Draft creation requires browser authen
 export const DRAFT_LIST_AUTH_MESSAGE = 'Draft listing requires browser authentication';
 export const DRAFT_DELETE_AUTH_MESSAGE = 'Draft deletion requires browser authentication';
 export const UNREAD_MESSAGES_AUTH_MESSAGE = 'Reading unread messages (--messages) requires browser authentication';
+
+// The refusal of the scheduled-message calls on browser session tokens: Slack
+// answers them with `not_allowed_token_type` (#379).
+export const SCHEDULED_MESSAGES_AUTH_MESSAGE =
+  'Scheduled messages require a standard Slack app token (xoxb or xoxp); ' +
+  'browser session tokens cannot use Slack\'s scheduling API';
+
+// chat.scheduledMessages.list page size, and a bound on the pages followed so a
+// cursor that never ends cannot loop forever.
+const SCHEDULED_PAGE_SIZE = 100;
+const SCHEDULED_MAX_PAGES = 100;
+
+/**
+ * One entry of `chat.scheduledMessages.list` as the CLI reports it, or
+ * undefined for an entry without an ID, channel or post time: such an entry
+ * could be neither shown truthfully nor cancelled.
+ */
+export function toScheduledMessageSummary(raw: SlackScheduledMessage): ScheduledMessageSummary | undefined {
+  if (typeof raw?.id !== 'string' || !raw.id) return undefined;
+  if (typeof raw.channel_id !== 'string' || !raw.channel_id) return undefined;
+  if (typeof raw.post_at !== 'number' || !Number.isFinite(raw.post_at)) return undefined;
+  return {
+    scheduled_message_id: raw.id,
+    channel_id: raw.channel_id,
+    post_at: raw.post_at,
+    date_created: typeof raw.date_created === 'number' ? raw.date_created : 0,
+    text: typeof raw.text === 'string' ? raw.text : '',
+  };
+}
 
 export class SlackClient {
   private readonly config: WorkspaceConfig;
@@ -645,6 +677,63 @@ export class SlackClient {
       draft_id: draftId,
       client_last_updated_ts: (Date.now() / 1000).toFixed(7),
     });
+  }
+
+  // Schedule a message for later (standard auth only). Like chat.postMessage,
+  // this is a write: `retry.ts` never repeats it after an ambiguous failure,
+  // and on this path the only retries are the ones `@slack/web-api` makes by
+  // itself for every call, exactly as for a post.
+  async scheduleMessage(channel: string, text: string, postAt: number, options: {
+    thread_ts?: string;
+    blocks?: Array<Record<string, unknown>>;
+  } = {}): Promise<any> {
+    this.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+
+    const params: Record<string, any> = { channel, text, post_at: postAt };
+    if (options.thread_ts) params.thread_ts = options.thread_ts;
+    if (options.blocks) params.blocks = options.blocks;
+
+    return this.request('chat.scheduleMessage', params);
+  }
+
+  // The pending scheduled messages (standard auth only), soonest first. Slack
+  // returns only the ones scheduled with the calling token. Cursors are
+  // followed until `limit` messages are collected, or to the end without one.
+  async listScheduledMessages(options: { channel?: string; limit?: number } = {}): Promise<ScheduledMessageSummary[]> {
+    this.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+
+    const limit = options.limit ?? Number.POSITIVE_INFINITY;
+    const found: ScheduledMessageSummary[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < SCHEDULED_MAX_PAGES && found.length < limit; page++) {
+      const params: Record<string, any> = { limit: SCHEDULED_PAGE_SIZE };
+      if (options.channel) params.channel = options.channel;
+      if (cursor) params.cursor = cursor;
+      const response: SlackScheduledMessageListResponse = await this.request('chat.scheduledMessages.list', params);
+
+      let skipped = 0;
+      for (const raw of response.scheduled_messages ?? []) {
+        const summary = toScheduledMessageSummary(raw);
+        if (summary) found.push(summary);
+        else skipped += 1;
+      }
+      if (skipped > 0) {
+        logger.warn('chat.scheduledMessages.list returned {skipped} unusable entries', { skipped });
+      }
+
+      const next = response.response_metadata?.next_cursor;
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+
+    found.sort((a, b) => a.post_at - b.post_at || a.scheduled_message_id.localeCompare(b.scheduled_message_id));
+    return Number.isFinite(limit) ? found.slice(0, limit) : found;
+  }
+
+  // Cancel a pending scheduled message (standard auth only).
+  async deleteScheduledMessage(channel: string, scheduledMessageId: string): Promise<void> {
+    this.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+    await this.request('chat.deleteScheduledMessage', { channel, scheduled_message_id: scheduledMessageId });
   }
 
   // Get user info
@@ -1120,6 +1209,14 @@ export class SlackClient {
   // would.
   requireBrowserAuth(message: string): void {
     if (this.config.auth_type === 'standard') {
+      throw new UnsupportedAuthTypeError(message);
+    }
+  }
+
+  // The mirror image: throw what a standard-only call throws on browser
+  // session tokens, without making the call.
+  requireStandardAuth(message: string): void {
+    if (this.config.auth_type !== 'standard') {
       throw new UnsupportedAuthTypeError(message);
     }
   }

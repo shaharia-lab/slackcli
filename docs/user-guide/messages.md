@@ -1,17 +1,17 @@
 # Send, reply, edit and react to Slack messages
 
-`slackcli messages` sends, edits, and reacts to messages, and creates, lists,
-sends, and deletes drafts.
+`slackcli messages` sends, edits, and reacts to messages, creates, lists,
+sends, and deletes drafts, and schedules messages for later.
 
 Every subcommand accepts `--workspace <id|name>`.
 
 ## Previewing a write (`--dry-run`)
 
-`send`, `edit`, `react`, `draft`, `send-draft` and `delete-draft` take
-`--dry-run`. The message is resolved and checked as for a real send — the text
+`send`, `edit`, `react`, `draft`, `send-draft`, `delete-draft`, `schedule` and
+`delete-scheduled` take `--dry-run`. The message is resolved and checked as for a real send — the text
 from `--message` or `--message-file`, parsed `--blocks`, the `--file` to
 upload, the target from `--recipient-id`, `--thread-ts` or `--permalink` — and
-printed instead of sent. `send`, `edit`, `react` and `draft` have no
+printed instead of sent. `send`, `edit`, `react`, `draft` and `schedule` have no
 confirmation prompt, so this is the way to check one first:
 
 ```bash
@@ -21,7 +21,8 @@ slackcli messages send-draft Dr0123456789 --dry-run --json
 
 A dry run to a user ID does not open the DM; the preview names the user. The
 draft commands still need browser session tokens, and fail on an app token as
-the real command does. See [`--dry-run`](scripting.md#--dry-run) for the
+the real command does; the scheduled-message commands likewise still need an
+app token. See [`--dry-run`](scripting.md#--dry-run) for the
 preview format.
 
 ## `messages send`
@@ -348,6 +349,144 @@ trims each draft further, e.g. `--fields draft_id,text`):
 `thread_ts` and `date_scheduled` are included only when present. Deleted and
 already-sent entries are excluded, and an empty result is successful with
 `{"draft_count":0,"drafts":[]}`.
+
+## `messages schedule`
+
+Hands a message to Slack to post at a future time. Slack delivers it, so the
+script that scheduled it can exit and the machine can be off.
+
+```bash
+# At a local date and time (this machine's timezone)
+slackcli messages schedule --recipient-id C0123456789 --message "Standup in 10 minutes" --at "2026-10-12 09:50"
+
+# After a delay
+slackcli messages schedule --recipient-id="#general" --message "Deploy window closed" --in 2h
+
+# At an exact instant, as a thread reply, with the result as JSON
+slackcli messages schedule --permalink "$LINK" --message-file ./notes.md --at 2026-10-12T09:50:00+02:00 --json
+```
+
+```
+Scheduled for Mon 12 Oct 2026, 09:50 CEST
+  Target: C0123456789
+  ID:     Q0123ABCDEF
+```
+
+It takes the target and content options of [`messages send`](#messages-send)
+(`--recipient-id`, `--thread-ts`, `--permalink`, `--message`, `--message-file`,
+`--blocks`) except `--file`: Slack cannot attach a file to a scheduled message.
+Like `send`, it does not ask for confirmation; use `--dry-run` to check the
+target and the resolved time first.
+
+**Standard app tokens only** (`xoxb` or `xoxp`, from `auth login`). Slack
+refuses its scheduling API to browser session tokens, so with a browser profile
+`schedule`, `list-scheduled` and `delete-scheduled` fail with
+`unsupported_auth_type` before making any Slack call. Pick an app-token profile
+with `--workspace`.
+
+### When to post (`--at`, `--in`)
+
+Exactly one of the two is required.
+
+| Flag | Accepts | Example |
+|---|---|---|
+| `--at` | Unix seconds | `--at 1791791400` |
+| `--at` | ISO 8601 with an offset or `Z` | `--at 2026-10-12T09:50:00+02:00`, `--at 2026-10-12T07:50:00Z` |
+| `--at` | A local date and time, read in this machine's timezone (`T` or a space; seconds optional) | `--at "2026-10-12 09:50"` |
+| `--in` | Minutes, hours and days, each at most once | `--in 45m`, `--in 2h`, `--in 3d`, `--in 1h30m` |
+
+Nothing else is guessed at: a date without a time, `tomorrow`, or `9am` is
+refused with `invalid_input`, and so is a date that does not exist
+(`2026-02-30`). The resolved time is always echoed with its timezone, and
+`post_at` in the JSON output is the same instant in Unix seconds, so a local
+time can be checked before it matters.
+
+Around a clock change a local time can be ambiguous. One that is skipped when
+the clocks go forward (02:30 on that night) is refused; one that happens twice
+when they go back is read as the first of the two. Write the offset
+(`+02:00`) to be exact.
+
+Slack's limits, each reported before or by the call:
+
+- The time must be in the future and at most **120 days** ahead. SlackCLI
+  checks this before calling Slack; Slack's own `time_in_past` and
+  `time_too_far` are reported as `invalid_input` too.
+- At most **30 scheduled messages per channel in any 5-minute window**
+  (`restricted_too_many`, reported as `rate_limited`).
+
+### JSON output (`--json`)
+
+```json
+{
+  "channel_id": "C0123456789",
+  "scheduled_message_id": "Q0123ABCDEF",
+  "post_at": 1791791400
+}
+```
+
+`thread_ts` is added for a reply in a thread. `channel_id` is the resolved
+conversation, so for a user it is the DM's ID. Keep `scheduled_message_id` to
+cancel the message later.
+
+## `messages list-scheduled`
+
+```bash
+slackcli messages list-scheduled
+slackcli messages list-scheduled --recipient-id C0123456789 --limit 25 --json
+```
+
+Lists the messages waiting to be posted, sorted by the time they will post.
+`--recipient-id` keeps one conversation and accepts what `messages send` does;
+a user is looked up as your DM with them, which opens that DM if it does not
+exist yet. The default `--limit` is `100`; it must be a positive integer.
+
+Slack returns only the messages scheduled **with the token in use**. A message
+scheduled in the Slack app, or by another app, is not listed.
+
+```json
+{
+  "scheduled_count": 1,
+  "scheduled_messages": [
+    {
+      "scheduled_message_id": "Q0123ABCDEF",
+      "channel_id": "C0123456789",
+      "post_at": 1791791400,
+      "date_created": 1791700000,
+      "text": "Standup in 10 minutes"
+    }
+  ]
+}
+```
+
+`post_at` and `date_created` are Unix seconds. Nothing pending is a success
+with `{"scheduled_count":0,"scheduled_messages":[]}`.
+[`--fields`](scripting.md#keeping-output-small---fields-and---limit) trims each
+item, e.g. `--fields scheduled_message_id,post_at`.
+
+## `messages delete-scheduled`
+
+```bash
+slackcli messages delete-scheduled Q0123ABCDEF
+slackcli messages delete-scheduled Q0123ABCDEF --yes --json
+```
+
+Cancels a scheduled message before it is posted. It asks for confirmation in a
+terminal; `--yes` skips the prompt, and without a terminal on stdin and without
+`--yes` it refuses. `--dry-run` shows the message it would cancel.
+
+Only the ID is needed: the command reads the pending list to find the
+message's channel, which Slack's cancel call requires. An ID that is not in
+that list (already posted, already cancelled, or scheduled with another token)
+fails with `not_found`. Slack refuses to cancel a message in the **last 60
+seconds** before it posts.
+
+```json
+{
+  "scheduled_message_id": "Q0123ABCDEF",
+  "channel_id": "C0123456789",
+  "deleted": true
+}
+```
 
 ## Related
 

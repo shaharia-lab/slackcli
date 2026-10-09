@@ -46,7 +46,7 @@ describe('parseRetryAfter', () => {
 
 describe('isReadMethod', () => {
   it('knows the read methods the client calls', () => {
-    for (const method of ['conversations.history', 'users.info', 'search.messages', 'auth.test', 'subscriptions.thread.getView']) {
+    for (const method of ['conversations.history', 'users.info', 'search.messages', 'auth.test', 'subscriptions.thread.getView', 'chat.scheduledMessages.list']) {
       expect(isReadMethod(method)).toBe(true);
     }
   });
@@ -55,6 +55,8 @@ describe('isReadMethod', () => {
     for (const method of [
       'chat.postMessage',
       'chat.update',
+      'chat.scheduleMessage',
+      'chat.deleteScheduledMessage',
       'drafts.create',
       'drafts.delete',
       'reactions.add',

@@ -39,6 +39,7 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   file_deleted: 'not_found',
   no_such_subteam: 'not_found',
   team_not_found: 'not_found',
+  invalid_scheduled_message_id: 'not_found',
 
   missing_scope: 'permission_denied',
   not_in_channel: 'permission_denied',
@@ -57,6 +58,8 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
 
   ratelimited: 'rate_limited',
   rate_limited: 'rate_limited',
+  // chat.scheduleMessage: too many messages scheduled for one channel in a short window.
+  restricted_too_many: 'rate_limited',
 
   invalid_arguments: 'invalid_input',
   invalid_arg_name: 'invalid_input',
@@ -75,6 +78,8 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   msg_too_long: 'invalid_input',
   no_text: 'invalid_input',
   too_many_attachments: 'invalid_input',
+  time_in_past: 'invalid_input',
+  time_too_far: 'invalid_input',
 
   not_allowed_token_type: 'unsupported_auth_type',
 

@@ -22,6 +22,7 @@
 export const READ_METHODS: ReadonlySet<string> = new Set([
   'auth.test',
   'chat.getPermalink',
+  'chat.scheduledMessages.list',
   'client.counts',
   'conversations.history',
   'conversations.info',

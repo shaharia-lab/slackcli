@@ -8,6 +8,8 @@ import {
   formatChannelSearchResults,
   formatPeopleSearchResults,
   formatUnreadChannels,
+  formatUnreadMessages,
+  formatUnreadThreadItems,
   formatUnreadThreads,
   formatPaginationHint,
   formatFileSize,
@@ -38,6 +40,7 @@ import type {
   SlackUsergroup,
   UsergroupMember,
   CustomEmoji,
+  UnreadThread,
 } from '../types/index.ts';
 
 describe('formatDraftList', () => {
@@ -276,6 +279,87 @@ describe('formatUnreadChannels', () => {
     const output = formatUnreadChannels(channels);
     expect(output).toMatch(/1\.\S* 👤 \S*dm/);
     expect(output).toMatch(/2\.\S* 👥 \S*mpdm/);
+  });
+});
+
+describe('formatUnreadMessages', () => {
+  const users = new Map<string, SlackUser>([['U1', { id: 'U1', name: 'alice', real_name: 'Alice' } as SlackUser]]);
+  const message = (ts: string, text: string): SlackMessage => ({ type: 'message', user: 'U1', text, ts });
+
+  it('prints the same row as formatUnreadChannels, then the messages under it', () => {
+    const channels: UnreadChannel[] = [
+      { id: 'C1', name: 'general', mention_count: 3, has_unreads: true, messages: [message('1700000001.000000', 'first'), message('1700000002.000000', 'second')] },
+    ];
+
+    const output = formatUnreadMessages(channels, users);
+    const row = formatUnreadChannels(channels).split('\n')[2];
+
+    expect(output.split('\n')[2]).toBe(row);
+    expect(output).toContain('Unread Channels (1)');
+    expect(output).toContain('     [');
+    expect(output).toContain('@Alice');
+    expect(output).toContain('       first\n');
+    expect(output.indexOf('second')).toBeGreaterThan(output.indexOf('first'));
+    expect(output).not.toContain('not read');
+    expect(output).not.toContain('not shown');
+  });
+
+  it('marks a conversation cut by --limit and one with nothing new at the top level', () => {
+    const output = formatUnreadMessages([
+      { id: 'C1', name: 'general', mention_count: 0, has_unreads: true, has_more: true, messages: [message('1700000001.000000', 'first')] },
+      { id: 'C2', name: 'random', mention_count: 0, has_unreads: true, messages: [] },
+    ], users);
+
+    expect(output).toContain('… more messages not shown; raise --limit');
+    expect(output).toContain('(no new top-level messages)');
+    expect(output.indexOf('(no new top-level messages)')).toBeGreaterThan(output.indexOf('random'));
+  });
+
+  it('counts the conversations that were not read', () => {
+    const read: UnreadChannel = { id: 'C1', name: 'general', mention_count: 0, has_unreads: true, messages: [] };
+    const skipped = (id: string): UnreadChannel => ({ id, name: id, mention_count: 0, has_unreads: true });
+
+    expect(formatUnreadMessages([read, skipped('C2')], users)).toContain('1 conversation not read; raise --max-conversations');
+    expect(formatUnreadMessages([read, skipped('C2'), skipped('C3')], users)).toContain('2 conversations not read; raise --max-conversations');
+  });
+});
+
+describe('formatUnreadThreadItems', () => {
+  const users = new Map<string, SlackUser>([
+    ['U1', { id: 'U1', name: 'alice', real_name: 'Alice' } as SlackUser],
+    ['U2', { id: 'U2', name: 'bob', real_name: 'Bob' } as SlackUser],
+  ]);
+  const thread = (extra: Partial<UnreadThread> = {}): UnreadThread => ({
+    channel_id: 'C1',
+    thread_ts: '1700000100.000000',
+    root: { type: 'message', user: 'U1', text: 'root question', ts: '1700000100.000000', thread_ts: '1700000100.000000' },
+    unread_replies: [{ type: 'message', user: 'U2', text: 'an answer', ts: '1700000101.000000', thread_ts: '1700000100.000000' }],
+    ...extra,
+  });
+
+  it('prints the root, then the unread replies indented under it', () => {
+    const output = formatUnreadThreadItems([thread()], users, new Map([['C1', 'general']]));
+
+    expect(output).toContain('🧵 Unread Threads (1)');
+    expect(output).toContain('general');
+    expect(output).toContain('(C1, thread 1700000100.000000)');
+    expect(output).toContain('       root question\n');
+    expect(output).toContain('           an answer\n');
+    expect(output).toContain('@Bob');
+    expect(output).not.toContain('not shown');
+    expect(output).not.toContain('More threads');
+  });
+
+  it('falls back to the channel ID when the name is not known', () => {
+    const output = formatUnreadThreadItems([thread({ channel_id: 'D9' })], users);
+    expect(output).toMatch(/1\.\S* \S*D9\S* \S*\(D9, thread 1700000100\.000000\)/);
+  });
+
+  it('marks a thread cut by --limit and an incomplete list', () => {
+    const output = formatUnreadThreadItems([thread({ has_more: true })], users, new Map(), true);
+
+    expect(output).toContain('… more replies not shown; raise --limit');
+    expect(output).toContain('More threads have unread replies than are listed here.');
   });
 });
 

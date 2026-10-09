@@ -53,13 +53,17 @@ conversations list [--types=public_channel,private_channel,mpim,im] [--limit=100
 conversations read <channel|#name|url> [--limit=100] [--thread-ts=TS] [--exclude-replies] [--oldest=UNIX] [--latest=UNIX] [--json]
 conversations read --permalink=URL [--json]        # that message's thread
 conversations get <channel> <ts> | --permalink=URL [--json]
-conversations unread [--types=channels|dms|groups] [--json]
+conversations unread [--types=channels|dms|groups] [--messages [--max-conversations=10] [--limit=20]] [--json]
 ```
 
 JSON: `list` → `conversations[]`, `users[]`, `next_cursor` (null on last page).
 `read` → `messages[]{ts,thread_ts,user,text,reply_count,reactions,blocks,attachments}`,
 `users[]`; oldest first. `unread` → `unread_channels[]{…,mention_count}`, plus
 `threads{has_unreads,mention_count}` (browser auth only: followed threads, workspace-wide).
+`unread --messages` (browser auth only; app token → `unsupported_auth_type`) adds the content in one
+call: `unread_channels[]{…,last_read,latest,messages[],has_more?}` (messages newer than `last_read`,
+oldest first; no `messages` key past `--max-conversations`), `threads.items[]{channel_id,thread_ts,
+root,unread_replies[],has_more?}` (no `items` key if Slack's thread view failed), and `users[]`.
 Standard token: `get` resolves top-level messages only; use `read --thread-ts=<parent>`.
 
 ## messages
@@ -134,6 +138,7 @@ logs path [--json]   |   logs show [--last=N | --run=ID] [--json]   |   logs cle
 ```bash
 slackcli search channels "eng" --json | jq -r '.channels[] | "\(.id)\t\(.name)"'
 slackcli conversations unread --json | jq '.unread_channels[] | select(.mention_count > 0)'
+slackcli conversations unread --messages --json --fields id,name,messages.user,messages.text   # catch up in one call (browser auth)
 slackcli conversations read --permalink="$LINK" --json | jq -r '.messages[].text'
 sent=$(slackcli messages send --recipient-id=C123 --message="Working…" --json); ts=$(jq -r .ts <<<"$sent")
 slackcli messages edit --channel-id=C123 --timestamp="$ts" --message="Done"

@@ -216,6 +216,7 @@ export async function checkUploadFile(filePath: string): Promise<{ filename: str
 export const DRAFT_CREATE_AUTH_MESSAGE = 'Draft creation requires browser authentication';
 export const DRAFT_LIST_AUTH_MESSAGE = 'Draft listing requires browser authentication';
 export const DRAFT_DELETE_AUTH_MESSAGE = 'Draft deletion requires browser authentication';
+export const UNREAD_MESSAGES_AUTH_MESSAGE = 'Reading unread messages (--messages) requires browser authentication';
 
 export class SlackClient {
   private readonly config: WorkspaceConfig;
@@ -947,6 +948,18 @@ export class SlackClient {
       types: 'public_channel,private_channel,mpim,im',
       limit: 1000,
     });
+  }
+
+  // One page of the Threads view: followed threads, the ones with unread
+  // replies first, newest activity first (browser auth only; undocumented).
+  // `current_ts` is an exclusive upper bound on a thread's latest reply, which
+  // is how the web client asks for the next page.
+  async getUnreadThreadView(options: { current_ts?: string } = {}): Promise<any> {
+    this.requireBrowserAuth(UNREAD_MESSAGES_AUTH_MESSAGE);
+
+    const params: Record<string, any> = {};
+    if (options.current_ts) params.current_ts = options.current_ts;
+    return this.request('subscriptions.thread.getView', params);
   }
 
   // List canvas files

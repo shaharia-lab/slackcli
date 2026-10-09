@@ -101,6 +101,41 @@ describe('fetchUnread with browser auth (client.counts)', () => {
     users: { U1: { name: 'alice', real_name: 'Alice Doe' } },
   };
 
+  it('returns the read cursors of the unread conversations, keyed by ID, and leaves them off the list', async () => {
+    const { client } = createMockClient('browser', {
+      ok: true,
+      channels: [
+        { id: 'C1', has_unreads: true, mention_count: 0, last_read: '1700000001.000000', latest: '1700000009.000000' },
+        { id: 'C2', has_unreads: false, mention_count: 0, last_read: '1700000002.000000', latest: '1700000002.000000' },
+      ],
+      mpims: [{ id: 'G1', has_unreads: false, mention_count: 2, last_read: '0000000000.000000' }],
+      ims: [{ id: 'D1', has_unreads: true, mention_count: 1, last_read: 1700000003, latest: null }],
+    }, lookups);
+
+    const result = await fetchUnread(client);
+
+    // C2 is read, and D1 sent no usable cursor: neither gets an entry.
+    expect(result.cursors).toEqual({
+      C1: { last_read: '1700000001.000000', latest: '1700000009.000000' },
+      G1: { last_read: '0000000000.000000' },
+    });
+    for (const channel of result.channels) {
+      expect(Object.keys(channel)).not.toContain('last_read');
+      expect(Object.keys(channel)).not.toContain('latest');
+    }
+  });
+
+  it('leaves cursors out when Slack sent none, and with an app token', async () => {
+    const browser = createMockClient('browser', { ok: true, channels: [{ id: 'C1', has_unreads: true, mention_count: 0 }] }, lookups);
+    expect('cursors' in await fetchUnread(browser.client)).toBe(false);
+
+    const standard = createMockClient('standard', {
+      ok: true,
+      channels: [{ id: 'C1', name: 'general', is_member: true, unread_count: 2, last_read: '1700000001.000000' }],
+    });
+    expect('cursors' in await fetchUnread(standard.client)).toBe(false);
+  });
+
   it('returns the thread summary next to the unread conversations', async () => {
     const { client, calls } = createMockClient('browser', {
       ok: true,

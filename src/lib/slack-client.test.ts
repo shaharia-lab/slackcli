@@ -67,6 +67,10 @@ class TestSlackClient extends SlackClient {
       return { ok: true, draft: { id: 'Dr123' } };
     }
 
+    if (method === 'subscriptions.thread.getView') {
+      return { ok: true, threads: [], has_more: false };
+    }
+
     if (method === 'drafts.delete') {
       return { ok: true };
     }
@@ -700,6 +704,37 @@ describe('SlackClient.listDrafts', () => {
 
     await expect(client.listDrafts({ limit: 100 }))
       .rejects.toThrow('Draft listing requires browser authentication');
+  });
+});
+
+describe('SlackClient.getUnreadThreadView', () => {
+  it('asks for the first page of the Threads view with no parameters', async () => {
+    const client = new TestSlackClient();
+
+    await client.getUnreadThreadView();
+
+    expect(client.calls).toEqual([{ method: 'subscriptions.thread.getView', params: {} }]);
+  });
+
+  it('passes the page cursor as current_ts', async () => {
+    const client = new TestSlackClient();
+
+    await client.getUnreadThreadView({ current_ts: '1700000000.000100' });
+
+    expect(client.calls).toEqual([{ method: 'subscriptions.thread.getView', params: { current_ts: '1700000000.000100' } }]);
+  });
+
+  it('fails before making a request when the workspace uses standard authentication', async () => {
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    });
+
+    await expect(client.getUnreadThreadView())
+      .rejects.toThrow('Reading unread messages (--messages) requires browser authentication');
   });
 });
 

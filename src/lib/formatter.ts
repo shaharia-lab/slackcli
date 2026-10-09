@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import type {
   SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
-  SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThreads,
+  SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThread, UnreadThreads,
   SlackTeam, SlackUsergroup, UsergroupMember,
   CustomEmoji, DraftSummary, IdentityResult, ProfileCheck,
   DryRunPreview, DryRunTarget,
@@ -496,17 +496,89 @@ export function formatUnreadChannels(channels: UnreadChannel[]): string {
   let output = chalk.bold(`💬 Unread Channels (${channels.length})\n\n`);
 
   channels.forEach((ch, idx) => {
-    const prefix = channelPrefix(ch);
-    const name = ch.name || ch.id;
-    const mentions = ch.mention_count > 0 ? chalk.red(` @${ch.mention_count}`) : '';
-    const unreadCount = ch.unread_count ? chalk.yellow(` (${ch.unread_count} unread)`) : '';
-    const position = chalk.dim(`${idx + 1}.`);
-    const id = chalk.dim(`(${ch.id})`);
-
-    output += `  ${position} ${prefix} ${chalk.bold(name)} ${id}${mentions}${unreadCount}\n`;
+    output += unreadChannelLine(ch, idx);
   });
 
   output += '\n';
+  return output;
+}
+
+// One row of the unread list: position, type glyph, name, ID and counts
+function unreadChannelLine(ch: UnreadChannel, idx: number): string {
+  const prefix = channelPrefix(ch);
+  const name = ch.name || ch.id;
+  const mentions = ch.mention_count > 0 ? chalk.red(` @${ch.mention_count}`) : '';
+  const unreadCount = ch.unread_count ? chalk.yellow(` (${ch.unread_count} unread)`) : '';
+  const position = chalk.dim(`${idx + 1}.`);
+  const id = chalk.dim(`(${ch.id})`);
+
+  return `  ${position} ${prefix} ${chalk.bold(name)} ${id}${mentions}${unreadCount}\n`;
+}
+
+const UNREAD_MESSAGE_INDENT = 5;
+
+// Format the unread list of `conversations unread --messages`: the same rows as
+// formatUnreadChannels, each followed by the messages that were read for it
+export function formatUnreadMessages(channels: UnreadChannel[], users: Map<string, SlackUser>): string {
+  const pad = ' '.repeat(UNREAD_MESSAGE_INDENT);
+  let output = chalk.bold(`💬 Unread Channels (${channels.length})\n\n`);
+  let notRead = 0;
+
+  channels.forEach((ch, idx) => {
+    output += unreadChannelLine(ch, idx);
+    if (!ch.messages) {
+      notRead += 1;
+      return;
+    }
+    if (ch.messages.length === 0) {
+      output += `${pad}${chalk.dim('(no new top-level messages)')}\n`;
+    }
+    ch.messages.forEach((msg) => {
+      output += formatMessage(msg, users, UNREAD_MESSAGE_INDENT) + '\n';
+    });
+    if (ch.has_more) {
+      output += `${pad}${chalk.dim('… more messages not shown; raise --limit')}\n\n`;
+    }
+  });
+
+  if (notRead > 0) {
+    const noun = notRead === 1 ? 'conversation' : 'conversations';
+    output += '\n' + chalk.dim(`  ${notRead} ${noun} not read; raise --max-conversations to include them.`) + '\n';
+  }
+
+  output += '\n';
+  return output;
+}
+
+// Format the followed threads with unread replies (`conversations unread
+// --messages`): the root message, then its unread replies indented under it.
+// `channelNames` maps a channel ID to its name where one is already known.
+export function formatUnreadThreadItems(
+  threads: UnreadThread[],
+  users: Map<string, SlackUser>,
+  channelNames: Map<string, string> = new Map(),
+  incomplete = false,
+): string {
+  const pad = ' '.repeat(UNREAD_MESSAGE_INDENT);
+  let output = chalk.bold(`🧵 Unread Threads (${threads.length})\n\n`);
+
+  threads.forEach((thread, idx) => {
+    const position = chalk.dim(`${idx + 1}.`);
+    const where = channelNames.get(thread.channel_id) ?? thread.channel_id;
+    const ids = chalk.dim(`(${thread.channel_id}, thread ${thread.thread_ts})`);
+    output += `  ${position} ${chalk.bold(where)} ${ids}\n`;
+    output += formatMessage(thread.root, users, UNREAD_MESSAGE_INDENT) + '\n';
+    thread.unread_replies.forEach((reply) => {
+      output += formatMessage(reply, users, UNREAD_MESSAGE_INDENT + 4) + '\n';
+    });
+    if (thread.has_more) {
+      output += `${pad}    ${chalk.dim('… more replies not shown; raise --limit')}\n\n`;
+    }
+  });
+
+  if (incomplete) {
+    output += chalk.dim('  More threads have unread replies than are listed here.') + '\n\n';
+  }
   return output;
 }
 

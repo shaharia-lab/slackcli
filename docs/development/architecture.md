@@ -155,6 +155,7 @@ endpoints. Each divergence is one method, and each is a deliberate trade:
 | `listSavedItems` | `saved.list` | `stars.list` |
 | `searchModules` | `search.modules` | list + client-side filter (capped at 1000) |
 | `getUnreadCounts` | `client.counts` (channels, DMs and the `threads` summary) | `conversations.list` unread fields — no thread equivalent |
+| `getUnreadThreadView` | `subscriptions.thread.getView` (undocumented; one page of the Threads view, paged with `current_ts`) | throws — no public API exists |
 | `fetchMessage` (`src/lib/message.ts`) | `messages.list` — resolves replies too | `conversations.history` — top-level only |
 
 When you add a feature that only one auth type can support, follow this shape:

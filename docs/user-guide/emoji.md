@@ -5,6 +5,7 @@ member uploaded, not the built-in Unicode set.
 
 ```bash
 slackcli emoji list
+slackcli emoji list --filter kiro
 slackcli emoji list --limit=50
 slackcli emoji list --no-aliases
 slackcli emoji list --json
@@ -14,13 +15,22 @@ slackcli emoji get :party-parrot: --json
 
 ## `emoji list`
 
-Lists every custom emoji in the workspace, sorted by name. `--no-aliases` and
-`--limit` are applied locally to the full list. A workspace with no custom emoji
-prints nothing on stdout, even with `--json`.
+Lists every custom emoji in the workspace, sorted by name. `--no-aliases`,
+`--filter` and `--limit` are applied locally to the full list, in that order.
+A workspace with no custom emoji prints nothing on stdout, even with `--json`.
+
+`--filter <substring>` keeps emoji whose **name** contains the substring,
+matched case-insensitively. It is a local match over the full in-memory list,
+not a Slack search (Slack's API has no emoji search), so it does the same thing
+the composer's `:name…` autocomplete does. Surrounding
+colons are stripped as in `emoji get`, so `--filter :kiro:` and `--filter kiro`
+behave the same; an empty value (or one that is only colons/whitespace) is
+rejected rather than matching everything.
 
 | Option | Purpose |
 |---|---|
 | `--limit <number>` | Maximum number of emoji to return |
+| `--filter <substring>` | Only emoji whose name contains this substring (case-insensitive) |
 | `--no-aliases` | Exclude alias emoji, showing only originals |
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output |

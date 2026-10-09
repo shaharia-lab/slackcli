@@ -4,7 +4,7 @@ import { getAuthenticatedClient } from '../lib/auth.ts';
 import { formatEmoji, formatEmojiList, writeJson } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
-import { fetchCustomEmoji, getCustomEmoji, parseEmojiLimit } from '../lib/emoji.ts';
+import { fetchCustomEmoji, filterEmojiByName, getCustomEmoji, parseEmojiLimit } from '../lib/emoji.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 
@@ -24,6 +24,7 @@ const HELP = {
       '"emoji get" to look up one emoji by name.',
     examples: [
       'slackcli emoji list',
+      'slackcli emoji list --filter party',
       'slackcli emoji list --no-aliases --limit 50',
       'slackcli emoji list --json',
     ],
@@ -31,7 +32,8 @@ const HELP = {
       '{ emoji_count, emoji: [{ name, is_alias, url, alias_for }] } — url for an original, ' +
       'alias_for (the target name) for an alias.',
     notes: [
-      'The whole list is fetched in one call; --no-aliases and then --limit are applied locally.',
+      'The whole list is fetched in one call; --no-aliases, then --filter, then --limit are applied locally.',
+      '--filter keeps emoji whose name contains the substring, case-insensitive (not a Slack search). Slack has no emoji search, so this is a local match over the full list — the same thing the composer\'s :name… autocomplete does. Surrounding colons are stripped (--filter :kiro: == --filter kiro); an empty value is rejected.',
       'A workspace with no custom emoji prints nothing on stdout, even with --json (exit 0).',
     ],
   },
@@ -58,6 +60,7 @@ export function createEmojiCommand(): Command {
 
   describeCommand(emoji.command('list'), HELP.list)
     .option('--limit <number>', 'Maximum number of emoji to return (a positive integer)')
+    .option('--filter <substring>', 'Only emoji whose name contains this substring (case-insensitive)')
     .option('--no-aliases', 'Exclude alias emoji, showing only originals')
     .option('--workspace <id|name>', 'Workspace to use')
     .option('--json', 'Output in JSON format', false)
@@ -76,6 +79,18 @@ export function createEmojiCommand(): Command {
         // `--no-aliases` sets options.aliases to false (Commander convention).
         if (options.aliases === false) {
           emojiList = emojiList.filter(e => !e.is_alias);
+        }
+
+        // `--filter` narrows by name substring (case-insensitive) before the
+        // limit, so `--limit` means "top N of the matches". An empty value is
+        // rejected the same way a bad `--limit` is.
+        if (options.filter !== undefined) {
+          const { emoji: filtered, error: filterError } = filterEmojiByName(emojiList, options.filter);
+          if (filterError !== undefined || filtered === undefined) {
+            failCommand(new InvalidInputError(filterError ?? 'Invalid filter'), { json: options.json, spinner, context: 'Invalid filter' });
+            return;
+          }
+          emojiList = filtered;
         }
 
         if (options.limit !== undefined) {

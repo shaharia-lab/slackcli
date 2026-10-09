@@ -15,6 +15,30 @@ export function parseEmojiLimit(value: string): { limit?: number; error?: string
   return { limit };
 }
 
+// Narrow an already-fetched emoji list to those whose name contains `substring`,
+// matched case-insensitively. Like `--no-aliases` and `--limit`, this is a local
+// filter over the one `emoji.list` fetch — Slack exposes no `emoji.search`, and
+// this mirrors the composer's `:name…` autocomplete (a client-side filter over an
+// already-loaded map). Matches the name only, to keep the predicate surface the
+// same as `getCustomEmoji`.
+//
+// Surrounding colons are stripped the way `getCustomEmoji` strips them, so
+// `--filter :kiro:` and `--filter kiro` behave the same. An empty value (or one
+// that is only colons/whitespace) is rejected rather than silently matching
+// everything, mirroring how `parseEmojiLimit` rejects a bad `--limit`: returns
+// the filtered list, or an `error` message the command surfaces as an
+// `InvalidInputError`.
+export function filterEmojiByName(
+  emoji: CustomEmoji[],
+  substring: string,
+): { emoji?: CustomEmoji[]; error?: string } {
+  const needle = substring.replace(/^:|:$/g, '').trim().toLowerCase();
+  if (needle === '') {
+    return { error: 'Filter must not be empty' };
+  }
+  return { emoji: emoji.filter((e) => e.name.toLowerCase().includes(needle)) };
+}
+
 // Slack's emoji.list returns a flat map of name -> value, where the value is
 // either an image URL for a real custom emoji or the string "alias:<target>"
 // pointing at another emoji (custom or built-in). This normalises that map into

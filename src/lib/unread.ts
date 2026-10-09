@@ -1,5 +1,5 @@
 import type { SlackClient } from './slack-client.ts';
-import type { UnreadChannel, UnreadSummary, UnreadThreads } from '../types/index.ts';
+import type { UnreadChannel, UnreadCursor, UnreadSummary, UnreadThreads } from '../types/index.ts';
 
 // The `threads` block of client.counts, reduced to the two fields the CLI
 // reports. Returns undefined when Slack sent no usable block, so callers can
@@ -28,6 +28,7 @@ export async function fetchUnread(
   const response = await client.getUnreadCounts();
   let channels: UnreadChannel[];
   let threads: UnreadThreads | undefined;
+  let cursors: Record<string, UnreadCursor> | undefined;
 
   if (client.authType === 'browser') {
     // client.counts response
@@ -45,6 +46,19 @@ export async function fetchUnread(
         mention_count: ch.mention_count || 0,
         has_unreads: ch.has_unreads || false,
       }));
+
+    // The read cursors of the unread conversations, kept beside the list and
+    // not on it so the default output stays as it was; `--messages` reads each
+    // conversation from its cursor (#361). Left out when Slack sent none.
+    const found: Record<string, UnreadCursor> = {};
+    for (const ch of allChannels) {
+      if (!channels.some((unread) => unread.id === ch.id)) continue;
+      const cursor: UnreadCursor = {};
+      if (typeof ch.last_read === 'string') cursor.last_read = ch.last_read;
+      if (typeof ch.latest === 'string') cursor.latest = ch.latest;
+      if (Object.keys(cursor).length > 0) found[ch.id] = cursor;
+    }
+    if (Object.keys(found).length > 0) cursors = found;
 
     // Resolve channel names in parallel
     // NOTE: may hit Slack rate limits with many unread channels
@@ -94,5 +108,5 @@ export async function fetchUnread(
   });
 
   // conversations.list has no thread equivalent, so an app token reports none.
-  return threads ? { channels, threads } : { channels };
+  return { channels, ...(threads ? { threads } : {}), ...(cursors ? { cursors } : {}) };
 }

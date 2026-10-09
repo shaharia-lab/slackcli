@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`conversations unread --messages` returns the unread messages themselves**: one call now gives, for each unread conversation, the messages newer than its read cursor, plus the followed threads with unread replies, so "what did I miss" no longer needs one `conversations read` per channel with a guessed `--oldest` (#361)
+  - `--max-conversations <n>` (default 10) caps how many conversations are read, mentions first; `--limit <n>` (default 20) caps the messages per conversation and the replies per thread
+  - `--json` is additive: each item of `unread_channels` gains `last_read`, `latest`, `messages` and, when `--limit` cut it short, `has_more`; `threads` gains `items` (`{ channel_id, thread_ts, root, unread_replies }`); `users` lists the authors. `--fields` still projects `unread_channels`
+  - Browser auth only: with an app token `--messages` fails with `unsupported_auth_type`. Nothing is marked as read
+  - The thread list comes from an undocumented Slack method; if it fails the command still succeeds and reports the thread summary only
+  - Output without `--messages` is unchanged
 - **`messages send --file` is repeatable, so several files share ONE message**: pass `--file` once per attachment (`--file chart.png --file table.csv --file report.pdf`) and all of them post to a single message with the one `--message` as the comment, matching the Slack UI — instead of looping `send --file` and posting a separate message per file (#364)
   - All-or-nothing: every path is validated before the first upload, and any per-file failure names the file and the step and posts nothing
   - `--json` is additive — always emits `file_ids`, with `file_id` kept as the first; the dry-run preview adds a `files` list and `total_size` alongside the existing `file`/`file_size` for the first file

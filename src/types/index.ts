@@ -364,18 +364,48 @@ export interface UnreadChannel {
   is_im?: boolean;
   is_mpim?: boolean;
   is_private?: boolean;
+  // Only with `conversations unread --messages` (browser auth). `last_read` and
+  // `latest` are Slack's own cursors for the conversation; `messages` is set on
+  // the conversations that were read, oldest first, and `has_more` when the
+  // per-conversation cap left newer unread messages out.
+  last_read?: string;
+  latest?: string;
+  messages?: SlackMessage[];
+  has_more?: boolean;
 }
 
-// Workspace-wide unread thread summary (the `threads` block of client.counts)
+// The read cursors client.counts reports for one conversation.
+export interface UnreadCursor {
+  last_read?: string;
+  latest?: string;
+}
+
+// One followed thread with unread replies (`conversations unread --messages`).
+export interface UnreadThread {
+  channel_id: string;
+  thread_ts: string;
+  root: SlackMessage;
+  unread_replies: SlackMessage[];
+  // Set when the per-thread cap left newer unread replies out.
+  has_more?: boolean;
+}
+
+// Workspace-wide unread thread summary (the `threads` block of client.counts).
+// `items` is only set by `conversations unread --messages`, and `has_more` when
+// that list is known to be incomplete.
 export interface UnreadThreads {
   has_unreads: boolean;
   mention_count: number;
+  items?: UnreadThread[];
+  has_more?: boolean;
 }
 
-// What `conversations unread` reports. `threads` is only known with browser auth.
+// What `conversations unread` reports. `threads` and `cursors` (keyed by
+// conversation ID) are only known with browser auth.
 export interface UnreadSummary {
   channels: UnreadChannel[];
   threads?: UnreadThreads;
+  cursors?: Record<string, UnreadCursor>;
 }
 
 // Canvas types

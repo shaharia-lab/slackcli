@@ -157,7 +157,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 
 | I want to… | Try this | Learn more |
 |---|---|---|
-| See what I missed | `slackcli conversations unread` | [conversations](docs/user-guide/conversations.md) |
+| See what I missed | `slackcli conversations unread` (add `--messages` to read them too) | [conversations](docs/user-guide/conversations.md) |
 | Read a channel or a thread | `slackcli conversations read C123 --limit=50` | [conversations](docs/user-guide/conversations.md) |
 | Send, reply, edit, or react | `slackcli messages send --permalink="$LINK" --message="…"` | [messages](docs/user-guide/messages.md) |
 | Search the workspace | `slackcli search messages "release notes"` | [search](docs/user-guide/search.md) |
@@ -297,6 +297,7 @@ slackcli conversations read C1234567890 --limit=50
 slackcli conversations read --permalink="$LINK"          # reads that message's thread
 slackcli conversations get C1234567890 1234567890.123456
 slackcli conversations unread
+slackcli conversations unread --messages                  # the unread messages too (browser auth)
 ```
 
 📄 [conversations](docs/user-guide/conversations.md)

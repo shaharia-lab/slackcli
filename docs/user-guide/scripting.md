@@ -49,6 +49,10 @@ slackcli conversations unread --json | jq '.unread_channels[] | select(.mention_
 # Unread replies or mentions in followed threads (browser auth; the key is absent with an app token)
 slackcli conversations unread --json | jq '.threads // empty | select(.has_unreads or .mention_count > 0)'
 
+# Every unread message and unread thread reply in one call (browser auth)
+slackcli conversations unread --messages --json \
+  | jq -r '.unread_channels[] | select(.messages) | .name as $n | .messages[] | "\($n)\t\(.user)\t\(.text)"'
+
 # A canvas as Markdown
 slackcli canvas read F123 --json | jq -r '.markdown' > canvas.md
 ```
@@ -102,7 +106,7 @@ Useful field sets, and what each command projects:
 | `conversations list` | each of `conversations` | `id,name,is_member` |
 | `conversations read` | each of `messages` | `ts,user,text` (add `thread_ts,reply_count` for threads) |
 | `conversations get` | `message` | `ts,user,text` |
-| `conversations unread` | each of `unread_channels` | `id,name,mention_count` |
+| `conversations unread` | each of `unread_channels` | `id,name,mention_count` (with `--messages`: `id,name,messages.ts,messages.user,messages.text`) |
 | `search messages` | each of `matches` | `ts,user,text,channel.name,permalink` |
 | `search channels` | each of `channels` | `id,name` |
 | `search people` | each of `people` | `id,name,real_name,profile.email` |

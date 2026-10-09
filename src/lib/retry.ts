@@ -37,6 +37,7 @@ export const READ_METHODS: ReadonlySet<string> = new Set([
   'search.messages',
   'search.modules',
   'stars.list',
+  'subscriptions.thread.getView',
   'team.info',
   'team.profile.get',
   'usergroups.list',

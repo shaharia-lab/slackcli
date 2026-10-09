@@ -140,6 +140,92 @@ unread". A thread mention counts as unread even when `has_unreads` is `false`.
 With a standard token the `threads` key is left out, because
 `conversations.list` has no equivalent.
 
+### `--messages`: the unread messages themselves
+
+```bash
+slackcli conversations unread --messages
+slackcli conversations unread --messages --max-conversations 5 --limit 10 --json
+```
+
+With `--messages` the same command also returns what is unread, so catching up
+is one call instead of one `conversations read` per channel:
+
+- For each unread conversation, the messages newer than that conversation's
+  read cursor (`last_read`, which Slack reports with the unread counts), oldest
+  first. These are top-level messages; replies belong to the thread list below.
+- The threads you follow that have unread replies: the root message and its
+  unread replies.
+
+It needs **browser auth**. With a standard token `--messages` fails with
+`unsupported_auth_type` before any Slack call. Nothing is marked as read.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--max-conversations <n>` | `10` | How many conversations are read. Mentions first, then by name, after `--types`. The rest are listed without messages. |
+| `--limit <n>` | `20` | Most messages per conversation, and most replies per thread (1 to 999). When more are unread, the earliest are kept. |
+
+Both options only apply with `--messages`. Without it, or with a value that is
+not a positive integer, the command fails with `invalid_input`.
+
+```json
+{
+  "unread_channels": [
+    {
+      "id": "C1234567890", "name": "general", "mention_count": 2, "has_unreads": true,
+      "last_read": "1700000001.000000", "latest": "1700000003.000000",
+      "messages": [{ "ts": "1700000002.000000", "user": "U1234567890", "text": "…", "type": "message" }],
+      "has_more": true
+    },
+    { "id": "C2345678901", "name": "random", "mention_count": 0, "has_unreads": true, "last_read": "1700000000.000000" }
+  ],
+  "threads": {
+    "has_unreads": true,
+    "mention_count": 1,
+    "items": [
+      {
+        "channel_id": "C1234567890",
+        "thread_ts": "1700000100.000000",
+        "root": { "ts": "1700000100.000000", "user": "U1234567890", "text": "…", "type": "message" },
+        "unread_replies": [{ "ts": "1700000101.000000", "user": "U2345678901", "text": "…", "type": "message" }]
+      }
+    ]
+  },
+  "users": [{ "id": "U1234567890", "name": "alice", "real_name": "Alice", "email": "alice@acme.com" }]
+}
+```
+
+- Each item of `unread_channels` gains `last_read` and `latest` when Slack sent
+  them. A conversation that was read has `messages` (possibly empty, when only
+  thread replies are new), with the same fields as `conversations read --json`.
+  A conversation past `--max-conversations` has no `messages` key: read it with
+  `conversations read <id> --oldest <last_read>`.
+- `has_more: true` on a conversation or a thread means `--limit` left unread
+  messages out. Raise `--limit`, or continue with
+  `conversations read <id> --oldest <ts of the last message shown>`.
+- `threads.items` lists the unread threads, and `threads.has_more: true` says the
+  list is incomplete. `items` is `[]` when no thread is unread. `--types` does
+  not filter it, and `--fields` still projects `unread_channels` only (for
+  example `--fields id,name,messages.ts,messages.text`).
+- `users` lists the authors of every message printed, as in `conversations read`.
+
+The text output prints each conversation's row followed by its messages, then
+an `Unread Threads` section.
+
+**Cost.** Every call is paced one at a time by the rate limiter: one
+`conversations.history` per conversation read, one `users.info` per author, and
+up to five calls for the threads (none when no thread is unread). That is why `--max-conversations` exists; a
+run over many conversations is slower than plain `unread`.
+
+**Unread threads come from an undocumented method.** The thread list is read
+from `subscriptions.thread.getView`, the method behind Slack's own Threads view,
+up to 5 pages of 10 threads. If Slack changes or refuses it, the command still
+succeeds: it warns on stderr and `threads` keeps only `has_unreads` and
+`mention_count`, with no `items` key. A script should treat a missing `items`
+as "not known", not as "none".
+
+**A conversation never read** has an all-zero `last_read`, which gives no
+starting point. The newest `--limit` messages are returned for it instead.
+
 **Auth-type caveat.** With browser auth this reads Slack's own unread state
 (`client.counts`), then makes one or two API calls per unread conversation to
 resolve its name (a DM also looks up the user), so a workspace with many unread

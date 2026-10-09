@@ -30,6 +30,7 @@ const SLACK_WRITES = new Set([
   'slackcli conversations members remove',
   'slackcli conversations join',
   'slackcli conversations leave',
+  'slackcli conversations mark-read',
   'slackcli usergroups create',
   'slackcli usergroups update',
   'slackcli usergroups add',

@@ -40,7 +40,7 @@ slackcli users info alice@example.com --json
 
 Where it works: `messages send` and `messages draft` (`--recipient-id`),
 `messages edit` and `messages react` (`--channel-id`), `conversations read`,
-`get`, `members list`, `members add`, `members remove`, `join` and `leave`
+`get`, `mark-read`, `members list`, `members add`, `members remove`, `join` and `leave`
 (`<channel>`, and `<users...>` for add/remove), `canvas list` and `canvas read`
 (`--channel`), `users info`, and the `<users...>` of `usergroups add` and
 `usergroups remove`. (`<group>` in `usergroups` already took a handle or name.)
@@ -97,7 +97,8 @@ slackcli messages react --permalink="https://myteam.slack.com/archives/C12345678
 ```
 
 Available on `messages send`, `messages react`, `messages edit`,
-`messages draft`, `conversations read`, and `conversations get`.
+`messages draft`, `conversations read`, `conversations get`, and
+`conversations mark-read`.
 
 Rules worth knowing:
 

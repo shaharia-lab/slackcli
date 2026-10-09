@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Browser auth only: with an app token `--messages` fails with `unsupported_auth_type`. Nothing is marked as read
   - The thread list comes from an undocumented Slack method; if it fails the command still succeeds and reports the thread summary only
   - Output without `--messages` is unchanged
+- **`conversations mark-read`**: marks a channel, DM or group DM as read up to a message you name (`<channel> --ts <timestamp>`, or `--permalink <url>`), so a conversation handled through the CLI stops showing up as unread in Slack and in the next `conversations unread` (#362)
+  - The target is always explicit; there is no "mark everything read" form, and thread read state is not touched
+  - `--json` prints `{ channel_id, ts, previous_last_read }`; marking again with `--ts` set to `previous_last_read` undoes the change, when Slack reported one (`null` otherwise)
+  - A confirmed write like the others: `--yes`, a prompt in a terminal, a refusal without one, and `--dry-run` to preview
+  - Works with both auth types; a standard token needs a conversation write scope (`channels:write`, `groups:write`, `im:write` or `mpim:write`)
 - **`messages send --file` is repeatable, so several files share ONE message**: pass `--file` once per attachment (`--file chart.png --file table.csv --file report.pdf`) and all of them post to a single message with the one `--message` as the comment, matching the Slack UI — instead of looping `send --file` and posting a separate message per file (#364)
   - All-or-nothing: every path is validated before the first upload, and any per-file failure names the file and the step and posts nothing
   - `--json` is additive — always emits `file_ids`, with `file_id` kept as the first; the dry-run preview adds a `files` list and `total_size` alongside the existing `file`/`file_size` for the first file

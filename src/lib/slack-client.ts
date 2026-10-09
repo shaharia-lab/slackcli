@@ -843,6 +843,12 @@ export class SlackClient {
     }
   }
 
+  // Move the read cursor of a conversation to `ts` (conversations.mark). A
+  // write: it changes what the authenticated user sees as unread.
+  async markConversation(channel: string, ts: string): Promise<any> {
+    return this.request('conversations.mark', { channel, ts });
+  }
+
   // Get team (workspace) info. team.info works for both auth types. On an
   // enterprise org, an optional team (T-id) scopes the lookup to one workspace;
   // omitted, Slack returns the token's own workspace.

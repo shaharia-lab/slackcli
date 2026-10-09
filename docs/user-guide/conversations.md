@@ -1,7 +1,8 @@
 # Read Slack channels, threads and unreads
 
 `slackcli conversations` covers channels, DMs, and group DMs: listing them,
-reading history and threads, fetching one message, and seeing what is unread.
+reading history and threads, fetching one message, seeing what is unread, and
+marking a conversation as read.
 
 Every subcommand accepts `--workspace <id|name>`. `list`, `read`, `get` and
 `unread` take [`--fields`](scripting.md#keeping-output-small---fields-and---limit) with `--json`
@@ -233,6 +234,58 @@ channels may hit Slack rate limits. With a standard token it reads the first 100
 and keeps those you are a member of that carry an unread count; Slack often
 omits those counts for app tokens, so the result can be incomplete.
 
+## `conversations mark-read`
+
+```bash
+slackcli conversations mark-read C1234567890 --ts 1712345678.123456
+slackcli conversations mark-read --permalink https://acme.slack.com/archives/C1234567890/p1712345678123456 --yes --json
+slackcli conversations mark-read "#general" --ts 1712345678.123456 --dry-run
+```
+
+Marks a channel, DM or group DM as read up to one message: it moves the
+conversation's read cursor to that message's timestamp. It is the second half
+of catching up, after `conversations unread` and `conversations read`.
+
+The target message is always explicit. Give `<channel>` and `--ts`, or
+`--permalink` alone; combining them, or giving neither `--ts` nor
+`--permalink`, fails with `invalid_input` before anything is sent. There is no
+"mark everything read" form. `<channel>` accepts an ID, a Slack link or a
+[channel name](links-and-timestamps.md#channel-names-and-user-handles), and `--ts` accepts
+`1712345678.123456` and `p1712345678123456`. A link to a thread reply marks the
+conversation up to that reply's own timestamp, not its parent's.
+
+Like the other mutating commands it confirms first (or takes `--yes` when
+non-interactive), and `--dry-run` prints the conversation, the timestamp and
+the current cursor without changing anything. `--json` gives:
+
+```json
+{ "channel_id": "C1234567890", "ts": "1712345678.123456", "previous_last_read": "1712345600.000200" }
+```
+
+**Undoing it.** `previous_last_read` is the read cursor before the change,
+read with one `conversations.info` call just before the write. Run the command
+again with `--ts` set to that value to put the cursor back. It is `null` when
+Slack does not report a cursor or that read fails (the write still happens),
+and then there is nothing to mark back to. Without `--json` the previous cursor
+is part of the success line on stderr.
+
+**What it does not do.**
+
+- It does not check that the timestamp names an existing message. A timestamp
+  older than the current cursor moves the cursor back, so later messages count
+  as unread again.
+- It does not change thread read state. Slack tracks the threads you follow
+  with a separate cursor, so the `threads` summary of `conversations unread`
+  is unaffected.
+
+**Auth-type caveat.** The cursor belongs to the authenticated user, so the
+command is meant for a browser session or a user token (`xoxp`), where it is a
+person's inbox. A standard token needs the write scope for the conversation's
+kind (`channels:write`, `groups:write`, `im:write` or `mpim:write`); without it
+Slack answers `missing_scope`, reported as `permission_denied`. With a bot
+token (`xoxb`) the cursor is the bot's own, not a person's inbox; what marking
+it changes has not been verified beyond the scope requirement.
+
 ## `conversations members list`
 
 ```bash
@@ -255,10 +308,11 @@ documented below; this command is read-only.
 
 ## Previewing a change (`--dry-run`)
 
-`members add`, `members remove`, `join` and `leave` take `--dry-run`: the
-channel and user IDs are resolved and checked, and the command prints what
-it would do without doing it and without prompting. The preview lists the
-users that would be added or removed.
+`members add`, `members remove`, `join`, `leave` and `mark-read` take
+`--dry-run`: the channel and user IDs are resolved and checked, and the command
+prints what it would do without doing it and without prompting. The preview
+lists the users that would be added or removed; for `mark-read` it shows the
+timestamp and the current read cursor.
 
 ```bash
 slackcli conversations members add C1234567890 U1 U2 --dry-run

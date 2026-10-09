@@ -41,7 +41,7 @@ They hold no Slack API knowledge.
 |---|---|
 | `auth.ts` | `login`, `login-browser`, `login-auto`, `whoami`, `list`, `set-default`, `remove`, `logout`, `extract-tokens`, `parse-curl` |
 | `canvas.ts` | `list`, `read` |
-| `conversations.ts` | `list`, `read`, `get`, `unread` |
+| `conversations.ts` | `list`, `read`, `get`, `unread`, `mark-read`, `members list`/`add`/`remove`, `join`, `leave` |
 | `files.ts` | `info`, `read`, `download` |
 | `logs.ts` | `path`, `show`, `clear` |
 | `messages.ts` | `send`, `react`, `edit`, `draft`, `list-drafts` |
@@ -79,6 +79,7 @@ They hold no Slack API knowledge.
 | `process-errors.ts` | Last-resort `unhandledRejection` / `uncaughtException` handlers: log the error with its stack, print the message (the `--json` error object when the command has `--json`), exit 1. Installed from `src/program.ts`. |
 | `cli-errors.ts` | The closed set of `--json` error codes (`ERROR_CODES`) and the typed errors the CLI raises itself: `CliError`, `InvalidInputError`, `NotFoundError`, `UnsupportedAuthTypeError`, `ConfirmationRequiredError`. No imports, so any module can throw them. |
 | `command-errors.ts` | `classifyError()` (any thrown value → `{code, message, hint?, retryable, slack_error?}`, by type and Slack code, credentials redacted) and `failCommand()`, the one failure path of a command: the usual text, or the JSON error object on stderr under `--json`; sets exit code 1. |
+| `mark-read.ts` | `conversations mark-read`: reads the conversation's current read cursor (`last_read` of `conversations.info`, best effort), makes the `conversations.mark` write, and returns `{ channel_id, ts, previous_last_read }`. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type. |
 | `poll.ts` | `conversations read`'s polling helpers: exact Slack `ts` comparison, the `ts > --oldest` and `--exclude-self` filters, the `next_oldest` cursor, and resolving the authenticated identity (stored `user_id`, or one `auth.test`). |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users. |

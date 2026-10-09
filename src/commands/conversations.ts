@@ -13,6 +13,7 @@ import { fetchUnread, hasUnreadThreads } from '../lib/unread.ts';
 import {
   DEFAULT_MAX_CONVERSATIONS, DEFAULT_MESSAGE_LIMIT, fetchUnreadDetails, unreadMessageOptions, type UnreadDetails,
 } from '../lib/unread-messages.ts';
+import { markConversationRead, previousLastRead } from '../lib/mark-read.ts';
 import { processReadPage, resolveSelfIdentity } from '../lib/poll.ts';
 import { confirmWrite, splitUserRefs } from './usergroups.ts';
 import {
@@ -300,6 +301,35 @@ const HELP = {
       'Leaving a channel you are not in is reported as a no-op, not an error.',
     ],
   },
+  markRead: {
+    summary: 'Mark a channel or DM as read up to a message',
+    description:
+      'Move the read cursor of one channel, DM or group DM to a message you name, so everything up to it ' +
+      'counts as read. Use "conversations unread" to find what is unread and "conversations read" to read it.',
+    examples: [
+      'slackcli conversations mark-read C0123456789 --ts 1712345678.123456',
+      'slackcli conversations mark-read --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --yes --json',
+      'slackcli conversations mark-read "#general" --ts 1712345678.123456 --dry-run',
+    ],
+    json:
+      '{ channel_id, ts, previous_last_read } — previous_last_read is the read cursor before the change, ' +
+      'or null when Slack did not report one.',
+    confirms: true,
+    dryRun: true,
+    notes: [
+      'Give <channel> and --ts, or --permalink alone; combining them is an error. There is no "mark everything ' +
+        'read" form: the target message is always explicit.',
+      CHANNEL_ARG_NOTE,
+      CHANNEL_NAME_NOTE,
+      'To undo, mark the conversation again with --ts set to previous_last_read. That needs a non-null value.',
+      'The timestamp is not checked against the conversation\'s messages. One older than the current cursor ' +
+        'moves the cursor back, so later messages count as unread again.',
+      'Thread read state is not changed: threads keep their own cursor. A link to a thread reply marks the ' +
+        'conversation up to that reply\'s own timestamp.',
+      'It changes the read state of the authenticated user. An app token needs a conversation write scope ' +
+        '(channels:write, groups:write, im:write or mpim:write).',
+    ],
+  },
 } satisfies Record<string, CommandHelp>;
 
 // Warn when a pasted link points at a different workspace than the one we will call,
@@ -361,6 +391,30 @@ async function membershipTargetsOrFail(
     return { channelId, workspace: parsed.workspace, ids, client: client.created() };
   } catch (err: any) {
     failCommand(err, { json: options.json, context });
+    return undefined;
+  }
+}
+
+type MarkReadTarget = { channelId: string; timestamp: string; workspace: string | undefined; client?: SlackClient };
+
+// Resolve the conversation and message of `mark-read` before its confirmation
+// prompt, so the prompt and the call name the same IDs. As with the membership
+// writes, a client is created here only when a channel name needs a lookup. On
+// failure it reports the error and returns undefined, so the caller just returns.
+async function markReadTargetOrFail(
+  channelArg: string | undefined,
+  options: { ts?: string; permalink?: string; workspace?: string; json?: boolean },
+): Promise<MarkReadTarget | undefined> {
+  try {
+    const target = resolveMessageTarget(
+      { permalink: options.permalink, channelId: channelArg, timestamp: options.ts },
+      { channel: '<channel>', timestamp: '--ts' },
+    );
+    const client = lazyClient(() => getAuthenticatedClient(options.workspace));
+    const channelId = await resolveIdentifier(client.get, channelArg, target.channelId, 'channel', '<channel>');
+    return { channelId, timestamp: target.timestamp, workspace: target.workspace, client: client.created() };
+  } catch (err: any) {
+    failCommand(err, { json: options.json, context: 'Failed to mark conversation as read' });
     return undefined;
   }
 }
@@ -1045,6 +1099,58 @@ export function createConversationsCommand(): Command {
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to leave channel', hint: 'Run "slackcli auth list" to check your authentication.' });
+      }
+    });
+
+  // Mark a conversation as read up to one message (conversations.mark). The
+  // target message is always explicit, and the cursor it replaces is reported
+  // so the change can be undone. Thread read state is a different cursor.
+  describeCommand(conversations.command('mark-read'), HELP.markRead)
+    .argument('[channel]', 'Channel ID, Slack link (/archives/<channel>) or channel name')
+    .option('--ts <timestamp>', 'Message to mark as read up to (1234567890.123456 or p1234567890123456)')
+    .option('--permalink <url>', 'Slack message link (replaces <channel> and --ts)')
+    .option('--workspace <id|name>', 'Workspace to use (overrides default)')
+    .option('--yes', 'Skip the confirmation prompt (required when stdin is not a TTY)', false)
+    .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (channelArg, options) => {
+      const target = await markReadTargetOrFail(channelArg, options);
+      if (!target) return;
+      const { channelId, timestamp, workspace } = target;
+      if (!options.dryRun && !(await confirmWrite(`Mark ${channelId} as read up to ${timestamp}?`, options.yes, options.json))) {
+        return;
+      }
+      const spinner = ora('Marking conversation as read...').start();
+      try {
+        const client = target.client ?? await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspace);
+
+        if (options.dryRun) {
+          const previous = await previousLastRead(client, channelId);
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(
+              client,
+              'mark conversation read',
+              { kind: 'channel', id: channelId },
+              { ts: timestamp, previous_last_read: previous },
+              { lookupName: true },
+            ),
+            options.json,
+          );
+          return;
+        }
+
+        const result = await markConversationRead(client, channelId, timestamp);
+        const previous = result.previous_last_read ?? 'not reported by Slack';
+
+        spinner.succeed(`Marked ${channelId} as read up to ${timestamp} (previous read cursor: ${previous})`);
+
+        if (options.json) {
+          writeJson(result);
+        }
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to mark conversation as read', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 

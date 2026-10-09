@@ -63,6 +63,7 @@ describe('classifyError', () => {
     ['enterprise_is_restricted', 'permission_denied'],
     ['ratelimited', 'rate_limited'],
     ['invalid_ts', 'invalid_input'],
+    ['invalid_timestamp', 'invalid_input'],
     ['invalid_blocks', 'invalid_input'],
     ['not_allowed_token_type', 'unsupported_auth_type'],
     ['service_unavailable', 'network'],

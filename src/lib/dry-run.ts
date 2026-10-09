@@ -1,6 +1,6 @@
 import { getLogger } from '@logtape/logtape';
 import type { SlackClient } from './slack-client.ts';
-import { formatDryRun, writeJson } from './formatter.ts';
+import { formatDryRun, writeJson, writeText } from './formatter.ts';
 import type { DryRunPreview, DryRunTarget } from '../types/index.ts';
 
 // `--dry-run` on the write commands (#328): the command resolves and validates
@@ -78,7 +78,7 @@ export function emitDryRun(preview: DryRunPreview, json: boolean | undefined): v
   if (json) {
     writeJson(preview);
   } else {
-    console.log(formatDryRun(preview));
+    writeText(formatDryRun(preview));
   }
 }
 

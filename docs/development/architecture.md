@@ -347,7 +347,12 @@ That is [issue #73](https://github.com/shaharia-lab/slackcli/issues/73) for the
 JSON path and [#373](https://github.com/shaharia-lab/slackcli/issues/373) for the
 text path (the hazard [#77](https://github.com/shaharia-lab/slackcli/issues/77)
 tracked). `console.log` is the trap both sinks exist to avoid, so a guard test
-(`src/output-sink.test.ts`) fails the build if any `src/commands/` file calls it.
+(`src/output-sink.test.ts`) fails the build if any non-test file in
+`src/commands/` or `src/lib/` calls it — covering shared result-output helpers
+such as `emitDryRun()` in `src/lib/dry-run.ts`
+([#377](https://github.com/shaharia-lab/slackcli/issues/377)). The scan is
+default-on with a by-name exemption for `interactive-input.ts` (prompts, not a
+command result), so a new helper is covered the moment it lands.
 
 ### Failures
 

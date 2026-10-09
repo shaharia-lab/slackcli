@@ -123,7 +123,7 @@ canvas read <F…|url> | --channel=C [--raw] [--json]     # Markdown; --json has
 files info <F…|url> [--json]                            # --json has private URLs
 files read <F…|url> [--raw] [--json]                    # text only, 10 MB cap; {id,name,title,mimetype,source,content}
 files download <F…|url> --output PATH                   # refuses to overwrite
-emoji list [--limit=N] [--no-aliases] [--json]   |   emoji get <name> [--json]
+emoji list [--filter=SUBSTR] [--limit=N] [--no-aliases] [--json]   |   emoji get <name> [--json]
 update check   |   update                               # refuses under Homebrew / from source
 logs path [--json]   |   logs show [--last=N | --run=ID] [--json]   |   logs clear [--yes]   # log is redacted
 ```

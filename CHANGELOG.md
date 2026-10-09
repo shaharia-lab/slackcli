@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A workspace-wide summary taken from the same `client.counts` response: no extra API call, and `--types` does not filter it
   - Unread threads alone now print `{ "unread_channels": [], "threads": {...} }` instead of nothing
   - With an app token the `threads` key is left out, since `conversations.list` has no equivalent, and the output is unchanged
+- **`emoji list --filter <substring>`**: keeps only the custom emoji whose name contains the substring, matched case-insensitively, so one emoji can be found on a large workspace without `--json | jq` (#365)
+  - Applied locally to the full list after `--no-aliases` and before `--limit`, so `--limit` means the first N matches
+  - Surrounding colons are stripped as in `emoji get` (`--filter :kiro:` equals `--filter kiro`); an empty value fails with `invalid_input` instead of matching everything
 - **Releases are announced on Discord**: after a stable release is published and the Homebrew tap is updated, the release workflow posts the version, a link to the GitHub Release, the release notes and the Homebrew install hint to the Shaharia Lab Discord release channel. Pre-release tags are not announced, a re-run does not post twice, and a Discord failure never fails the release (#358)
 
 ## [0.14.0] - 2026-10-03

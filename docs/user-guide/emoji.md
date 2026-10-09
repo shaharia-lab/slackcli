@@ -21,9 +21,8 @@ A workspace with no custom emoji prints nothing on stdout, even with `--json`.
 
 `--filter <substring>` keeps emoji whose **name** contains the substring,
 matched case-insensitively. It is a local match over the full in-memory list,
-not a Slack search — Slack's API has no emoji search — so it does the same thing
-the composer's `:name…` autocomplete does, and it is not fooled by the capped
-terminal view the way `emoji list | grep` is on a large workspace. Surrounding
+not a Slack search (Slack's API has no emoji search), so it does the same thing
+the composer's `:name…` autocomplete does. Surrounding
 colons are stripped as in `emoji get`, so `--filter :kiro:` and `--filter kiro`
 behave the same; an empty value (or one that is only colons/whitespace) is
 rejected rather than matching everything.

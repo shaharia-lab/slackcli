@@ -952,8 +952,9 @@ export class SlackClient {
 
   // One page of the Threads view: followed threads, the ones with unread
   // replies first, newest activity first (browser auth only; undocumented).
-  // `current_ts` is an exclusive upper bound on a thread's latest reply, which
-  // is how the web client asks for the next page.
+  // `current_ts` is an exclusive upper bound on a thread's latest reply; the
+  // caller pages by passing the last thread's `latest_reply`. The response's
+  // `max_ts` does not page (see normalizeThreadView in unread-messages.ts).
   async getUnreadThreadView(options: { current_ts?: string } = {}): Promise<any> {
     this.requireBrowserAuth(UNREAD_MESSAGES_AUTH_MESSAGE);
 

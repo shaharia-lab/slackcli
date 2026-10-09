@@ -367,11 +367,11 @@ describe('normalizeThreadView', () => {
     expect(normalizeThreadView({ has_more: true, threads: [last] }, 20)?.nextCursor).toBe('1700000120.000000');
 
     const none = { root_msg: { ...message('1700000100.000000'), channel: 'C1', latest_reply: '0000000000.000000' }, unread_replies: [{ text: 'no ts' }] };
-    expect(normalizeThreadView({ has_more: true, threads: [none] }, 20)).toEqual({ threads: [], done: true });
+    expect(normalizeThreadView({ has_more: true, threads: [none] }, 20)).toEqual({ threads: [], done: false, read: 0, malformed: 1 });
   });
 
   it('accepts an empty thread list', () => {
-    expect(normalizeThreadView({ ok: true, threads: [], has_more: false }, 20)).toEqual({ threads: [], done: true });
+    expect(normalizeThreadView({ ok: true, threads: [], has_more: false }, 20)).toEqual({ threads: [], done: true, read: 0, malformed: 0 });
   });
 
   it.each([undefined, null, 'ok', 3, [], {}, { ok: true }, { threads: null }, { threads: {} }, { threads: 'none' }].map((raw) => [raw]))(
@@ -380,6 +380,26 @@ describe('normalizeThreadView', () => {
       expect(normalizeThreadView(raw, 20)).toBeUndefined();
     },
   );
+
+  it('counts a thread with nothing unread as read, in every form Slack could send it', () => {
+    const root = { ...message('1700000001.000000'), channel: 'C1' };
+    const view = normalizeThreadView({
+      has_more: true,
+      threads: [{ root_msg: root }, { root_msg: root, unread_replies: [] }, { root_msg: root, unread_replies: null }],
+    }, 20);
+
+    expect(view).toMatchObject({ threads: [], read: 3, malformed: 0, done: true });
+  });
+
+  it('does not take an unreadable entry for a read thread, so it never ends the paging', () => {
+    const view = normalizeThreadView({
+      has_more: true,
+      threads: [rawThread('C9', '1700000100.000000', ['1700000101.000000']), { root: message('1700000001.000000'), unread: [] }],
+    }, 20);
+
+    expect(view).toMatchObject({ read: 0, malformed: 1, done: false });
+    expect(view?.threads).toHaveLength(1);
+  });
 
   it('skips entries that are not usable threads without failing the page', () => {
     const view = normalizeThreadView({
@@ -397,6 +417,7 @@ describe('normalizeThreadView', () => {
     }, 20);
 
     expect(view?.threads.map((t) => t.channel_id)).toEqual(['C9']);
+    expect(view).toMatchObject({ read: 0, malformed: 8 });
   });
 });
 
@@ -496,6 +517,44 @@ describe('fetchUnreadThreads', () => {
     expect(calls).toHaveLength(1);
   });
 
+  // A renamed inner key is the likely drift of an undocumented method: the
+  // entries are there, but none is a thread. That is not "nothing unread".
+  it('returns undefined when no entry of the first page is a thread', async () => {
+    const renamed = Array.from({ length: 10 }, (_, i) => ({ root: message(`17000000${10 + i}.000000`), replies: [message(`17000001${10 + i}.000000`)] }));
+    const { client, calls } = viewer([{ ok: true, has_more: true, threads: renamed }, fullPage(90)]);
+
+    expect(await fetchUnreadThreads(client, { limit: 20 })).toBeUndefined();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('keeps paging past an unreadable entry and reports the list as incomplete', async () => {
+    const first = fullPage(90);
+    first.threads.splice(1, 0, { root: 'renamed' } as any);
+    const { client, calls } = viewer([first, { has_more: false, threads: [rawThread('C1', '1700000100.000000', ['1700000101.000000'])] }]);
+
+    const list = await fetchUnreadThreads(client, { limit: 20 });
+
+    expect(calls).toHaveLength(2);
+    expect(list?.items).toHaveLength(3);
+    expect(list?.has_more).toBe(true);
+  });
+
+  it('reports a single-page list with one unreadable entry as incomplete', async () => {
+    const { client } = viewer([{ has_more: false, threads: [rawThread('C1', '1700000100.000000', ['1700000101.000000']), null] }]);
+
+    expect(await fetchUnreadThreads(client, { limit: 20 })).toMatchObject({ has_more: true });
+  });
+
+  it('keeps what it read when a later page holds no thread at all', async () => {
+    const { client, calls } = viewer([fullPage(90), { has_more: true, threads: [{ root: 'renamed' }, { root: 'renamed' }] }, fullPage(10)]);
+
+    const list = await fetchUnreadThreads(client, { limit: 20 });
+
+    expect(calls).toHaveLength(2);
+    expect(list?.items).toHaveLength(2);
+    expect(list?.has_more).toBe(true);
+  });
+
   it.each([
     ['a request failure', new Error('Slack API error: ratelimited')],
     ['an unexpected shape', { threads: 'gone' }],
@@ -579,6 +638,15 @@ describe('fetchUnreadDetails', () => {
 
   it('falls back to the summary when the thread view has an unexpected shape', async () => {
     const { client } = detailsClient({ view: { ok: true, threads: 'none' } });
+
+    const details = await fetchUnreadDetails(client, { channels: [], threads: unreadThreads }, caps);
+
+    expect(details.threads).toEqual(unreadThreads);
+    expect(details.threadsUnavailable).toBe(true);
+  });
+
+  it('falls back to the summary when no entry of the thread view is a thread', async () => {
+    const { client } = detailsClient({ view: { ok: true, has_more: false, threads: [{ root: message('1700000100.000000'), replies: [] }] } });
 
     const details = await fetchUnreadDetails(client, { channels: [], threads: unreadThreads }, caps);
 

@@ -399,6 +399,7 @@ describe('conversations unread, in process', () => {
       it.each([
         ['fails', new Error('Slack API error: unknown_method')],
         ['returns an unexpected shape', { ok: true, view: 'changed' }],
+        ['returns entries none of which is a thread', { ok: true, has_more: false, threads: [{ root: { ts: '1700000100.000000', text: 'renamed key' }, replies: [] }] }],
       ])('still exits 0 with the thread summary only when it %s', async (_label, view) => {
         await runMessages('browser', { ...ONE, view }, ['--messages', '--json']);
 

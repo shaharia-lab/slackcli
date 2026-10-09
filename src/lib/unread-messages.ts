@@ -218,20 +218,30 @@ export interface ThreadViewPage {
   nextCursor?: string;
   /** True when no later page can hold an unread thread. */
   done: boolean;
+  /** Entries that are a thread with no unread reply. */
+  read: number;
+  /** Entries that could not be read as a thread at all. */
+  malformed: number;
 }
 
-function normalizeThread(raw: unknown, limit: number): UnreadThread | undefined {
-  if (raw === null || typeof raw !== 'object') return undefined;
+// One entry of the view: an unread thread, a thread with nothing unread, or
+// something that is not recognisably a thread. The last two must stay apart: a
+// read thread ends the unread section, an unreadable entry says the list
+// cannot be trusted.
+function normalizeThread(raw: unknown, limit: number): UnreadThread | 'read' | 'malformed' {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return 'malformed';
   const { root_msg: rootRaw, unread_replies: repliesRaw } = raw as Record<string, unknown>;
   const root = toUnreadMessage(rootRaw);
   const channelId = (rootRaw as Record<string, unknown> | null | undefined)?.channel;
-  if (!root || typeof channelId !== 'string' || channelId === '') return undefined;
+  if (!root || typeof channelId !== 'string' || channelId === '') return 'malformed';
+  // A read thread carries no unread_replies key.
+  if (repliesRaw === undefined || repliesRaw === null) return 'read';
+  if (!Array.isArray(repliesRaw)) return 'malformed';
+  if (repliesRaw.length === 0) return 'read';
   const replies = oldestFirst(
-    (Array.isArray(repliesRaw) ? repliesRaw : [])
-      .map(toUnreadMessage)
-      .filter((message): message is SlackMessage => message !== undefined),
+    repliesRaw.map(toUnreadMessage).filter((message): message is SlackMessage => message !== undefined),
   );
-  if (replies.length === 0) return undefined;
+  if (replies.length === 0) return 'malformed';
   const capped = replies.length > limit;
   return {
     channel_id: channelId,
@@ -245,13 +255,16 @@ function normalizeThread(raw: unknown, limit: number): UnreadThread | undefined 
 /**
  * One page of `subscriptions.thread.getView` as unread threads. The method is
  * undocumented, so nothing about its shape is trusted: returns undefined when
- * the response has no `threads` array, and skips any entry that is not a
- * thread with a root message, a channel and at least one unread reply.
+ * the response has no `threads` array, and counts every entry that is not a
+ * thread with a root message, a channel and a list of replies as `malformed`.
  *
- * The view lists the threads with unread replies first, then the read ones,
- * newest activity first. So a page holding a thread without unread replies is
- * the last one worth reading, and the next page starts below the last thread's
- * latest reply.
+ * Observed on a live workspace (2026-10-10): the view lists the threads with
+ * unread replies first, then the read ones, newest activity first, 10 per
+ * page. So a page holding a read thread is the last one worth reading. The
+ * next page is asked for with `current_ts` set to the last thread's
+ * `root_msg.latest_reply` (equal to its newest unread reply), an exclusive
+ * upper bound. The response's own `max_ts` is not that cursor: it is newer
+ * than every thread on the page, and sending it back returns the same page.
  */
 export function normalizeThreadView(raw: unknown, limit: number): ThreadViewPage | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -259,9 +272,13 @@ export function normalizeThreadView(raw: unknown, limit: number): ThreadViewPage
   if (!Array.isArray(rawThreads)) return undefined;
 
   const threads: UnreadThread[] = [];
+  let read = 0;
+  let malformed = 0;
   for (const rawThread of rawThreads) {
     const thread = normalizeThread(rawThread, limit);
-    if (thread) threads.push(thread);
+    if (thread === 'read') read += 1;
+    else if (thread === 'malformed') malformed += 1;
+    else threads.push(thread);
   }
 
   const last = rawThreads.at(-1) as Record<string, any> | null | undefined;
@@ -272,7 +289,9 @@ export function normalizeThreadView(raw: unknown, limit: number): ThreadViewPage
   return {
     threads,
     ...(nextCursor ? { nextCursor } : {}),
-    done: hasMore !== true || threads.length < rawThreads.length,
+    done: hasMore !== true || read > 0,
+    read,
+    malformed,
   };
 }
 
@@ -286,15 +305,17 @@ function failureCode(err: unknown): string {
 
 export interface UnreadThreadList {
   items: UnreadThread[];
-  /** True when the page cap or a failing later page left the list incomplete. */
+  /** True when the page cap, an unreadable entry or a failing later page left the list incomplete. */
   has_more: boolean;
 }
 
 /**
  * The followed threads with unread replies, following the view's pages up to
- * MAX_THREAD_PAGES. Never throws: a failure or an unexpected shape on the first
- * page returns undefined, so the caller falls back to the aggregate summary; on
- * a later page it returns what was read, marked incomplete.
+ * MAX_THREAD_PAGES. Never throws. A failure, an unexpected shape, or a page of
+ * entries none of which is a thread returns undefined when nothing was read
+ * yet, so the caller falls back to the aggregate summary; after that it
+ * returns what was read, marked incomplete. A single unreadable entry among
+ * readable ones is skipped and also marks the list incomplete.
  */
 export async function fetchUnreadThreads(
   client: ThreadViewReader,
@@ -304,16 +325,20 @@ export async function fetchUnreadThreads(
   const seen = new Set<string>();
   const startedAt = performance.now();
   let cursor: string | undefined;
+  let skipped = 0;
 
-  const stop = (page: number, hasMore: boolean, reason: string): UnreadThreadList | undefined => {
+  // `unusable` exits give up on the view: with nothing read yet there is no list to report.
+  const stop = (page: number, reason: string, outcome: 'complete' | 'incomplete' | 'unusable'): UnreadThreadList | undefined => {
+    const hasMore = outcome !== 'complete' || skipped > 0;
     logger.info('Read {thread_count} unread threads in {pages} pages ({reason})', {
       thread_count: items.length,
       pages: page,
       reason,
+      skipped_entries: skipped,
       has_more: hasMore,
       duration_ms: Math.round(performance.now() - startedAt),
     });
-    return page === 1 && reason !== 'complete' ? undefined : { items, has_more: hasMore };
+    return outcome === 'unusable' && page === 1 ? undefined : { items, has_more: hasMore };
   };
 
   for (let page = 1; page <= MAX_THREAD_PAGES; page++) {
@@ -323,11 +348,17 @@ export async function fetchUnreadThreads(
       view = normalizeThreadView(await client.getUnreadThreadView(cursor ? { current_ts: cursor } : {}), options.limit);
     } catch (err) {
       logger.warn('Unread thread view failed on page {page}: {reason}', { page, reason: failureCode(err) });
-      return stop(page, true, 'request_failed');
+      return stop(page, 'request_failed', 'unusable');
     }
     if (!view) {
       logger.warn('Unread thread view returned an unexpected shape on page {page}', { page });
-      return stop(page, true, 'unexpected_shape');
+      return stop(page, 'unexpected_shape', 'unusable');
+    }
+    if (view.malformed > 0) {
+      logger.warn('Unread thread view had {malformed} unreadable entries on page {page}', { page, malformed: view.malformed });
+      skipped += view.malformed;
+      // Not one entry of the page is a thread: the shape has changed.
+      if (view.threads.length === 0 && view.read === 0) return stop(page, 'unexpected_shape', 'unusable');
     }
 
     for (const thread of view.threads) {
@@ -337,16 +368,13 @@ export async function fetchUnreadThreads(
       items.push(thread);
     }
 
-    if (view.done) return stop(page, false, 'complete');
+    if (view.done) return stop(page, 'end_of_unread', 'complete');
     // No cursor, or one that did not move: the next call would repeat this page.
-    if (!view.nextCursor || view.nextCursor === cursor) {
-      return { items, has_more: true };
-    }
+    if (!view.nextCursor || view.nextCursor === cursor) return stop(page, 'no_cursor', 'incomplete');
     cursor = view.nextCursor;
   }
 
-  logger.info('Unread thread view stopped at the page cap', { pages: MAX_THREAD_PAGES, thread_count: items.length });
-  return { items, has_more: true };
+  return stop(MAX_THREAD_PAGES, 'page_cap', 'incomplete');
 }
 
 export interface UnreadDetails {

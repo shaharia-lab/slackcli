@@ -136,8 +136,9 @@ const HELP = {
         'you are a member of that Slack reports unread counts for; Slack often omits those counts, so results can be incomplete.',
       'threads is a workspace-wide summary of followed threads, taken from the same client.counts response (no extra call). ' +
         'It does not say which threads, and an app token has no equivalent, so the key is left out there.',
-      'When no conversation and no thread is unread it prints "All caught up!" on stderr and writes nothing to stdout, even with --json. ' +
-        'Unread threads alone still print: --json gives { unread_channels: [], threads: {...} }.',
+      'When no conversation and no thread is unread it prints "All caught up!" on stderr; the text output writes nothing to stdout, ' +
+        'and --json prints { unread_channels: [] } (plus threads with browser auth).',
+      'Unread threads alone still print: --json gives { unread_channels: [], threads: {...} }.',
       '--types values: channels (public and private), dms, groups (group DMs). It filters unread_channels only; threads is always reported.',
     ],
   },
@@ -652,17 +653,18 @@ export function createConversationsCommand(): Command {
           });
         }
 
-        if (channels.length === 0 && !threadsUnread) {
+        const caughtUp = channels.length === 0 && !threadsUnread;
+        if (caughtUp) {
           spinner.succeed('All caught up! No unread messages.');
-          return;
+        } else {
+          spinner.succeed(
+            channels.length > 0
+              ? `${channels.length} conversations with unread messages`
+              : 'No unread conversations, but unread thread activity',
+          );
         }
 
-        spinner.succeed(
-          channels.length > 0
-            ? `${channels.length} conversations with unread messages`
-            : 'No unread conversations, but unread thread activity',
-        );
-
+        // Ahead of the caught-up return: --json prints the same object when the list is empty (#360).
         if (options.json) {
           writeJson(applyFields(
             'conversations unread',
@@ -671,6 +673,8 @@ export function createConversationsCommand(): Command {
           ));
           return;
         }
+
+        if (caughtUp) return;
 
         if (channels.length > 0) writeText('\n' + formatUnreadChannels(channels));
         if (threads && threadsUnread) {

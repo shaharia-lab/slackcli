@@ -247,7 +247,9 @@ could not be deleted). `auth whoami --json` and `auth list --check --json`
 likewise report a refused or unreachable profile as their own result on stdout.
 
 An empty result is *not* a failure: a search with no hits, or an unread list with
-nothing in it, exits `0`. Test the data, not the exit code:
+nothing in it, exits `0`. `conversations unread --json` prints
+`{ "unread_channels": [] }` then (plus `threads` with browser auth), never empty
+stdout. Test the data, not the exit code:
 
 ```bash
 count=$(slackcli search messages "$Q" --json | jq '.total')

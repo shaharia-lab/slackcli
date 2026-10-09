@@ -1,6 +1,7 @@
 // `conversations unread` and the thread summary (#264), in process with the
 // Slack client stubbed: what reaches stdout for each mix of unread
-// conversations and unread threads, on both auth types.
+// conversations and unread threads, on both auth types, including the empty
+// `--json` result (#360).
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import * as authLib from '../lib/auth.ts';
 import { createConversationsCommand } from './conversations.ts';
@@ -94,11 +95,31 @@ describe('conversations unread, in process', () => {
       expect(out.unread_channels).toHaveLength(1);
     });
 
-    it('stays "All caught up!" with nothing on stdout when no conversation and no thread is unread', async () => {
+    it('prints an empty unread_channels with read threads when no conversation and no thread is unread', async () => {
       await run('browser', { channels: [], threads: READ_THREADS }, ['--json']);
 
-      expect(stdout).toBe('');
+      expect(JSON.parse(stdout)).toEqual({ unread_channels: [], threads: { has_unreads: false, mention_count: 0 } });
       expect(stderr).toContain('All caught up! No unread messages.');
+    });
+
+    it('prints an empty unread_channels with no threads key when Slack sent no threads block', async () => {
+      await run('browser', { channels: [] }, ['--json']);
+
+      expect(JSON.parse(stdout)).toEqual({ unread_channels: [] });
+      expect(stderr).toContain('All caught up! No unread messages.');
+    });
+
+    it('prints an empty unread_channels when --types filters every conversation out and threads are read', async () => {
+      await run('browser', { channels: [UNREAD_CHANNEL], threads: READ_THREADS }, ['--json', '--types', 'groups']);
+
+      expect(JSON.parse(stdout)).toEqual({ unread_channels: [], threads: { has_unreads: false, mention_count: 0 } });
+      expect(stderr).toContain('All caught up! No unread messages.');
+    });
+
+    it('prints an empty unread_channels under --fields when nothing is unread', async () => {
+      await run('browser', { channels: [], threads: READ_THREADS }, ['--json', '--fields', 'id']);
+
+      expect(JSON.parse(stdout)).toEqual({ unread_channels: [], threads: { has_unreads: false, mention_count: 0 } });
     });
 
     it('reports threads whatever --types says', async () => {
@@ -138,11 +159,24 @@ describe('conversations unread, in process', () => {
       expect(out.unread_channels).toEqual([{ id: 'C0123456789', name: 'general', mention_count: 1, unread_count: 4, has_unreads: true }]);
     });
 
-    it('ignores a threads key on the response and stays "All caught up!"', async () => {
+    it('ignores a threads key on the response and prints an empty unread_channels when nothing is unread', async () => {
       await run('standard', { channels: [], threads: UNREAD_THREADS }, ['--json']);
 
-      expect(stdout).toBe('');
+      expect(JSON.parse(stdout)).toEqual({ unread_channels: [] });
       expect(stderr).toContain('All caught up! No unread messages.');
+    });
+
+    it('prints an empty unread_channels when --types filters every conversation out', async () => {
+      await run('standard', LIST, ['--json', '--types', 'groups']);
+
+      expect(JSON.parse(stdout)).toEqual({ unread_channels: [] });
+      expect(stderr).toContain('All caught up! No unread messages.');
+    });
+
+    it('prints an empty unread_channels under --fields when nothing is unread', async () => {
+      await run('standard', { channels: [] }, ['--json', '--fields', 'id']);
+
+      expect(JSON.parse(stdout)).toEqual({ unread_channels: [] });
     });
   });
 
@@ -185,6 +219,17 @@ describe('conversations unread, in process', () => {
     it('stays "All caught up!" when nothing is unread', async () => {
       await run('browser', { channels: [], threads: READ_THREADS });
 
+      expect(stdout).toBe('');
+      expect(stderr).toContain('All caught up! No unread messages.');
+    });
+
+    it('stays "All caught up!" with an app token, and when --types filters every conversation out', async () => {
+      await run('standard', { channels: [] });
+      expect(stdout).toBe('');
+      expect(stderr).toContain('All caught up! No unread messages.');
+
+      stderr = '';
+      await run('browser', { channels: [UNREAD_CHANNEL], threads: READ_THREADS }, ['--types', 'groups']);
       expect(stdout).toBe('');
       expect(stderr).toContain('All caught up! No unread messages.');
     });

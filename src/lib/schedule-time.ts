@@ -62,9 +62,10 @@ export function parseScheduleTime(input: ScheduleTimeInput, nowMs: number = Date
     );
   }
   if (postAt - nowSeconds > MAX_SCHEDULE_DAYS * SECONDS_PER_DAY) {
+    const given = hasAt ? `--at ${input.at}` : `--in ${input.in}`;
     throw new InvalidInputError(
       `Slack schedules a message at most ${MAX_SCHEDULE_DAYS} days ahead; ` +
-        `${hasAt ? `--at ${input.at}` : `--in ${input.in}`} is further away than that.`,
+        `${given} is further away than that.`,
     );
   }
   return postAt;

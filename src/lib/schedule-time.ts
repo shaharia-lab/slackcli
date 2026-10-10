@@ -33,6 +33,16 @@ const DATE_TIME = new RegExp(`^${DATE.source}[T ]${TIME.source}${ZONE.source}?$`
 const DURATION = /^(?:\d+[dhm])+$/;
 const DURATION_PART = /(\d+)([dhm])/g;
 
+/** The date and time fields of an `--at` value, as written (month is 1-12). */
+interface WallClock {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
+
 export interface ScheduleTimeInput {
   /** The `--at` value. */
   at?: string;
@@ -86,22 +96,18 @@ function parseAt(raw: string): number {
     throw new InvalidInputError(`Cannot read --at "${raw}" as a time. ${AT_FORMATS}`);
   }
   const [year, month, day, hour, minute] = match.slice(1, 6).map(Number);
-  const second = Number(match[6] ?? 0);
+  const fields: WallClock = { year, month, day, hour, minute, second: Number(match[6] ?? 0) };
   const zone = match[7];
 
-  const ms = zone === undefined
-    ? localTime(raw, year, month, day, hour, minute, second)
-    : zonedTime(raw, zone, year, month, day, hour, minute, second);
+  const ms = zone === undefined ? localTime(raw, fields) : zonedTime(raw, zone, fields);
   return Math.floor(ms / 1000);
 }
 
 // A time with an explicit `Z` or offset. The fields are checked by building
 // the same wall-clock time in UTC and reading it back: JavaScript rolls an
 // impossible date over (30 February becomes 2 March) rather than refusing it.
-function zonedTime(
-  raw: string, zone: string,
-  year: number, month: number, day: number, hour: number, minute: number, second: number,
-): number {
+function zonedTime(raw: string, zone: string, fields: WallClock): number {
+  const { year, month, day, hour, minute, second } = fields;
   const wallClock = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
   const real = wallClock.getUTCFullYear() === year
     && wallClock.getUTCMonth() === month - 1
@@ -133,10 +139,8 @@ function offsetMs(raw: string, zone: string): number {
 // its clocks go forward (02:30 on that night does not exist). A time that
 // happens twice, when the clocks go back, resolves to the first of the two;
 // the command always echoes the absolute time it resolved.
-function localTime(
-  raw: string,
-  year: number, month: number, day: number, hour: number, minute: number, second: number,
-): number {
+function localTime(raw: string, fields: WallClock): number {
+  const { year, month, day, hour, minute, second } = fields;
   const local = new Date(year, month - 1, day, hour, minute, second);
   const real = local.getFullYear() === year
     && local.getMonth() === month - 1

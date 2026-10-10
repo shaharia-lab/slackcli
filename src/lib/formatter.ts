@@ -122,9 +122,10 @@ export function formatScheduledList(messages: ScheduledMessageSummary[], timeZon
   messages.forEach((message, index) => {
     const preview = truncateText(message.text.replace(/\s+/g, ' ').trim(), 120);
     const position = chalk.dim(`${index + 1}.`);
+    const id = chalk.dim(`id: ${message.scheduled_message_id}`);
     output += `  ${position} ${chalk.bold(message.channel_id)} ${chalk.dim(formatScheduleTime(message.post_at, timeZone))}\n`;
     output += `     ${preview}\n`;
-    output += `     ${chalk.dim(`id: ${message.scheduled_message_id}`)}\n\n`;
+    output += `     ${id}\n\n`;
   });
 
   return output;

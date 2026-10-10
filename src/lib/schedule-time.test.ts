@@ -171,6 +171,12 @@ describe('parseScheduleTime --at', () => {
     expect(refusal(() => at('2027-10-10T12:00:00Z'))).toContain('at most 120 days ahead');
     expect(refusal(() => at('999999999999'))).toContain('at most 120 days ahead');
   });
+
+  it('names the --at value it refused as too far ahead', () => {
+    expect(refusal(() => at('2027-10-10T12:00:00Z'))).toBe(
+      'Slack schedules a message at most 120 days ahead; --at 2027-10-10T12:00:00Z is further away than that.',
+    );
+  });
 });
 
 describe('parseScheduleTime --in', () => {
@@ -226,6 +232,12 @@ describe('parseScheduleTime --in', () => {
     expect(refusal(() => within('120d1m'))).toContain('at most 120 days ahead');
     expect(refusal(() => within('121d'))).toContain('at most 120 days ahead');
     expect(refusal(() => within(`${'9'.repeat(30)}d`))).toContain('at most 120 days ahead');
+  });
+
+  it('names the --in value it refused as too far ahead', () => {
+    expect(refusal(() => within('121d'))).toBe(
+      'Slack schedules a message at most 120 days ahead; --in 121d is further away than that.',
+    );
   });
 });
 

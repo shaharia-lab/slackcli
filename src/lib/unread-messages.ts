@@ -163,7 +163,7 @@ export function cutAtLastRead(rawMessages: unknown, lastRead: string | undefined
 export async function fetchUnreadMessages(
   client: MessageReader,
   channels: UnreadChannel[],
-  cursors: Record<string, UnreadCursor> = {},
+  cursors: Record<string, UnreadCursor> | undefined,
   options: UnreadMessageOptions & { onProgress?: (message: string) => void },
 ): Promise<UnreadChannel[]> {
   const selected = selectConversations(channels, options.maxConversations);
@@ -173,7 +173,7 @@ export async function fetchUnreadMessages(
 
   for (const [index, channel] of selected.entries()) {
     options.onProgress?.(`Reading unread messages (${index + 1}/${selected.length})...`);
-    const lastRead = cursors[channel.id]?.last_read;
+    const lastRead = cursors?.[channel.id]?.last_read;
     const channelStartedAt = performance.now();
     const response = await client.getConversationHistory(channel.id, {
       oldest: isUsableCursor(lastRead) ? lastRead : undefined,
@@ -205,7 +205,7 @@ export async function fetchUnreadMessages(
     const cut = read.get(channel.id);
     return {
       ...channel,
-      ...cursors[channel.id],
+      ...cursors?.[channel.id],
       ...(cut ? { messages: cut.messages } : {}),
       ...(cut?.has_more ? { has_more: true } : {}),
     };

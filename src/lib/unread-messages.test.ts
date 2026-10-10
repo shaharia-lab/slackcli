@@ -294,6 +294,21 @@ describe('fetchUnreadMessages', () => {
     expect(out[1].messages).toHaveLength(2);
   });
 
+  it('reads every selected conversation without oldest when there are no cursors', async () => {
+    const { client, calls } = reader({ A: { messages: [message('1700000001.000000')] } });
+
+    const out = await fetchUnreadMessages(client, [channel('A'), channel('B')], undefined, { maxConversations: 10, limit: 5 });
+
+    expect(calls).toEqual([
+      { channel: 'A', options: { oldest: undefined, limit: 5 } },
+      { channel: 'B', options: { oldest: undefined, limit: 5 } },
+    ]);
+    expect(out).toEqual([
+      { ...channel('A'), messages: [message('1700000001.000000')] },
+      { ...channel('B'), messages: [] },
+    ] as any);
+  });
+
   it('makes no call for an empty list', async () => {
     const { client, calls } = reader({});
     expect(await fetchUnreadMessages(client, [], undefined, { maxConversations: 10, limit: 20 })).toEqual([]);

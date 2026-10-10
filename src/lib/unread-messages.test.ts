@@ -731,4 +731,68 @@ describe('logging', () => {
     expect(serialized).not.toContain(secret);
     expect(serialized).not.toContain('ZEBRA');
   });
+
+  // Every exit of fetchUnreadThreads, pinned record by record: level, message
+  // template and properties (duration_ms and the sink's run_id aside).
+  describe('fetchUnreadThreads records', () => {
+    const thread = (n: number) => rawThread('C1', `17000${n}00.000000`, [`17000${n}50.000000`]);
+    const full = (n: number) => ({ has_more: true, threads: [thread(n), thread(n - 1)] });
+    const last = { has_more: false, threads: [thread(10)] };
+    const renamed = { has_more: true, threads: [{ root: 'renamed' }, { root: 'renamed' }] };
+    const failure = Object.assign(new Error('Slack API error: ratelimited'), { slackData: { ok: false, error: 'ratelimited' } });
+    const FAILED = 'Unread thread view failed on page {page}: {reason}';
+    const SHAPE = 'Unread thread view returned an unexpected shape on page {page}';
+    const UNREADABLE = 'Unread thread view had {malformed} unreadable entries on page {page}';
+    const summary = (thread_count: number, pages: number, reason: string, skipped_entries: number, has_more: boolean) =>
+      ({ thread_count, pages, reason, skipped_entries, has_more });
+
+    type Warning = [message: string, properties: Record<string, unknown>];
+    type Listed = { items: number; has_more: boolean } | undefined;
+
+    it.each<[string, unknown[], Warning[], ReturnType<typeof summary>, Listed]>([
+      ['the end of the unread threads', [last], [], summary(1, 1, 'end_of_unread', 0, false), { items: 1, has_more: false }],
+      ['a request failure on page 1', [failure], [[FAILED, { page: 1, reason: 'ratelimited' }]], summary(0, 1, 'request_failed', 0, true), undefined],
+      ['a thrown error without a Slack code', [new TypeError('boom')], [[FAILED, { page: 1, reason: 'TypeError' }]], summary(0, 1, 'request_failed', 0, true), undefined],
+      ['a thrown value that is not an error', ['boom'], [[FAILED, { page: 1, reason: 'unknown' }]], summary(0, 1, 'request_failed', 0, true), undefined],
+      ['an unexpected shape on page 1', [{ threads: 'gone' }], [[SHAPE, { page: 1 }]], summary(0, 1, 'unexpected_shape', 0, true), undefined],
+      ['a first page with no thread at all', [renamed], [[UNREADABLE, { page: 1, malformed: 2 }]], summary(0, 1, 'unexpected_shape', 2, true), undefined],
+      ['a request failure on page 2', [full(90), failure], [[FAILED, { page: 2, reason: 'ratelimited' }]], summary(2, 2, 'request_failed', 0, true), { items: 2, has_more: true }],
+      ['an unexpected shape on page 2', [full(90), null], [[SHAPE, { page: 2 }]], summary(2, 2, 'unexpected_shape', 0, true), { items: 2, has_more: true }],
+      ['a later page with no thread at all', [full(90), renamed], [[UNREADABLE, { page: 2, malformed: 2 }]], summary(2, 2, 'unexpected_shape', 2, true), { items: 2, has_more: true }],
+      ['an unreadable entry among threads', [{ has_more: false, threads: [thread(10), null] }], [[UNREADABLE, { page: 1, malformed: 1 }]], summary(1, 1, 'end_of_unread', 1, true), { items: 1, has_more: true }],
+      ['an unreadable entry beside a read thread only', [{ has_more: true, threads: [rawThread('C1', '1700001000.000000', []), null] }], [[UNREADABLE, { page: 1, malformed: 1 }]], summary(0, 1, 'end_of_unread', 1, true), { items: 0, has_more: true }],
+      ['unreadable entries on two pages', [{ has_more: true, threads: [thread(90), null, thread(89)] }, { has_more: false, threads: [null, thread(10)] }], [[UNREADABLE, { page: 1, malformed: 1 }], [UNREADABLE, { page: 2, malformed: 1 }]], summary(3, 2, 'end_of_unread', 2, true), { items: 3, has_more: true }],
+      ['a cursor that does not move', [full(90), full(90)], [], summary(2, 2, 'no_cursor', 0, true), { items: 2, has_more: true }],
+      ['the page cap', Array.from({ length: MAX_THREAD_PAGES + 1 }, (_, i) => full(90 - i * 2)), [], summary(MAX_THREAD_PAGES * 2, MAX_THREAD_PAGES, 'page_cap', 0, true), { items: MAX_THREAD_PAGES * 2, has_more: true }],
+    ])('logs %s', async (_label, pages, warnings, summarized, expected) => {
+      const records: LogRecord[] = [];
+      configureLogging({ level: 'trace', verbose: false, sinks: { capture: (r) => records.push(r) } });
+      let calls = 0;
+      const client = {
+        getUnreadThreadView: async () => {
+          const page = pages[calls++];
+          if (page instanceof Error || page === 'boom') throw page;
+          return page;
+        },
+      };
+      const progress: string[] = [];
+
+      const list = await fetchUnreadThreads(client, { limit: 20, onProgress: (m) => progress.push(m) });
+
+      expect(list && { items: list.items.length, has_more: list.has_more }).toEqual(expected);
+      // One progress line per page asked for, and no call after the exit.
+      expect(calls).toBe(summarized.pages);
+      expect(progress).toEqual(Array.from({ length: calls }, () => 'Reading unread threads...'));
+
+      const own = records.filter((r) => r.category.join('.') === 'slackcli.unread');
+      expect(own.map((r) => {
+        const { run_id: _runId, duration_ms: _duration, ...properties } = r.properties;
+        return { level: r.level, message: r.rawMessage, properties };
+      })).toEqual([
+        ...warnings.map(([message, properties]) => ({ level: 'warning' as const, message, properties })),
+        { level: 'info' as const, message: 'Read {thread_count} unread threads in {pages} pages ({reason})', properties: summarized },
+      ]);
+      expect(typeof own.at(-1)?.properties.duration_ms).toBe('number');
+    });
+  });
 });

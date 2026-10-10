@@ -309,6 +309,44 @@ export interface UnreadThreadList {
   has_more: boolean;
 }
 
+// A page of the thread view, or why the view has to be given up on. `skipped`
+// counts the entries of the page that are not threads.
+type ThreadPageRead =
+  | { view: ThreadViewPage; skipped: number }
+  | { view?: undefined; unusable: 'request_failed' | 'unexpected_shape'; skipped: number };
+
+// One page of the thread view, or why it cannot be used. Never throws, and
+// logs each unusable page and each page with unreadable entries.
+async function readThreadPage(client: ThreadViewReader, cursor: string | undefined, limit: number, page: number): Promise<ThreadPageRead> {
+  let view: ThreadViewPage | undefined;
+  try {
+    view = normalizeThreadView(await client.getUnreadThreadView(cursor ? { current_ts: cursor } : {}), limit);
+  } catch (err) {
+    logger.warn('Unread thread view failed on page {page}: {reason}', { page, reason: failureCode(err) });
+    return { unusable: 'request_failed', skipped: 0 };
+  }
+  if (!view) {
+    logger.warn('Unread thread view returned an unexpected shape on page {page}', { page });
+    return { unusable: 'unexpected_shape', skipped: 0 };
+  }
+  if (view.malformed > 0) {
+    logger.warn('Unread thread view had {malformed} unreadable entries on page {page}', { page, malformed: view.malformed });
+    // Not one entry of the page is a thread: the shape has changed.
+    if (view.threads.length === 0 && view.read === 0) return { unusable: 'unexpected_shape', skipped: view.malformed };
+  }
+  return { view, skipped: view.malformed };
+}
+
+// Adds the threads not listed yet: two pages can repeat a thread.
+function addThreads(items: UnreadThread[], seen: Set<string>, threads: UnreadThread[]): void {
+  for (const thread of threads) {
+    const key = `${thread.channel_id}:${thread.thread_ts}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(thread);
+  }
+}
+
 /**
  * The followed threads with unread replies, following the view's pages up to
  * MAX_THREAD_PAGES. Never throws. A failure, an unexpected shape, or a page of
@@ -343,30 +381,12 @@ export async function fetchUnreadThreads(
 
   for (let page = 1; page <= MAX_THREAD_PAGES; page++) {
     options.onProgress?.('Reading unread threads...');
-    let view: ThreadViewPage | undefined;
-    try {
-      view = normalizeThreadView(await client.getUnreadThreadView(cursor ? { current_ts: cursor } : {}), options.limit);
-    } catch (err) {
-      logger.warn('Unread thread view failed on page {page}: {reason}', { page, reason: failureCode(err) });
-      return stop(page, 'request_failed', 'unusable');
-    }
-    if (!view) {
-      logger.warn('Unread thread view returned an unexpected shape on page {page}', { page });
-      return stop(page, 'unexpected_shape', 'unusable');
-    }
-    if (view.malformed > 0) {
-      logger.warn('Unread thread view had {malformed} unreadable entries on page {page}', { page, malformed: view.malformed });
-      skipped += view.malformed;
-      // Not one entry of the page is a thread: the shape has changed.
-      if (view.threads.length === 0 && view.read === 0) return stop(page, 'unexpected_shape', 'unusable');
-    }
+    const read = await readThreadPage(client, cursor, options.limit, page);
+    skipped += read.skipped;
+    if (!read.view) return stop(page, read.unusable, 'unusable');
+    const { view } = read;
 
-    for (const thread of view.threads) {
-      const key = `${thread.channel_id}:${thread.thread_ts}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push(thread);
-    }
+    addThreads(items, seen, view.threads);
 
     if (view.done) return stop(page, 'end_of_unread', 'complete');
     // No cursor, or one that did not move: the next call would repeat this page.

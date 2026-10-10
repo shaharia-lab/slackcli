@@ -2177,6 +2177,43 @@ describe('SlackClient scheduled messages (#379)', () => {
     expect(toScheduledMessageSummary({ id: 'Q1', channel_id: 'C1', post_at: Number.NaN })).toBeUndefined();
   });
 
+  it('logs the unusable entries once per page, as a count and nothing else', async () => {
+    const logDir = await mkdtemp(join(tmpdir(), 'slackcli-scheduled-log-'));
+    try {
+      const file = configureLogging({ level: 'trace', verbose: false, dir: logDir }).logFile!;
+      const { client, calls } = standardClient([
+        {
+          ok: true,
+          scheduled_messages: [pending('', 10, { text: 'confidential draft' }), null, pending('Q1', 20)],
+          response_metadata: { next_cursor: 'c1' },
+        },
+        { ok: true, scheduled_messages: [pending('Q2', 30)], response_metadata: { next_cursor: 'c2' } },
+        { ok: true, scheduled_messages: [pending('Q3', 40, { channel_id: undefined })] },
+      ]);
+
+      const found = await client.listScheduledMessages();
+
+      expect(found.map((message) => message.scheduled_message_id)).toEqual(['Q1', 'Q2']);
+      // Strict: no `channel` or `cursor` key at all when there is none to send.
+      expect(calls.map((call) => call.params)).toStrictEqual([
+        { limit: 100 },
+        { limit: 100, cursor: 'c1' },
+        { limit: 100, cursor: 'c2' },
+      ]);
+      const text = readFileSync(file, 'utf-8');
+      expect(text).not.toContain('confidential draft');
+      const warnings = text.trim().split('\n').map((line) => JSON.parse(line))
+        .filter((record) => record.message.includes('unusable entries'));
+      // A page with nothing to skip logs nothing.
+      expect(warnings.map((record) => record.properties.skipped)).toEqual([2, 1]);
+      expect(warnings.map((record) => record.level)).toEqual(['WARN', 'WARN']);
+      for (const record of warnings) expect(Object.keys(record.properties).sort()).toEqual(['run_id', 'skipped']);
+    } finally {
+      resetSync();
+      await rm(logDir, { recursive: true, force: true });
+    }
+  });
+
   it('cancels by channel and scheduled message ID', async () => {
     const { client, calls } = standardClient();
 

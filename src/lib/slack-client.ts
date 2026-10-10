@@ -250,6 +250,30 @@ export function toScheduledMessageSummary(raw: SlackScheduledMessage): Scheduled
   };
 }
 
+// The params of one `chat.scheduledMessages.list` page: the channel filter and
+// the cursor are sent only when there is one.
+function scheduledPageParams(channel: string | undefined, cursor: string | undefined): Record<string, any> {
+  const params: Record<string, any> = { limit: SCHEDULED_PAGE_SIZE };
+  if (channel) params.channel = channel;
+  if (cursor) params.cursor = cursor;
+  return params;
+}
+
+// One page of `chat.scheduledMessages.list` as summaries, in Slack's order,
+// plus how many entries had to be left out.
+function summarizeScheduledPage(
+  entries: SlackScheduledMessage[] | undefined,
+): { summaries: ScheduledMessageSummary[]; skipped: number } {
+  const summaries: ScheduledMessageSummary[] = [];
+  let skipped = 0;
+  for (const raw of entries ?? []) {
+    const summary = toScheduledMessageSummary(raw);
+    if (summary) summaries.push(summary);
+    else skipped += 1;
+  }
+  return { summaries, skipped };
+}
+
 export class SlackClient {
   private readonly config: WorkspaceConfig;
   private readonly webClient?: WebClient;
@@ -710,17 +734,11 @@ export class SlackClient {
     const found: ScheduledMessageSummary[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < SCHEDULED_MAX_PAGES; page++) {
-      const params: Record<string, any> = { limit: SCHEDULED_PAGE_SIZE };
-      if (options.channel) params.channel = options.channel;
-      if (cursor) params.cursor = cursor;
+      const params = scheduledPageParams(options.channel, cursor);
       const response: SlackScheduledMessageListResponse = await this.request('chat.scheduledMessages.list', params);
 
-      let skipped = 0;
-      for (const raw of response.scheduled_messages ?? []) {
-        const summary = toScheduledMessageSummary(raw);
-        if (summary) found.push(summary);
-        else skipped += 1;
-      }
+      const { summaries, skipped } = summarizeScheduledPage(response.scheduled_messages);
+      found.push(...summaries);
       if (skipped > 0) {
         logger.warn('chat.scheduledMessages.list returned {skipped} unusable entries', { skipped });
       }

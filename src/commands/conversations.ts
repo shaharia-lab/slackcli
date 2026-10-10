@@ -9,7 +9,7 @@ import {
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } from '../lib/help.ts';
 import { fetchMessage } from '../lib/message.ts';
-import { fetchUnread, hasUnreadThreads } from '../lib/unread.ts';
+import { fetchUnread, filterByTypes, hasUnreadThreads, unreadSummaryLine } from '../lib/unread.ts';
 import {
   DEFAULT_MAX_CONVERSATIONS, DEFAULT_MESSAGE_LIMIT, fetchUnreadDetails, unreadMessageOptions, type UnreadDetails,
 } from '../lib/unread-messages.ts';
@@ -40,6 +40,16 @@ function unreadAuthors(details: UnreadDetails) {
     real_name: u.real_name,
     email: u.profile?.email,
   }));
+}
+
+// The `conversations unread --json` object: `threads` only when Slack reported
+// the summary, `users` only under --messages.
+function unreadJsonPayload(channels: UnreadChannel[], threads: UnreadThreads | undefined, details: UnreadDetails | undefined) {
+  return {
+    unread_channels: channels,
+    ...(threads ? { threads } : {}),
+    ...(details ? { users: unreadAuthors(details) } : {}),
+  };
 }
 
 // The text output of `conversations unread`: the conversation list (with its
@@ -752,18 +762,7 @@ export function createConversationsCommand(): Command {
 
         const onProgress = (msg: string) => { spinner.text = msg; };
         const unread = await fetchUnread(client, { onProgress });
-        let channels = unread.channels;
-
-        // Apply type filter if specified
-        if (options.types) {
-          const types = new Set<string>(options.types.split(',').map((t: string) => t.trim()));
-          channels = channels.filter(ch => {
-            if (types.has('channels') && !ch.is_im && !ch.is_mpim) return true;
-            if (types.has('dms') && ch.is_im) return true;
-            if (types.has('groups') && ch.is_mpim) return true;
-            return false;
-          });
-        }
+        let channels = filterByTypes(unread.channels, options.types);
 
         // --messages: read the selected conversations and the unread threads (#361).
         let details: UnreadDetails | undefined;
@@ -781,30 +780,14 @@ export function createConversationsCommand(): Command {
         const threadsUnread = hasUnreadThreads(threads);
 
         const caughtUp = channels.length === 0 && !threadsUnread;
-        if (caughtUp) {
-          spinner.succeed('All caught up! No unread messages.');
-        } else {
-          spinner.succeed(
-            channels.length > 0
-              ? `${channels.length} conversations with unread messages`
-              : 'No unread conversations, but unread thread activity',
-          );
-        }
+        spinner.succeed(unreadSummaryLine(channels.length, threadsUnread));
         if (details?.threadsUnavailable) {
           warning('Could not read the unread threads; reporting the thread summary only.');
         }
 
         // Ahead of the caught-up return: --json prints the same object when the list is empty (#360).
         if (options.json) {
-          writeJson(applyFields(
-            'conversations unread',
-            {
-              unread_channels: channels,
-              ...(threads ? { threads } : {}),
-              ...(details ? { users: unreadAuthors(details) } : {}),
-            },
-            fields,
-          ));
+          writeJson(applyFields('conversations unread', unreadJsonPayload(channels, threads, details), fields));
           return;
         }
 

@@ -56,6 +56,29 @@ describe('parseScheduleTime --at', () => {
     expect(at(value)).toBe(expectedMs / 1000);
   });
 
+  // The pattern is composed from date, time and zone parts (#386): each
+  // separator, each optional piece and each zone shape is pinned here, so a
+  // shifted capture group shows up as a wrong instant.
+  it.each([
+    ['2026-10-12 09:50Z', Date.UTC(2026, 9, 12, 9, 50, 0)],
+    ['2026-10-12 09:50:30+0200', Date.UTC(2026, 9, 12, 7, 50, 30)],
+    ['2026-10-12T09:50-0530', Date.UTC(2026, 9, 12, 15, 20, 0)],
+    ['2026-10-12 09:50+02:00', Date.UTC(2026, 9, 12, 7, 50, 0)],
+    ['2026-10-12T09:50:07.1Z', Date.UTC(2026, 9, 12, 9, 50, 7)],
+    ['2026-10-12T09:50:07.123456789Z', Date.UTC(2026, 9, 12, 9, 50, 7)],
+    ['2026-10-12 09:50:07.123456789+02:00', Date.UTC(2026, 9, 12, 7, 50, 7)],
+    ['2026-10-12T09:50:07.999-0530', Date.UTC(2026, 9, 12, 15, 20, 7)],
+    ['  2026-10-12T09:50:07Z  ', Date.UTC(2026, 9, 12, 9, 50, 7)],
+  ])('reads every separator, seconds, fraction and zone shape in %p', (value, expectedMs) => {
+    expect(at(value)).toBe(expectedMs / 1000);
+  });
+
+  it('drops the fraction of a bare local time too', () => {
+    setTimezone('Europe/Berlin');
+    expect(at('2026-10-12 09:50:15.123456789')).toBe(Date.UTC(2026, 9, 12, 7, 50, 15) / 1000);
+    expect(at('2026-10-12T09:50:15.5')).toBe(Date.UTC(2026, 9, 12, 7, 50, 15) / 1000);
+  });
+
   it('gives the same instant for an offset time whatever the machine timezone', () => {
     setTimezone('America/New_York');
     expect(at('2026-10-12T09:50:00+02:00')).toBe(Date.UTC(2026, 9, 12, 7, 50, 0) / 1000);
@@ -147,6 +170,41 @@ describe('parseScheduleTime --at', () => {
     const message = refusal(() => at(value));
     expect(message).toContain('Cannot read --at');
     expect(message).toContain('ISO 8601');
+  });
+
+  // Both ends of the composed pattern stay anchored, and no part is looser
+  // than it was as one literal (#386).
+  it.each([
+    '2026-10-12T09:50:00Zx',
+    'x2026-10-12T09:50:00Z',
+    '2026-10-12T09:50:00ZZ',
+    '2026-10-12 09:50 x',
+    '2026-10-12T09:50:00Z\n2026-10-13T09:50:00Z',
+    'at\n2026-10-12T09:50:00Z',
+    '12026-10-12 09:50',
+    '2026-10-12 09:500',
+    '2026-10-12T09:50:00.1234567890Z',
+    '2026-10-12T09:50:00.Z',
+    '2026-10-12 09:50:00.',
+    '2026-10-12T09:50.5Z',
+    '2026-10-12T09:50:0Z',
+    '2026-10-12T09:50:00+02:0',
+    '2026-10-12T09:50:00+020',
+    '2026-10-12T09:50:00+02:000',
+    '2026-10-12T09:50:00+02:00:00',
+    '2026-10-12T09:50:00 Z',
+    '2026-10-12T09:50:00±02:00',
+    '2026-10-12  09:50',
+    '2026-10-12_09:50',
+    '2026-10-1209:50',
+    '2026-10-12T',
+    '2026-10-12TZ',
+  ])('refuses %p: a trailing or leading character, or a malformed part', (value) => {
+    expect(refusal(() => at(value))).toBe(
+      `Cannot read --at "${value}" as a time. Use Unix seconds (1791791400), ` +
+        'ISO 8601 with an offset (2026-10-12T09:50:00+02:00 or ...Z), ' +
+        'or a local date and time ("2026-10-12 09:50").',
+    );
   });
 
   it('refuses a time in the past, and the present second itself', () => {

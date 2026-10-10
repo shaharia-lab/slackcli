@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { SlackClient } from './slack-client.ts';
-import { fetchUnread, hasUnreadThreads, normalizeUnreadThreads } from './unread.ts';
+import type { UnreadChannel } from '../types/index.ts';
+import { fetchUnread, filterByTypes, hasUnreadThreads, normalizeUnreadThreads, unreadSummaryLine } from './unread.ts';
 
 // Minimal mock client: canned unread counts, and names resolved from two maps.
 function createMockClient(
@@ -87,6 +88,76 @@ describe('hasUnreadThreads', () => {
   it('is false when nothing is unread or the summary is missing', () => {
     expect(hasUnreadThreads({ has_unreads: false, mention_count: 0 })).toBe(false);
     expect(hasUnreadThreads(undefined)).toBe(false);
+  });
+});
+
+describe('filterByTypes', () => {
+  const base = { mention_count: 0, has_unreads: true };
+  const pub: UnreadChannel = { ...base, id: 'C1', name: 'general' };
+  const priv: UnreadChannel = { ...base, id: 'C2', name: 'secret', is_private: true, is_im: false, is_mpim: false };
+  const dm: UnreadChannel = { ...base, id: 'D1', name: 'alice', is_im: true };
+  const group: UnreadChannel = { ...base, id: 'G1', name: 'mpdm-a--b-1', is_mpim: true };
+  const all = [pub, priv, dm, group];
+
+  it.each([
+    ['channels', [pub, priv]],
+    ['dms', [dm]],
+    ['groups', [group]],
+    ['dms,groups', [dm, group]],
+    ['channels,dms', [pub, priv, dm]],
+    ['channels,dms,groups', all],
+    ['groups,channels', [pub, priv, group]],
+    [' dms , groups ', [dm, group]],
+    ['dms,dms', [dm]],
+    ['dms,,', [dm]],
+  ])('--types %p keeps the matching conversations in their order', (types, expected) => {
+    expect(filterByTypes(all, types)).toEqual(expected);
+  });
+
+  it.each([['im'], ['channel'], ['DMS'], ['private'], [','], [' ']])(
+    'an unknown type name (%p) selects nothing',
+    types => {
+      expect(filterByTypes(all, types)).toEqual([]);
+    },
+  );
+
+  it('an unknown name next to a known one is ignored', () => {
+    expect(filterByTypes(all, 'nope,dms')).toEqual([dm]);
+  });
+
+  it.each([[undefined], ['']])('keeps every conversation when --types is %p', types => {
+    expect(filterByTypes(all, types)).toBe(all);
+  });
+
+  it('returns an empty list for an empty list', () => {
+    expect(filterByTypes([], 'channels,dms,groups')).toEqual([]);
+    expect(filterByTypes([], undefined)).toEqual([]);
+  });
+
+  it('does not treat a group DM that is also flagged is_im as a channel', () => {
+    const both: UnreadChannel = { ...base, id: 'X1', is_im: true, is_mpim: true };
+    expect(filterByTypes([both], 'channels')).toEqual([]);
+    expect(filterByTypes([both], 'dms')).toEqual([both]);
+    expect(filterByTypes([both], 'groups')).toEqual([both]);
+  });
+
+  it('does not change the list it was given', () => {
+    const list = [...all];
+    filterByTypes(list, 'dms');
+    expect(list).toEqual(all);
+  });
+});
+
+describe('unreadSummaryLine', () => {
+  it.each([
+    [0, false, 'All caught up! No unread messages.'],
+    [0, true, 'No unread conversations, but unread thread activity'],
+    [1, false, '1 conversations with unread messages'],
+    [1, true, '1 conversations with unread messages'],
+    [12, false, '12 conversations with unread messages'],
+    [12, true, '12 conversations with unread messages'],
+  ])('%p conversations, threads unread %p', (count, threadsUnread, expected) => {
+    expect(unreadSummaryLine(count, threadsUnread)).toBe(expected);
   });
 });
 

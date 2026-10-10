@@ -19,6 +19,29 @@ export function hasUnreadThreads(threads: UnreadThreads | undefined): boolean {
   return threads !== undefined && (threads.has_unreads || threads.mention_count > 0);
 }
 
+// The `--types` filter of `conversations unread`: a comma-separated list of
+// `channels` (public and private), `dms` and `groups` (group DMs). An unset
+// or empty value keeps every conversation; a name it does not know selects
+// nothing.
+export function filterByTypes(channels: UnreadChannel[], types: string | undefined): UnreadChannel[] {
+  if (!types) return channels;
+  const wanted = new Set<string>(types.split(',').map(t => t.trim()));
+  return channels.filter(ch => {
+    if (wanted.has('channels') && !ch.is_im && !ch.is_mpim) return true;
+    if (wanted.has('dms') && ch.is_im) return true;
+    if (wanted.has('groups') && ch.is_mpim) return true;
+    return false;
+  });
+}
+
+// The line `conversations unread` finishes its spinner with.
+export function unreadSummaryLine(channelCount: number, threadsUnread: boolean): string {
+  if (channelCount > 0) return `${channelCount} conversations with unread messages`;
+  return threadsUnread
+    ? 'No unread conversations, but unread thread activity'
+    : 'All caught up! No unread messages.';
+}
+
 // What one auth path found; fetchUnread sorts the list and builds the summary.
 interface UnreadParts {
   channels: UnreadChannel[];

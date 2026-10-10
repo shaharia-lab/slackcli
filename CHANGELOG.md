@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-10
+
 ### Added
 - **Schedule a message to be posted later**: `messages schedule` hands a message to Slack to post at a future time, `messages list-scheduled` shows what is pending and `messages delete-scheduled <id>` cancels one, so a script or agent no longer has to stay alive or own a cron job to post later (#379)
   - `schedule` takes the target and content options of `messages send` except `--file`, plus exactly one of `--at <time>` (Unix seconds, ISO 8601 with an offset or `Z`, or a local `"YYYY-MM-DD HH:MM"` read in the machine's timezone) or `--in <duration>` (`45m`, `2h`, `3d`, `1h30m`)

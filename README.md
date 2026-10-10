@@ -159,7 +159,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 |---|---|---|
 | See what I missed | `slackcli conversations unread` (add `--messages` to read them too) | [conversations](docs/user-guide/conversations.md) |
 | Read a channel or a thread | `slackcli conversations read C123 --limit=50` | [conversations](docs/user-guide/conversations.md) |
-| Send, reply, edit, or react | `slackcli messages send --permalink="$LINK" --message="…"` | [messages](docs/user-guide/messages.md) |
+| Send, reply, edit, delete, or react | `slackcli messages send --permalink="$LINK" --message="…"` | [messages](docs/user-guide/messages.md) |
 | Search the workspace | `slackcli search messages "release notes"` | [search](docs/user-guide/search.md) |
 | Find a channel or a person | `slackcli search people "ada"` | [search](docs/user-guide/search.md) |
 | Work through "saved for later" | `slackcli saved list --state=to_do` | [saved items](docs/user-guide/saved.md) |
@@ -308,7 +308,7 @@ slackcli conversations mark-read C1234567890 --ts 1234567890.123456   # acknowle
 </details>
 
 <details>
-<summary><code>messages</code> — send, reply, edit, react, schedule, and manage drafts</summary>
+<summary><code>messages</code> — send, reply, edit, delete, react, schedule, and manage drafts</summary>
 
 <br>
 
@@ -322,6 +322,7 @@ printf '%s' "$REPORT" | slackcli messages send --recipient-id=C123 --message-fil
 slackcli messages send --recipient-id=C123 --message="Done" --json   # {channel_id, ts, permalink}
 slackcli messages react --permalink="$LINK" --emoji=+1
 slackcli messages edit --channel-id=C123 --timestamp=1234567890.123456 --message="Corrected"
+slackcli messages delete --permalink="$LINK" --yes --json        # already gone → exit 0
 slackcli messages draft --recipient-id=C123 --message="Draft for later"
 slackcli messages list-drafts --json
 slackcli messages send-draft Dr123 --yes --json               # post, then remove draft

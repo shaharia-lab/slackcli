@@ -145,6 +145,7 @@ describe('--dry-run', () => {
   it.each([
     [['messages', 'send', '--recipient-id', 'C0123456789', '--message', 'Deploy done'], 'send message'],
     [['messages', 'edit', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100', '--message', 'Fixed'], 'edit message'],
+    [['messages', 'delete', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100'], 'delete message'],
     [['messages', 'draft', '--recipient-id', 'C0123456789', '--message', 'Notes'], 'create draft'],
     [['messages', 'send-draft', 'Dr0123456789'], 'send draft'],
     [['messages', 'delete-draft', 'Dr0123456789'], 'delete draft'],
@@ -246,6 +247,8 @@ describe('--dry-run', () => {
     [['messages', 'draft', '--recipient-id', 'alice@example.com', '--message', 'hi'], { kind: 'user', id: 'U0123456789', name: '@alice' }],
     [['messages', 'edit', '--channel-id', 'deploys', '--timestamp', '1712345678.000100', '--message', 'hi'],
       { kind: 'message', id: 'C0123456789', name: '#deploys', ts: '1712345678.000100' }],
+    [['messages', 'delete', '--channel-id', 'deploys', '--timestamp', '1712345678.000100'],
+      { kind: 'message', id: 'C0123456789', name: '#deploys', ts: '1712345678.000100' }],
     [['conversations', 'members', 'add', '#deploys', '@alice'], { kind: 'channel', id: 'C0123456789', name: '#deploys' }],
     [['conversations', 'leave', 'deploys'], { kind: 'channel', id: 'C0123456789', name: '#deploys' }],
   ])('%j previews the resolved ID', async (argv, target) => {
@@ -346,6 +349,7 @@ describe('--dry-run', () => {
     [['messages', 'send', '--recipient-id', 'C0123456789', '--message', 'hi', '--file', '/nonexistent/slackcli-file.txt'], 'invalid_input'],
     [['messages', 'send', '--message', 'hi'], 'invalid_input'],
     [['messages', 'edit', '--channel-id', 'C0123456789', '--message', 'hi'], 'invalid_input'],
+    [['messages', 'delete', '--channel-id', 'C0123456789'], 'invalid_input'],
     [['messages', 'draft', '--recipient-id', 'C0123456789'], 'invalid_input'],
     [['messages', 'send-draft', 'Dr_missing'], 'not_found'],
     [['messages', 'delete-draft', ' '], 'invalid_input'],

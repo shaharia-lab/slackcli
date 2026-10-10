@@ -32,3 +32,30 @@ export async function fetchMessage(
   });
   return history.messages?.[0];
 }
+
+export interface DeletedMessageResult {
+  channel_id: string;
+  ts: string;
+  deleted: boolean;
+  already_deleted: boolean;
+}
+
+/**
+ * Delete a message the caller posted. Idempotent: Slack's message_not_found is
+ * a success with `deleted: false, already_deleted: true`, so a retry is safe.
+ * Slack cannot tell an already-deleted message from a wrong timestamp, so
+ * callers must not claim a delete happened. Every other failure is rethrown.
+ */
+export async function deleteMessage(
+  client: Pick<SlackClient, 'deleteMessage'>,
+  channelId: string,
+  timestamp: string,
+): Promise<DeletedMessageResult> {
+  try {
+    await client.deleteMessage(channelId, timestamp);
+    return { channel_id: channelId, ts: timestamp, deleted: true, already_deleted: false };
+  } catch (error) {
+    if ((error as { slackData?: { error?: unknown } })?.slackData?.error !== 'message_not_found') throw error;
+    return { channel_id: channelId, ts: timestamp, deleted: false, already_deleted: true };
+  }
+}

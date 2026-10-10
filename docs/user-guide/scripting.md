@@ -13,7 +13,7 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 `files read`, `users info`, `users list`, `messages list-drafts`,
 `messages list-scheduled`, `auth whoami`, `auth list`.
 
-The writing commands support it too — `messages send`, `messages edit`,
+The writing commands support it too — `messages send`, `messages edit`, `messages delete`,
 `messages draft`, `messages send-draft`, `messages delete-draft`, `messages schedule`,
 `messages delete-scheduled`, the `usergroups` write verbs (`create`, `update`, `add`,
 `remove`, `enable`, `disable`), the `conversations` membership write/self
@@ -133,7 +133,7 @@ list` returns plain IDs, so it has no `--fields`.
 ## `--dry-run`
 
 Every command that changes something in Slack takes `--dry-run`:
-`messages send`, `edit`, `react`, `draft`, `send-draft`, `delete-draft`,
+`messages send`, `edit`, `delete`, `react`, `draft`, `send-draft`, `delete-draft`,
 `schedule`, `delete-scheduled`;
 `conversations members add`, `members remove`, `join`, `leave`, `mark-read`; and
 `usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.

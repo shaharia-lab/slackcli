@@ -29,6 +29,7 @@ import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 import { resolveIdentifier } from '../lib/name-resolver.ts';
 import { resolveMessageText } from '../lib/message-input.ts';
 import { parseScheduleTime } from '../lib/schedule-time.ts';
+import { deleteMessage } from '../lib/message.ts';
 
 // Help text shared by several commands below.
 const THREAD_TS_NOTE =
@@ -53,9 +54,9 @@ const MESSAGE_ID_FORMATS_NOTE =
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
   group: {
-    summary: 'Send, edit, react to and draft messages',
+    summary: 'Send, edit, delete, react to and draft messages',
     description:
-      'Send, edit and react to messages, and create, list, send or delete drafts. ' +
+      'Send, edit, delete and react to messages, and create, list, send or delete drafts. ' +
       'To read messages use "slackcli conversations"; to find them, "slackcli search".',
   },
   send: {
@@ -133,6 +134,29 @@ const HELP = {
       'Edits immediately, with no confirmation prompt.',
     ],
     dryRun: true,
+  },
+  delete: {
+    summary: 'Delete a message you posted',
+    description:
+      'Delete an existing message posted by the authenticated user or app (chat.delete). ' +
+      MESSAGE_TARGET_TEXT,
+    examples: [
+      'slackcli messages delete --channel-id C0123456789 --timestamp 1712345678.123456',
+      'slackcli messages delete --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --yes --json',
+    ],
+    json:
+      '{ channel_id, ts, deleted, already_deleted }. When Slack answers message_not_found, deleted is false ' +
+      'and already_deleted true, and it still exits 0, so a delete is safe to retry.',
+    confirms: true,
+    dryRun: true,
+    notes: [
+      MESSAGE_ID_FORMATS_NOTE,
+      CHANNEL_NAME_NOTE,
+      PERMALINK_MESSAGE_NOTE,
+      'Deleting is permanent. A bot token deletes only its own messages; a user or browser session ' +
+        'deletes what that user could delete in Slack.',
+      'Any other failure (cant_delete_message, channel_not_found, ...) exits 1 with the Slack code in slack_error.',
+    ],
   },
   listDrafts: {
     summary: 'List your active (unsent) drafts',
@@ -649,6 +673,65 @@ export function createMessagesCommand(): Command {
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to update message' });
+      }
+    });
+
+  // Delete an existing message
+  describeCommand(messages.command('delete'), HELP.delete)
+    .option('--channel-id <id>', 'Channel ID, URL or name where the message is')
+    .option('--timestamp <ts>', 'Message timestamp (1234567890.123456 or p1234567890123456)')
+    .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
+    .option('--yes', 'Confirm deletion without a prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output the deleted message as JSON', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (options) => {
+      const spinner = ora('Deleting message...').start();
+
+      try {
+        const target = resolveMessageTarget(
+          { permalink: options.permalink, channelId: options.channelId, timestamp: options.timestamp },
+          { channel: '--channel-id', timestamp: '--timestamp' }
+        );
+
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, target.workspace);
+        const channelId = await resolveTargetArg(client, options.channelId, target.channelId, '--channel-id', spinner);
+        spinner.stop();
+
+        if (options.dryRun) {
+          emitDryRun(
+            await buildPreview(
+              client,
+              'delete message',
+              { kind: 'message', id: channelId, ts: target.timestamp },
+              undefined,
+              { lookupName: true },
+            ),
+            options.json,
+          );
+          return;
+        }
+        if (!(await confirmWrite(`Delete message ${target.timestamp} in ${channelId}?`, options.yes, options.json))) {
+          // confirmWrite() set the exit code and, under --json, reported the refusal.
+          if (!options.json) error('Message was not deleted');
+          return;
+        }
+
+        spinner.start('Deleting message...');
+        const result = await deleteMessage(client, channelId, target.timestamp);
+        if (result.already_deleted) {
+          spinner.warn(`Message ${result.ts} not found in ${result.channel_id}; it may already be deleted`);
+        } else {
+          spinner.succeed('Message deleted');
+        }
+        if (options.json) {
+          writeJson(result);
+        } else if (result.deleted) {
+          success(`Message timestamp: ${result.ts}`);
+        }
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to delete message' });
       }
     });
 

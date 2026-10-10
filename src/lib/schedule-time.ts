@@ -23,7 +23,13 @@ const IN_FORMATS = 'Use minutes, hours and days, each at most once: 45m, 2h, 3d,
 const UNIX_SECONDS = /^\d{1,12}$/;
 // Date, `T` or a space, hours and minutes, optional seconds (a fraction is
 // accepted and dropped: post_at is whole seconds), optional `Z` or offset.
-const DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?$/;
+// Written as three parts and composed once, so each stays readable. Their
+// capture groups keep one order, which parseAt() reads by position: year,
+// month, day (1-3), hour, minute, second (4-6), zone (7).
+const DATE = /(\d{4})-(\d{2})-(\d{2})/;
+const TIME = /(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?/;
+const ZONE = /(Z|[+-]\d{2}:?\d{2})/;
+const DATE_TIME = new RegExp(`^${DATE.source}[T ]${TIME.source}${ZONE.source}?$`);
 const DURATION = /^(?:\d+[dhm])+$/;
 const DURATION_PART = /(\d+)([dhm])/g;
 

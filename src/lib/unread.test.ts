@@ -210,6 +210,107 @@ describe('fetchUnread with browser auth (client.counts)', () => {
     ]);
   });
 
+  // Name resolution, one row per path through the lookup: what the lookups
+  // answer, and the fields the conversation ends up with.
+  it.each([
+    ['a channel', { channel: { name: 'general', is_private: false } }, undefined,
+      { name: 'general', is_im: undefined, is_mpim: undefined, is_private: false }],
+    ['a channel without a name', { channel: { is_private: true } }, undefined,
+      { name: 'X1', is_im: undefined, is_mpim: undefined, is_private: true }],
+    ['a channel that carries a user', { channel: { name: 'general', user: 'U1' } }, undefined,
+      { name: 'general', is_im: undefined, is_mpim: undefined, is_private: undefined }],
+    ['a DM without a user', { channel: { is_im: true, name: 'dm-name' } }, undefined,
+      { name: 'dm-name', is_im: true, is_mpim: undefined, is_private: undefined }],
+    ['a DM with a real name', { channel: { is_im: true, user: 'U1' } }, { user: { name: 'alice', real_name: 'Alice Doe' } },
+      { name: 'Alice Doe', is_im: true, is_mpim: undefined, is_private: undefined }],
+    ['a DM with a handle only', { channel: { is_im: true, user: 'U1' } }, { user: { name: 'alice' } },
+      { name: 'alice', is_im: true, is_mpim: undefined, is_private: undefined }],
+    ['a DM whose user has no name', { channel: { is_im: true, user: 'U1' } }, { user: {} },
+      { name: 'U1', is_im: true, is_mpim: undefined, is_private: undefined }],
+    ['a DM whose lookup returns no user', { channel: { is_im: true, user: 'U1' } }, {},
+      { name: 'U1', is_im: true, is_mpim: undefined, is_private: undefined }],
+    ['a DM whose user lookup fails', { channel: { is_im: true, is_private: true, user: 'U1' } }, 'throw',
+      { name: 'U1', is_im: true, is_mpim: undefined, is_private: true }],
+    ['a failed conversation lookup', 'throw', undefined, { name: 'X1' }],
+    ['a lookup that returns no channel', {}, undefined, {}],
+  ] as const)('resolves %s', async (_label, info, userInfo, expected) => {
+    const calls: string[] = [];
+    const answer = (value: unknown) => {
+      if (value === 'throw') throw new Error('lookup_failed');
+      return value;
+    };
+    const client = {
+      authType: 'browser',
+      getUnreadCounts: async () => ({ ok: true, channels: [{ id: 'X1', has_unreads: true, mention_count: 3 }] }),
+      getConversationInfo: async (id: string) => {
+        calls.push(`getConversationInfo:${id}`);
+        return answer(info);
+      },
+      getUserInfo: async (id: string) => {
+        calls.push(`getUserInfo:${id}`);
+        return answer(userInfo);
+      },
+    } as unknown as SlackClient;
+
+    const result = await fetchUnread(client);
+
+    expect(result.channels).toStrictEqual([{ id: 'X1', mention_count: 3, has_unreads: true, ...expected }]);
+    expect(calls).toEqual(userInfo === undefined ? ['getConversationInfo:X1'] : ['getConversationInfo:X1', 'getUserInfo:U1']);
+  });
+
+  it('keeps a cursor that has only one of its two timestamps', async () => {
+    const { client } = createMockClient('browser', {
+      ok: true,
+      channels: [{ id: 'C1', has_unreads: true, latest: '1700000009.000000' }],
+      ims: [{ id: 'D1', has_unreads: true, last_read: '1700000003.000000', latest: 1700000004 }],
+    }, lookups);
+
+    expect((await fetchUnread(client)).cursors).toStrictEqual({
+      C1: { latest: '1700000009.000000' },
+      D1: { last_read: '1700000003.000000' },
+    });
+  });
+
+  it('sorts by mentions, then by name, with an unnamed conversation first', async () => {
+    const client = {
+      authType: 'browser',
+      getUnreadCounts: async () => ({
+        ok: true,
+        channels: [
+          { id: 'C1', has_unreads: true, mention_count: 1 },
+          { id: 'C2', has_unreads: true, mention_count: 1 },
+          { id: 'C3', has_unreads: true, mention_count: 1 },
+          { id: 'C4', has_unreads: true, mention_count: 5 },
+        ],
+      }),
+      getConversationInfo: async (id: string) => {
+        const names: Record<string, string> = { C1: 'zulu', C2: 'alpha', C4: 'mike' };
+        return id === 'C3' ? { ok: true } : { ok: true, channel: { name: names[id] } };
+      },
+    } as unknown as SlackClient;
+
+    const result = await fetchUnread(client);
+
+    expect(result.channels.map((channel) => [channel.id, channel.name])).toEqual([
+      ['C4', 'mike'],
+      ['C3', undefined],
+      ['C2', 'alpha'],
+      ['C1', 'zulu'],
+    ]);
+  });
+
+  it('reports progress once, before the first name lookup', async () => {
+    const { client, calls } = createMockClient('browser', {
+      ok: true,
+      channels: [{ id: 'C1', has_unreads: true }, { id: 'G1', has_unreads: true }],
+    }, lookups);
+
+    await fetchUnread(client, { onProgress: (message) => calls.push(`progress:${message}`) });
+
+    expect(calls.slice(0, 2)).toEqual(['getUnreadCounts', 'progress:Fetching channel details...']);
+    expect(calls.filter((call) => call.startsWith('progress:'))).toHaveLength(1);
+  });
+
   it('reports progress before resolving names', async () => {
     const { client } = createMockClient('browser', { ok: true, channels: [] });
     const messages: string[] = [];
@@ -241,6 +342,30 @@ describe('fetchUnread with an app token (conversations.list)', () => {
       ],
     });
     expect('threads' in result).toBe(false);
+    expect(calls).toEqual(['getUnreadCounts']);
+  });
+
+  it.each([
+    ['only a display count', { unread_count: 0, unread_count_display: 2 }, { unread_count: 2, mention_count: 0 }],
+    ['only a raw count', { unread_count: 5 }, { unread_count: 5, mention_count: 0 }],
+    ['a mention', { unread_count: 1, mention_count_display: 4, mention_count: 9 }, { unread_count: 1, mention_count: 4 }],
+  ])('maps a conversation with %s', async (_label, counts, expected) => {
+    const { client } = createMockClient('standard', {
+      ok: true,
+      channels: [{ id: 'G1', name: 'team', is_member: true, is_mpim: true, is_private: true, is_im: false, ...counts }],
+    });
+
+    expect((await fetchUnread(client)).channels).toStrictEqual([
+      { id: 'G1', name: 'team', has_unreads: true, is_im: false, is_mpim: true, is_private: true, ...expected },
+    ]);
+  });
+
+  it('returns nothing, and reports no progress, when the response has no channels', async () => {
+    const { client, calls } = createMockClient('standard', { ok: true });
+    const messages: string[] = [];
+
+    expect(await fetchUnread(client, { onProgress: (message) => messages.push(message) })).toStrictEqual({ channels: [] });
+    expect(messages).toEqual([]);
     expect(calls).toEqual(['getUnreadCounts']);
   });
 

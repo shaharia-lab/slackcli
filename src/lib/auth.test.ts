@@ -315,13 +315,19 @@ describe('login-auto when Slack refuses the saved session', () => {
   it('shares one timeout budget across the retries', async () => {
     slackRefuses([STALE]);
     const { calls, spy } = captureSequence(captured(STALE), captured(FRESH));
+    // Every clock read moves time forward, so the second capture must see a
+    // strictly smaller budget even on a machine fast enough to finish the
+    // first round within one real millisecond.
+    let clock = 1_000_000;
+    const now = spyOn(Date, 'now').mockImplementation(() => (clock += 1000));
 
     try {
       await authenticateAuto({ timeoutMs: 60_000 });
 
       expect(calls[0].timeoutMs).toBeLessThanOrEqual(60_000);
-      expect(calls[1].timeoutMs).toBeLessThanOrEqual(calls[0].timeoutMs!);
+      expect(calls[1].timeoutMs).toBeLessThan(calls[0].timeoutMs!);
     } finally {
+      now.mockRestore();
       spy.mockRestore();
     }
   });

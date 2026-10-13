@@ -110,12 +110,13 @@ refuses a cancel in the last 60 s before posting.
 ## search
 
 ```
-search messages "q" [--in=chan] [--from=user] [--limit=20] [--page=1] [--sort=timestamp|score] [--sort-dir=desc|asc] [--json]
+search messages ["q"] [--in=chan] [--from=user] [--limit=20] [--page=1] [--sort=timestamp|score] [--sort-dir=desc|asc] [--json]
 search channels "q" [--limit=N] [--json]
 search people "q" [--limit=N] [--json]
 ```
 
-Slack operators work in `q`: `in: from: before: after: on: during: has: is: with:`.
+Slack operators work in `q`: `in: from: before: after: on: during: has: is: with:`. On `messages`, `q` is
+optional when `--in` or `--from` is given; `--json` `query` echoes the full query sent, operators included.
 JSON: `messages` → `{total, page, pages, matches[]{permalink, channel.name, …}}`;
 `channels` → `{total, channels[]{id,name,…}}`; `people` → `{total, people[]{id,…}}`.
 Standard auth filters up to 1000 entries locally for channels/people.

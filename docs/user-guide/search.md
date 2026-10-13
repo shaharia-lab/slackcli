@@ -11,6 +11,7 @@ slackcli search messages "deployment failed"
 slackcli search messages "release" --in=engineering --from=rafael
 slackcli search messages "incident" --limit=50 --sort=score
 slackcli search messages "after:2026-07-01 has:link" --json
+slackcli search messages --from=rafael --sort=timestamp --limit=1
 ```
 
 | Option | Default | Purpose |
@@ -27,9 +28,14 @@ The query is passed to Slack, so all of its
 work: `in:`, `from:`, `before:`, `after:`, `on:`, `during:`, `has:`, `is:`,
 `with:`. `--in` and `--from` are just conveniences appended to the query.
 
+The positional query is optional when at least one of `--in`/`--from` is given,
+so you can search by filter alone (`search messages --from=rafael`). A call with
+neither a query nor a filter fails with `invalid_input`.
+
 When more pages exist, the next-page command is printed. In `--json` mode the
 `page` and `pages` fields carry the same information. The JSON `query` field is
-the query as you typed it, without the `--in`/`--from` additions.
+the full query sent to Slack, including any `in:`/`from:` operators appended from
+`--in`/`--from`.
 
 In all three subcommands, a search with no results prints nothing on stdout,
 even with `--json`, and exits 0.

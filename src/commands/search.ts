@@ -14,6 +14,7 @@ import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts';
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 import { failCommand } from '../lib/command-errors.ts';
+import { InvalidInputError } from '../lib/cli-errors.ts';
 
 // Help text shared by several commands below.
 const EMPTY_RESULT_NOTE =
@@ -39,10 +40,12 @@ const HELP = {
       'slackcli search messages "release" --in engineering --from alice --sort score',
       'slackcli search messages "after:2026-07-01 has:link" --limit 50 --page 2 --json',
       'slackcli search messages "deploy" --json --fields ts,user,text,channel.name,permalink',
+      'slackcli search messages --from alice --sort timestamp --sort-dir desc --limit 1',
     ],
     json:
       '{ query, total, page, pages, matches: [...] } — matches are Slack\'s raw search results ' +
-      '(ts, text, user, username, channel { id, name }, permalink, ...); query is the text as typed.',
+      '(ts, text, user, username, channel { id, name }, permalink, ...); query is the full query ' +
+      'sent to Slack, including any in:/from: operators appended from --in/--from.',
     notes: [
       'Needs a user token (xoxp) or browser auth. A bot token (xoxb) fails: Slack allows ' +
         'search.messages for user tokens only.',
@@ -104,7 +107,7 @@ export function createSearchCommand(): Command {
 
   // Search messages
   describeCommand(search.command('messages'), HELP.messages)
-    .argument('<query>', 'Search query (supports Slack search operators)')
+    .argument('[query]', 'Search query (supports Slack search operators). Optional when --in or --from is given.')
     .option('--in <channel>', 'Filter by channel name (appends in:<channel> to the query)')
     .option('--from <user>', 'Filter by username (appends from:<user> to the query)')
     .option('--limit <number>', 'Number of results per page', '20')
@@ -115,10 +118,25 @@ export function createSearchCommand(): Command {
     .option('--json', 'Output in JSON format', false)
     .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (query, options) => {
-      // Append Slack search modifiers to query
-      let fullQuery = query;
-      if (options.in) fullQuery += ` in:${options.in}`;
-      if (options.from) fullQuery += ` from:${options.from}`;
+      // Build the Slack query from the positional term and the filter flags.
+      // --in / --from are first-class query inputs (they become in:/from:
+      // operators), so a search specified entirely by filters is a complete
+      // query; the positional is optional when at least one filter is present.
+      // A whitespace-only positional counts as empty.
+      const parts: string[] = [];
+      const term = query?.trim();
+      if (term) parts.push(term);
+      if (options.in) parts.push(`in:${options.in}`);
+      if (options.from) parts.push(`from:${options.from}`);
+      const fullQuery = parts.join(' ');
+
+      if (!fullQuery) {
+        failCommand(
+          new InvalidInputError('provide a search query, or at least one of --in / --from'),
+          { json: options.json, context: 'Invalid input' },
+        );
+        return;
+      }
 
       const spinner = ora(`Searching for "${fullQuery}"...`).start();
 
@@ -146,7 +164,7 @@ export function createSearchCommand(): Command {
         if (options.json) {
           const pagination = response.messages?.pagination;
           writeJson(applyFields('search messages', {
-            query,
+            query: fullQuery,
             total,
             page: pagination?.page || 1,
             pages: pagination?.page_count || 1,
@@ -155,7 +173,7 @@ export function createSearchCommand(): Command {
           return;
         }
 
-        writeText('\n' + formatSearchMessages(query, matches, total));
+        writeText('\n' + formatSearchMessages(fullQuery, matches, total));
 
         const pagination = response.messages?.pagination;
         if (pagination) {

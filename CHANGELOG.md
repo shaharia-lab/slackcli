@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`search messages` can search by `--in`/`--from` alone, with no positional query**: because `--in` and `--from` become `in:`/`from:` query operators, a search specified entirely by filters is a complete query, so the positional term is now optional (`slackcli search messages --from=rafael`). `search channels` and `search people` keep their required positional, since they have no filter flags to stand in for it. A call with neither a query nor a filter fails with `invalid_input` before any Slack call (#405)
+
+### Changed
+- **`search messages --json` now echoes the full query sent to Slack in the `query` field**, including the `in:`/`from:` operators appended from `--in`/`--from`, instead of only the positional text as typed. This changes the `query` value for callers already passing `--in` or `--from` (#405)
+
 ### Fixed
 - **`auth login-auto` lets you sign in again when the saved browser session has expired**: it used to pick up the dead token still stored in its browser profile, get `invalid_auth` from Slack and close the window within seconds, so every later run failed the same way until the profile was deleted by hand. Now, when Slack refuses every captured token, the window stays open with a "sign in again" prompt and the fresh tokens are saved once you do, within the same `--timeout`. `--headless` runs still fail, since there is no window to sign in to (#402)
 

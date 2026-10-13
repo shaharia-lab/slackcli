@@ -282,6 +282,16 @@ Per-workspace failures in `authenticateAuto()` are collected rather than thrown:
 when several workspaces are captured at once, one stale token must not discard
 the rest.
 
+The browser profile outlives the Slack session it holds, and capture can return
+a dead token from `localConfig_v2` before Slack redirects to sign-in. So when an
+interactive run saves nothing and every failure is Slack refusing the
+credentials (`authenticateBrowser()` keeps the `SlackAuthError` as the thrown
+error's `cause`), `authenticateAuto()` keeps the browser open and calls
+`captureSlackTokens()` again with the refused tokens in `rejectedTokens` and the
+rest of the one `--timeout` budget. Both capture sources skip those tokens, so
+the loop ends on a fresh sign-in or a `capture_timeout`. Headless runs do not
+retry.
+
 ## Browser token capture (`login-auto`)
 
 Three modules, in order:

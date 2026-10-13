@@ -286,9 +286,17 @@ export function slackOriginFromApiUrl(url: string): string | null {
   return isSlackWorkspaceUrl(origin) ? origin : null;
 }
 
+export const DEFAULT_CAPTURE_TIMEOUT_MS = 5 * 60 * 1000;
+
 export interface CaptureOptions {
   /** Overall budget for the user to finish signing in. */
   timeoutMs?: number;
+  /**
+   * `xoxc-*` tokens Slack has already refused. Both sources skip them, so a
+   * profile still holding an expired session keeps the capture waiting for a
+   * fresh sign-in instead of returning the same dead token again.
+   */
+  rejectedTokens?: ReadonlySet<string>;
   /** Only affects guidance text: with no window, "sign in" is unactionable. */
   headless?: boolean;
   /** Where to send the browser; defaults to the Slack web client. */
@@ -318,18 +326,20 @@ export async function captureSlackTokens(
   session: CdpSession,
   options: CaptureOptions = {}
 ): Promise<CaptureResult> {
-  const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS;
   const sleep = options.sleep ?? defaultSleep;
   const now = options.now ?? (() => Date.now());
   const onProgress = options.onProgress ?? (() => {});
+  const rejected = options.rejectedTokens ?? new Set<string>();
 
   logger.info('Token capture started (timeout {timeout_ms} ms)', {
     timeout_ms: timeoutMs,
     headless: Boolean(options.headless),
+    rejected_tokens: rejected.size,
   });
 
   const intercepted = new Map<string, CapturedWorkspace>();
-  registerInterceptors(session, intercepted);
+  registerInterceptors(session, intercepted, rejected);
 
   const setupFailure = await startCapture(session, options.startUrl ?? SLACK_CLIENT_URL);
   if (setupFailure) return logFailure(setupFailure);
@@ -342,7 +352,7 @@ export async function captureSlackTokens(
   // localStorage each tick makes the two sources genuine alternatives rather
   // than a primary and a decoration: either one alone is enough to finish.
   const deadline = now() + timeoutMs;
-  const poll: PollState = { fromLocalConfig: [], consecutiveProbeFailures: 0 };
+  const poll: PollState = { fromLocalConfig: [], consecutiveProbeFailures: 0, rejected };
   let outcome: PollOutcome = 'waiting';
   while (outcome === 'waiting' && now() < deadline) {
     outcome = await pollOnce(session, intercepted, poll);
@@ -365,7 +375,7 @@ export async function captureSlackTokens(
     return logFailure(captureTimeout(options.headless));
   }
 
-  const fromLocalConfig = await settleWorkspaces(session, poll.fromLocalConfig, {
+  const fromLocalConfig = await settleWorkspaces(session, poll.fromLocalConfig, rejected, {
     deadline,
     sleep,
     now,
@@ -410,7 +420,8 @@ function logFailure(result: CaptureFailureResult): CaptureResult {
  */
 function registerInterceptors(
   session: CdpSession,
-  intercepted: Map<string, CapturedWorkspace>
+  intercepted: Map<string, CapturedWorkspace>,
+  rejected: ReadonlySet<string>
 ): void {
   session.on('Network.requestWillBeSent', (params: any) => {
     const url = params?.request?.url;
@@ -421,7 +432,7 @@ function registerInterceptors(
     if (!origin || intercepted.has(origin)) return;
 
     const xoxc = extractXoxcFromPostData(postData);
-    if (xoxc) {
+    if (xoxc && !rejected.has(xoxc)) {
       intercepted.set(origin, { workspaceUrl: origin, xoxc });
       logger.debug('xoxc token found on an intercepted API request ({count} workspaces so far)', {
         count: intercepted.size,
@@ -456,6 +467,7 @@ interface PollState {
   /** The latest localStorage read. */
   fromLocalConfig: CapturedWorkspace[];
   consecutiveProbeFailures: number;
+  rejected: ReadonlySet<string>;
 }
 
 /**
@@ -467,7 +479,7 @@ async function pollOnce(
   intercepted: Map<string, CapturedWorkspace>,
   state: PollState
 ): Promise<PollOutcome> {
-  state.fromLocalConfig = await readWorkspacesFromLocalStorage(session);
+  state.fromLocalConfig = await readWorkspacesFromLocalStorage(session, state.rejected);
   if (state.fromLocalConfig.length > 0 || intercepted.size > 0) return 'found';
 
   if (await sessionAlive(session)) {
@@ -505,6 +517,7 @@ function captureTimeout(headless: boolean | undefined): CaptureFailureResult {
 async function settleWorkspaces(
   session: CdpSession,
   initial: CapturedWorkspace[],
+  rejected: ReadonlySet<string>,
   timing: { deadline: number; sleep: (ms: number) => Promise<void>; now: () => number }
 ): Promise<CapturedWorkspace[]> {
   let fromLocalConfig = initial;
@@ -512,7 +525,7 @@ async function settleWorkspaces(
   let stableReads = 0;
   while (timing.now() < settleDeadline && stableReads < 2) {
     await timing.sleep(POLL_INTERVAL_MS);
-    const settled = await readWorkspacesFromLocalStorage(session);
+    const settled = await readWorkspacesFromLocalStorage(session, rejected);
     if (settled.length > fromLocalConfig.length) {
       fromLocalConfig = settled;
       stableReads = 0;
@@ -553,7 +566,8 @@ async function readSessionCookie(session: CdpSession): Promise<string | null> {
 
 /** Read signed-in workspaces from Slack's localStorage. Never throws. */
 async function readWorkspacesFromLocalStorage(
-  session: CdpSession
+  session: CdpSession,
+  rejected: ReadonlySet<string>
 ): Promise<CapturedWorkspace[]> {
   try {
     const evaluated = await session.send<{ result?: { value?: string } }>(
@@ -564,7 +578,8 @@ async function readWorkspacesFromLocalStorage(
       }
     );
     const raw = evaluated?.result?.value;
-    return typeof raw === 'string' ? extractWorkspacesFromLocalConfig(raw) : [];
+    if (typeof raw !== 'string') return [];
+    return extractWorkspacesFromLocalConfig(raw).filter((workspace) => !rejected.has(workspace.xoxc));
   } catch {
     // Undocumented client state, and the tab may be mid-navigation.
     return [];

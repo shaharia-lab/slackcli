@@ -106,6 +106,14 @@ prompt.
 Partial success is still success: if one captured workspace has a stale token,
 the others are still saved and the failure is reported.
 
+**When the saved session has expired.** The browser profile outlives the Slack
+session it holds: Slack can expire or revoke that session (a workspace session
+limit, or "sign out of all other sessions") while the profile still carries the
+old tokens. If Slack refuses every captured token, `login-auto` keeps the window
+open, says the saved session has expired, and waits for you to sign in again
+within the same `--timeout`. With `--headless` there is no window to sign in to,
+so the run fails instead; re-run without `--headless`.
+
 ## 3. Parse a cURL command
 
 If you would rather not let SlackCLI drive a browser, copy one Slack API request

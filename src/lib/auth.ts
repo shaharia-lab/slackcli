@@ -1,6 +1,6 @@
 import { getLogger } from '@logtape/logtape';
 import { SlackClient, SlackTransportError } from './slack-client.ts';
-import { SlackAuthError, describeRejectedLogin } from './auth-errors.ts';
+import { SlackAuthError, describeRejectedLogin, isAuthErrorCode } from './auth-errors.ts';
 import { CliError, NotFoundError } from './cli-errors.ts';
 import { errorMessageForLog } from './tildify.ts';
 import {
@@ -24,9 +24,11 @@ import { extractSlackWorkspaceName } from './curl-parser.ts';
 import {
   captureSlackTokens,
   openBrowserSession,
+  DEFAULT_CAPTURE_TIMEOUT_MS,
   SLACK_CLIENT_URL,
   isSlackWorkspaceUrl,
   type CaptureFailure,
+  type CapturedWorkspace,
   type BrowserSessionFailure,
 } from './browser-auth.ts';
 
@@ -147,7 +149,7 @@ export async function authenticateBrowser(
     return { config, profileKey };
   } catch (error: any) {
     logAuthFailed(tempConfig.auth_type, error);
-    throw new Error(loginFailureMessage(tempConfig.auth_type, error));
+    throw new Error(loginFailureMessage(tempConfig.auth_type, error), { cause: error });
   }
 }
 
@@ -188,46 +190,100 @@ export class AutoLoginError extends Error {
  *
  * Per-workspace failures are collected rather than thrown: with several
  * workspaces captured at once, one stale token must not discard the rest.
+ *
+ * The browser profile outlives the Slack session it holds. Once Slack expires
+ * or revokes that session, the profile still carries the old token and cookie,
+ * and capture returns them before Slack has redirected to sign-in. So when an
+ * interactive run saves nothing and Slack refused every token, the browser is
+ * kept open and capture runs again, skipping the refused tokens, until the
+ * user signs in or the shared timeout runs out. Headless runs have no window
+ * to sign in to and fail as before.
  */
 export async function authenticateAuto(
   options: AutoLoginOptions = {}
 ): Promise<AutoLoginResult> {
   const onProgress = options.onProgress ?? (() => {});
+  const headless = options.headless ?? false;
+  const secretBackend = options.secretBackend ?? 'file';
 
   logger.info('login-auto started', {
-    headless: options.headless ?? false,
+    headless,
     workspace_url_given: Boolean(options.workspaceUrl),
-    secret_backend: options.secretBackend ?? 'file',
+    secret_backend: secretBackend,
   });
 
   const opened = await openBrowserSession({
-    headless: options.headless ?? false,
+    headless,
     startUrl: options.workspaceUrl ?? SLACK_CLIENT_URL,
   });
   if (!opened.ok) {
     throw autoLoginFailed(opened.reason, opened.message);
   }
 
-  let capture;
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS);
+  const rejectedTokens = new Set<string>();
+  let enrolment: Enrolment;
   try {
-    capture = await captureSlackTokens(opened.session, {
-      headless: options.headless ?? false,
-      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
-      ...(options.workspaceUrl ? { startUrl: options.workspaceUrl } : {}),
-      onProgress,
-    });
+    for (;;) {
+      const capture = await captureSlackTokens(opened.session, {
+        headless,
+        timeoutMs: Math.max(0, deadline - Date.now()),
+        ...(options.workspaceUrl ? { startUrl: options.workspaceUrl } : {}),
+        rejectedTokens,
+        onProgress,
+      });
+      if (!capture.ok) {
+        throw autoLoginFailed(capture.reason, capture.message);
+      }
+
+      enrolment = await enrolCapturedWorkspaces(capture, secretBackend);
+      if (headless || !sessionRefused(enrolment)) break;
+
+      for (const workspace of capture.workspaces) rejectedTokens.add(workspace.xoxc);
+      logger.info('login-auto captured a session Slack refused; waiting for a fresh sign-in', {
+        refused: enrolment.refused,
+      });
+      onProgress('The saved Slack session has expired. Sign in again in the browser window…');
+    }
   } finally {
     // The browser holds a live session; close it whether or not we got what
     // we came for.
     await opened.stop();
   }
 
-  if (!capture.ok) {
-    throw autoLoginFailed(capture.reason, capture.message);
-  }
+  const { saved, failed } = enrolment;
+  logger.info('login-auto finished: {saved} saved, {failed} failed', {
+    saved: saved.length,
+    failed: failed.length,
+    workspace_ids: saved.map((config) => config.workspace_id),
+  });
+  return { saved, failed };
+}
 
+interface Enrolment extends AutoLoginResult {
+  /** Failures where Slack refused the credentials, as opposed to any other error. */
+  refused: number;
+}
+
+/** The Slack code `authenticateBrowser` kept as the cause of a failed login. */
+function refusalCode(error: unknown): string | undefined {
+  const cause = (error as { cause?: unknown } | null)?.cause;
+  return cause instanceof SlackAuthError ? cause.code : undefined;
+}
+
+/** Nothing saved, and every failure was Slack refusing the captured session. */
+function sessionRefused(enrolment: Enrolment): boolean {
+  return enrolment.saved.length === 0 && enrolment.refused > 0 && enrolment.refused === enrolment.failed.length;
+}
+
+/** Verify and persist each captured workspace through `authenticateBrowser`. */
+async function enrolCapturedWorkspaces(
+  capture: { xoxd: string; workspaces: CapturedWorkspace[] },
+  secretBackend: SecretBackend
+): Promise<Enrolment> {
   const saved: WorkspaceConfig[] = [];
   const failed: AutoLoginResult['failed'] = [];
+  let refused = 0;
 
   for (const workspace of capture.workspaces) {
     // Last gate before the session cookie is sent anywhere. The extractors
@@ -251,7 +307,7 @@ export async function authenticateAuto(
         workspace.workspaceUrl,
         workspace.teamName,
         undefined,
-        options.secretBackend ?? 'file'
+        secretBackend
       );
       saved.push(config);
     } catch (err: any) {
@@ -259,6 +315,7 @@ export async function authenticateAuto(
         team_id: workspace.teamId,
         error: errorMessageForLog(err),
       });
+      if (isAuthErrorCode(refusalCode(err))) refused += 1;
       failed.push({
         workspaceUrl: workspace.workspaceUrl,
         error: err?.message ?? 'Unknown error',
@@ -266,12 +323,7 @@ export async function authenticateAuto(
     }
   }
 
-  logger.info('login-auto finished: {saved} saved, {failed} failed', {
-    saved: saved.length,
-    failed: failed.length,
-    workspace_ids: saved.map((config) => config.workspace_id),
-  });
-  return { saved, failed };
+  return { saved, failed, refused };
 }
 
 /** Log the typed reason before it reaches the command layer. */

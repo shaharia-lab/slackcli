@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`auth login-auto` lets you sign in again when the saved browser session has expired**: it used to pick up the dead token still stored in its browser profile, get `invalid_auth` from Slack and close the window within seconds, so every later run failed the same way until the profile was deleted by hand. Now, when Slack refuses every captured token, the window stays open with a "sign in again" prompt and the fresh tokens are saved once you do, within the same `--timeout`. `--headless` runs still fail, since there is no window to sign in to (#402)
+
 ## [0.15.0] - 2026-10-10
 
 ### Added

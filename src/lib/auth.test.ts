@@ -25,6 +25,7 @@ import { tildify } from './tildify';
 import { AUTH_ERROR_CODES, SlackAuthError, authErrorProfile } from './auth-errors';
 import { SlackClient, SlackTransportError } from './slack-client';
 import * as browserAuth from './browser-auth';
+import * as workspaces from './workspaces';
 
 // A failing --json command's error object is the last line of stderr (#326);
 // a spinner's start line may come before it.
@@ -203,6 +204,17 @@ describe('login with rejected credentials', () => {
     }
   });
 
+  // login-auto decides whether to wait for a fresh sign-in from this code, so
+  // it must survive as a typed value, not only inside the message text.
+  it.each([...AUTH_ERROR_CODES])('keeps the refusal %s as a typed cause', async (code) => {
+    slackReplies({ ok: false, error: code });
+
+    const error = await loginBrowser();
+
+    expect(error.cause).toBeInstanceOf(SlackAuthError);
+    expect(error.cause.code).toBe(code);
+  });
+
   it('logs only the Slack code of a rejected login', async () => {
     slackReplies({ ok: false, error: 'invalid_auth' });
     await loginBrowser();
@@ -218,6 +230,179 @@ describe('login with rejected credentials', () => {
 
     const error = await loginStandard(new Error('Slack API error: An API error occurred: ratelimited'));
     expect(error.message).toBe('Authentication failed: Slack API error: An API error occurred: ratelimited');
+  });
+});
+
+// The browser profile outlives the Slack session it holds: once Slack expires
+// that session, capture still returns the dead token before Slack redirects to
+// sign-in. An interactive run must then wait for the user, not give up.
+describe('login-auto when Slack refuses the saved session', () => {
+  const originalFetch = globalThis.fetch;
+  const STALE = 'xoxc-stale-111';
+  const FRESH = 'xoxc-fresh-222';
+  const captured = (...tokens: string[]) => ({
+    ok: true as const,
+    xoxd: 'xoxd-secretcookie',
+    workspaces: tokens.map((xoxc, i) => ({
+      workspaceUrl: `https://team${i}.slack.com`,
+      xoxc,
+      teamId: `T${i}`,
+    })),
+  });
+
+  let stopped: number;
+  let open: ReturnType<typeof spyOn>;
+  let save: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    stopped = 0;
+    open = spyOn(browserAuth, 'openBrowserSession').mockResolvedValue({
+      ok: true,
+      session: {} as never,
+      stop: async () => { stopped += 1; },
+    } as never);
+    save = spyOn(workspaces, 'addWorkspace').mockResolvedValue('T0');
+  });
+
+  afterEach(() => {
+    open.mockRestore();
+    save.mockRestore();
+    globalThis.fetch = originalFetch;
+  });
+
+  // `auth.test` answers by token: the tokens in `refused` get `error`, any
+  // other token is accepted.
+  function slackRefuses(refused: string[], error = 'invalid_auth'): void {
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const token = new URLSearchParams(String(init.body)).get('token') ?? '';
+      const payload = refused.includes(token)
+        ? { ok: false, error }
+        : { ok: true, team_id: 'T0', team: 'Acme Corp', user_id: 'U1', user: 'me', url: 'https://team0.slack.com/' };
+      return new Response(JSON.stringify(payload), { status: 200 });
+    }) as unknown as typeof fetch;
+  }
+
+  function captureSequence(...results: Array<Awaited<ReturnType<typeof browserAuth.captureSlackTokens>>>) {
+    const calls: browserAuth.CaptureOptions[] = [];
+    const spy = spyOn(browserAuth, 'captureSlackTokens').mockImplementation(async (_session, options = {}) => {
+      calls.push({ ...options, rejectedTokens: new Set(options.rejectedTokens) });
+      return results[Math.min(calls.length, results.length) - 1];
+    });
+    return { calls, spy };
+  }
+
+  it('waits for a fresh sign-in, skipping the refused token, and saves it', async () => {
+    slackRefuses([STALE]);
+    const progress: string[] = [];
+    const { calls, spy } = captureSequence(captured(STALE), captured(FRESH));
+
+    try {
+      const result = await authenticateAuto({ onProgress: (line) => progress.push(line) });
+
+      expect(calls).toHaveLength(2);
+      expect([...calls[0].rejectedTokens!]).toEqual([]);
+      expect([...calls[1].rejectedTokens!]).toEqual([STALE]);
+      expect(result.saved.map((config) => config.workspace_id)).toEqual(['T0']);
+      // The refusal was superseded by the fresh sign-in, so it is not reported.
+      expect(result.failed).toEqual([]);
+      expect(progress).toContain('The saved Slack session has expired. Sign in again in the browser window…');
+      expect(stopped).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('shares one timeout budget across the retries', async () => {
+    slackRefuses([STALE]);
+    const { calls, spy } = captureSequence(captured(STALE), captured(FRESH));
+
+    try {
+      await authenticateAuto({ timeoutMs: 60_000 });
+
+      expect(calls[0].timeoutMs).toBeLessThanOrEqual(60_000);
+      expect(calls[1].timeoutMs).toBeLessThanOrEqual(calls[0].timeoutMs!);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('fails with the capture reason when no fresh sign-in arrives before the timeout', async () => {
+    slackRefuses([STALE]);
+    const { spy } = captureSequence(captured(STALE), {
+      ok: false,
+      reason: 'capture_timeout',
+      message: 'No Slack session was detected before the timeout.',
+    });
+
+    try {
+      const error = await authenticateAuto().catch((err) => err);
+
+      expect(error).toBeInstanceOf(AutoLoginError);
+      expect(error.reason).toBe('capture_timeout');
+      expect(stopped).toBe(1);
+      expect(save).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('does not wait in a headless run, which has no window to sign in to', async () => {
+    slackRefuses([STALE]);
+    const { calls, spy } = captureSequence(captured(STALE), captured(FRESH));
+
+    try {
+      const result = await authenticateAuto({ headless: true });
+
+      expect(calls).toHaveLength(1);
+      expect(result.saved).toEqual([]);
+      expect(result.failed).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('does not wait when another captured workspace was saved', async () => {
+    slackRefuses([STALE]);
+    const { calls, spy } = captureSequence(captured(FRESH, STALE));
+
+    try {
+      const result = await authenticateAuto();
+
+      expect(calls).toHaveLength(1);
+      expect(result.saved).toHaveLength(1);
+      expect(result.failed.map((f) => f.workspaceUrl)).toEqual(['https://team1.slack.com']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('does not wait when the failure is not Slack refusing the credentials', async () => {
+    slackRefuses([STALE], 'team_access_not_granted');
+    const { calls, spy } = captureSequence(captured(STALE), captured(FRESH));
+
+    try {
+      const result = await authenticateAuto();
+
+      expect(calls).toHaveLength(1);
+      expect(result.saved).toEqual([]);
+      expect(result.failed[0].error).toBe('Authentication failed: Slack API error: team_access_not_granted');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each([...AUTH_ERROR_CODES])('waits for a fresh sign-in after %s', async (code) => {
+    slackRefuses([STALE], code);
+    const { calls, spy } = captureSequence(captured(STALE), captured(FRESH));
+
+    try {
+      const result = await authenticateAuto();
+
+      expect(calls).toHaveLength(2);
+      expect(result.saved).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

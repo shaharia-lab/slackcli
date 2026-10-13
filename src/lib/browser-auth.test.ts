@@ -896,6 +896,114 @@ describe('captureSlackTokens', () => {
     ]);
   });
 
+  // A profile whose Slack session expired server-side still holds the dead
+  // token, and Slack only redirects to sign-in after the client boots. Skipping
+  // the refused token is what lets the capture wait for the user instead of
+  // handing the same dead token back.
+  describe('with tokens Slack already refused', () => {
+    const teamWith = (token: string) =>
+      JSON.stringify({ teams: { T111: { id: 'T111', domain: 'alpha', token } } });
+    const STALE = 'xoxc-stale-111';
+    const FRESH = 'xoxc-fresh-222';
+    const rejectedTokens = new Set([STALE]);
+
+    it('skips a refused localStorage token and keeps waiting for a fresh sign-in', async () => {
+      const { session, stats } = makeScriptedSession({
+        localConfigs: [teamWith(STALE), teamWith(STALE), null, teamWith(FRESH)],
+      });
+
+      const result = await captureSlackTokens(session, {
+        sleep: async () => {},
+        now: advancingClock(),
+        timeoutMs: 300_000,
+        rejectedTokens,
+      });
+
+      expect(result).toEqual({
+        ok: true,
+        xoxd: 'xoxd-session-abc',
+        workspaces: [{ workspaceUrl: 'https://alpha.slack.com', xoxc: FRESH, teamId: 'T111' }],
+      });
+      // Reads 1–3 offer nothing usable, so each is followed by a probe.
+      expect(stats.probes).toBe(3);
+    });
+
+    it('skips an intercepted refused token without claiming its workspace', async () => {
+      const { session } = makeScriptedSession({
+        emitOnRead: {
+          1: [{ url: 'https://alpha.slack.com/api/client.boot', postData: `token=${STALE}` }],
+          3: [{ url: 'https://alpha.slack.com/api/client.boot', postData: `token=${FRESH}` }],
+        },
+      });
+
+      const result = await captureSlackTokens(session, {
+        sleep: async () => {},
+        now: advancingClock(),
+        timeoutMs: 300_000,
+        rejectedTokens,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.workspaces).toEqual([{ workspaceUrl: 'https://alpha.slack.com', xoxc: FRESH }]);
+    });
+
+    it('times out when Slack only ever offers refused tokens', async () => {
+      const { session } = makeScriptedSession({
+        localConfigs: [teamWith(STALE)],
+        emitOnRead: { 1: [{ url: 'https://alpha.slack.com/api/x', postData: `token=${STALE}` }] },
+      });
+
+      const result = await captureSlackTokens(session, {
+        sleep: async () => {},
+        now: advancingClock(),
+        timeoutMs: 3000,
+        rejectedTokens,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe('capture_timeout');
+    });
+
+    it('keeps a refused token out during the settle window', async () => {
+      const withStaleBeta = JSON.stringify({
+        teams: {
+          T111: { id: 'T111', domain: 'alpha', token: FRESH },
+          T222: { id: 'T222', domain: 'beta', token: STALE },
+        },
+      });
+      const { session } = makeScriptedSession({
+        localConfigs: [teamWith(FRESH), withStaleBeta],
+      });
+
+      const result = await captureSlackTokens(session, {
+        sleep: async () => {},
+        now: advancingClock(),
+        timeoutMs: 300_000,
+        rejectedTokens,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.workspaces.map((w) => w.xoxc)).toEqual([FRESH]);
+    });
+
+    it('treats an empty set like no refused tokens', async () => {
+      const { session } = makeScriptedSession({ localConfigs: [teamWith(STALE)] });
+
+      const result = await captureSlackTokens(session, {
+        ...captureDeps,
+        now: advancingClock(),
+        rejectedTokens: new Set(),
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.workspaces.map((w) => w.xoxc)).toEqual([STALE]);
+    });
+  });
+
   it('never puts a token value in a failure message', async () => {
     const { session } = makeScriptedSession({
       emitOnRead: { 1: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }] },

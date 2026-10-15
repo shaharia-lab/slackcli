@@ -15,7 +15,7 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 
 The writing commands support it too — `messages send`, `messages edit`, `messages delete`,
 `messages react`, `messages unreact`, `messages draft`, `messages send-draft`, `messages delete-draft`, `messages schedule`,
-`messages delete-scheduled`, the `usergroups` write verbs (`create`, `update`, `add`,
+`messages delete-scheduled`, `emoji add`, `emoji remove`, the `usergroups` write verbs (`create`, `update`, `add`,
 `remove`, `enable`, `disable`), the `conversations` membership write/self
 verbs (`members add`, `members remove`, `join`, `leave`), and
 `conversations mark-read` — where it returns the
@@ -135,7 +135,8 @@ list` returns plain IDs, so it has no `--fields`.
 Every command that changes something in Slack takes `--dry-run`:
 `messages send`, `edit`, `delete`, `react`, `unreact`, `draft`, `send-draft`, `delete-draft`,
 `schedule`, `delete-scheduled`;
-`conversations members add`, `members remove`, `join`, `leave`, `mark-read`; and
+`conversations members add`, `members remove`, `join`, `leave`, `mark-read`;
+`emoji add`, `remove`; and
 `usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.
 
 A dry run does everything except the write: it picks the workspace, resolves
@@ -168,11 +169,11 @@ With `--json` the preview is one object on stdout:
   `create draft`, `send draft`, `delete draft`, `schedule message`,
   `delete scheduled message`, `add channel members`,
   `remove channel members`, `join channel`, `leave channel`,
-  `mark conversation read`,
+  `mark conversation read`, `add emoji`, `add emoji alias`, `remove emoji`,
   `create user group`, `update user group`, `add user group members`,
   `remove user group members`, `enable user group`, `disable user group`.
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
-  `message` (with `ts`), `draft`, `scheduled_message` or `usergroup`. `thread_ts` is set for a
+  `message` (with `ts`), `draft`, `scheduled_message`, `emoji` or `usergroup`. `thread_ts` is set for a
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
   for display and left out when the lookup fails.
 - `payload` is exactly what would be sent: the message `text` and `blocks`;
@@ -180,7 +181,8 @@ With `--json` the preview is one object on stdout:
   `channel_id` and `post_at` of the message found;
   `file`, `file_size`, the `files` list, `total_size` and `comment` for an
   upload (`file`/`file_size` describe the first file, `files`/`total_size` cover
-  the whole set — one or many); the `emoji`; the `add` or
+  the whole set — one or many); the `emoji`; `file` and `bytes`, or
+  `alias_for`, for an added custom emoji; the `add` or
   `remove` user IDs for a channel; for a user group, the fields to set, or
   `{ added, removed, next, noop }` where `next` is the full member list the
   write would send. `team` appears when `--team` is passed.

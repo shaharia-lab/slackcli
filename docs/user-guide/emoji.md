@@ -1,6 +1,6 @@
-# List a workspace's custom emoji
+# Custom emoji
 
-`slackcli emoji` reads a workspace's **custom emoji** — the ones an admin or
+`slackcli emoji` reads and manages a workspace's **custom emoji** — the ones an admin or
 member uploaded, not the built-in Unicode set.
 
 ```bash
@@ -91,16 +91,21 @@ not blocked — Slack downscales it.
 
 Removes a custom emoji. **Browser authentication only.** Idempotent: removing
 one that does not exist succeeds as a no-op (exit 0), the same contract as
-`messages unreact` and `messages delete`.
+`messages unreact` and `messages delete`. A policy refusal such as
+`enterprise_is_restricted` is a real `permission_denied` failure (exit 1).
+
+Removal affects the whole workspace, so it asks for confirmation; pass `--yes`
+to skip the prompt (required when stdin is not a terminal).
 
 ```bash
 slackcli emoji remove party-kiro
-slackcli emoji remove :party-kiro: --json
+slackcli emoji remove :party-kiro: --yes --json
 slackcli emoji remove party-kiro --dry-run
 ```
 
 | Option | Purpose |
 |---|---|
+| `--yes` | Remove without the confirmation prompt |
 | `--workspace <id\|name>` | Workspace to use |
 | `--json` | JSON output: `{ name, removed, already_removed }` |
 | `--dry-run` | Show what would be done without doing it |

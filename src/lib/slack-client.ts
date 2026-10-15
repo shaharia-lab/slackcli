@@ -227,7 +227,7 @@ export const UNREAD_MESSAGES_AUTH_MESSAGE = 'Reading unread messages (--messages
 // here). Mirrors the DRAFT_*_AUTH_MESSAGE refusals.
 export const EMOJI_WRITE_AUTH_MESSAGE =
   'Managing custom emoji (emoji add/remove) requires browser authentication; ' +
-  'sign in with a browser session (slackcli auth login --browser)';
+  'sign in with a browser session (slackcli auth login-auto or auth login-browser)';
 
 // The refusal of the scheduled-message calls on browser session tokens: Slack
 // answers them with `not_allowed_token_type` (#379).
@@ -1086,9 +1086,8 @@ export class SlackClient {
 
   // Add a custom emoji from a local image via the web-client emoji.add endpoint
   // (mode=data). Browser auth only — see EMOJI_WRITE_AUTH_MESSAGE. The endpoint
-  // needs multipart/form-data (the urlencoded request() path cannot carry a
-  // file), so this posts directly. Slack answers 200 with { ok:false, error }
-  // on failure, so the caller branches on ok.
+  // needs multipart/form-data, so the image goes in as a Blob param, which
+  // browserRequest() sends as a multipart body inside request().
   async addEmoji(name: string, filePath: string): Promise<any> {
     this.requireBrowserAuth(EMOJI_WRITE_AUTH_MESSAGE);
     const fileBytes = await readFile(filePath);

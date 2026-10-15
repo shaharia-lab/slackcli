@@ -80,7 +80,7 @@ export async function getCustomEmoji(
   return emoji.find((e) => e.name === target);
 }
 
-// --- Write actions (prototype for the emoji add/remove feature) ---------------
+// --- Write actions: emoji add / emoji remove ---------------------------------
 
 // Slack's custom-emoji guidance: a square image, no larger than 128x128, under
 // 64 KB. Oversizing is a warn, not a block — Slack itself downscales — so these
@@ -159,8 +159,8 @@ export async function addCustomEmojiAlias(
   return { name, is_alias: true, alias_for: aliasFor };
 }
 
-// Remove a custom emoji. Idempotent: Slack's error_name_taken-free remove
-// answers error_emoji_not_found when the name is gone; that is a success with
+// Remove a custom emoji. Idempotent: Slack answers error_emoji_not_found when
+// the name is gone; that is a success with
 // `removed: false, already_removed: true`, so a retry is safe. Every other
 // failure is rethrown. (Mirrors deleteMessage/removeReaction in message.ts.)
 export async function removeCustomEmoji(

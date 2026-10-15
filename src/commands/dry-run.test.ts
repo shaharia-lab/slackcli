@@ -13,6 +13,7 @@ import { READ_METHODS } from '../lib/retry.ts';
 import { SlackClient } from '../lib/slack-client.ts';
 import type { WorkspaceConfig } from '../types/index.ts';
 import { createConversationsCommand } from './conversations.ts';
+import { createEmojiCommand } from './emoji.ts';
 import { createMessagesCommand } from './messages.ts';
 import { createUsergroupsCommand } from './usergroups.ts';
 
@@ -42,6 +43,7 @@ const DRAFT = {
 
 const factories: Record<string, () => Command> = {
   conversations: createConversationsCommand,
+  emoji: createEmojiCommand,
   messages: createMessagesCommand,
   usergroups: createUsergroupsCommand,
 };
@@ -161,6 +163,8 @@ describe('--dry-run', () => {
     [['usergroups', 'remove', 'S0123456789', 'U0000000001'], 'remove user group members'],
     [['usergroups', 'enable', 'S0123456789'], 'enable user group'],
     [['usergroups', 'disable', 'S0123456789'], 'disable user group'],
+    [['emoji', 'add', 'r7', '--alias-for', 'rapid7'], 'add emoji alias'],
+    [['emoji', 'remove', 'party-kiro'], 'remove emoji'],
   ])('%j previews without writing', async (argv, action) => {
     const preview = await runJson(argv);
     expect(preview).toMatchObject({
@@ -210,6 +214,27 @@ describe('--dry-run', () => {
     expect(stdout).toContain('C0123456789 (#deploys), message 1712345678.000100');
     expect(stdout).toContain('Emoji:');
     expect(methods).toEqual(['conversations.info']);
+  });
+
+  it('previews emoji add --file without uploading (no fetch)', async () => {
+    const { writeFile } = await import('node:fs/promises');
+    const imagePath = join(dir, 'party-kiro.png');
+    await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47])); // 4-byte stub
+    const fetchSpy = spyOn(globalThis, 'fetch');
+    try {
+      const preview = await runJson(['emoji', 'add', 'party-kiro', '--file', imagePath]);
+      expect(preview).toMatchObject({
+        dry_run: true,
+        action: 'add emoji',
+        target: { kind: 'emoji', id: 'party-kiro', name: 'party-kiro' },
+        payload: { file: imagePath, bytes: 4 },
+      });
+      // The multipart upload goes through fetch(), not request(): a dry run must
+      // not call it at all.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it('renders the text preview of a send', async () => {
@@ -386,6 +411,8 @@ describe('--dry-run', () => {
     [['messages', 'draft', '--recipient-id', 'C0123456789', '--message', 'hi']],
     [['messages', 'send-draft', 'Dr0123456789']],
     [['messages', 'delete-draft', 'Dr0123456789']],
+    [['emoji', 'add', 'r7', '--alias-for', 'rapid7']],
+    [['emoji', 'remove', 'party-kiro']],
   ])('%j on an app token fails as browser-only', async (argv) => {
     const error = await failJson(argv, STANDARD);
     expect(error.code).toBe('unsupported_auth_type');

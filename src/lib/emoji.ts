@@ -79,3 +79,100 @@ export async function getCustomEmoji(
   const emoji = await fetchCustomEmoji(client, options);
   return emoji.find((e) => e.name === target);
 }
+
+// --- Write actions: emoji add / emoji remove ---------------------------------
+
+// Slack's custom-emoji guidance: a square image, no larger than 128x128, under
+// 64 KB. Oversizing is a warn, not a block — Slack itself downscales — so these
+// bound the pre-flight warning rather than a hard reject.
+export const EMOJI_MAX_BYTES = 64 * 1024;
+
+// Strip the optional surrounding colons the way getCustomEmoji/filter do, so
+// `add :foo:` and `add foo` name the same emoji.
+export function normalizeEmojiName(name: string): string {
+  return name.trim().replace(/^:|:$/g, '').trim();
+}
+
+// Slack accepts lower-case letters, digits, dashes and underscores in a custom
+// emoji name. Reject anything else locally so a bad name fails with a clear CLI
+// error instead of a raw `error_name_taken`/`error_bad_name_i18n` from Slack.
+export function validateEmojiName(name: string): { name?: string; error?: string } {
+  const normalized = normalizeEmojiName(name);
+  if (normalized === '') {
+    return { error: 'Emoji name must not be empty' };
+  }
+  if (!/^[a-z0-9_-]+$/.test(normalized)) {
+    return { error: 'Emoji name may use only lower-case letters, digits, dashes and underscores' };
+  }
+  return { name: normalized };
+}
+
+// Decide what `emoji add` is doing from its two mutually exclusive inputs. Both
+// set or neither set is a usage error; otherwise report the mode so the command
+// routes to the file upload or the alias call.
+export function resolveAddMode(
+  options: { file?: string; aliasFor?: string },
+): { mode?: 'data' | 'alias'; error?: string } {
+  const hasFile = options.file !== undefined && options.file !== '';
+  const hasAlias = options.aliasFor !== undefined && options.aliasFor !== '';
+  if (hasFile && hasAlias) {
+    return { error: 'Use either --file or --alias-for, not both' };
+  }
+  if (!hasFile && !hasAlias) {
+    return { error: 'Provide --file <path> to upload an image, or --alias-for <existing> to alias' };
+  }
+  return { mode: hasFile ? 'data' : 'alias' };
+}
+
+export interface AddedEmojiResult {
+  name: string;
+  is_alias: boolean;
+  alias_for?: string;
+}
+
+export interface RemovedEmojiResult {
+  name: string;
+  removed: boolean;
+  already_removed: boolean;
+}
+
+// Upload a local image as a new custom emoji. Returns the added record. Slack
+// answers 200 with { ok:false, error } on failure; the client's request path
+// turns that into a thrown error with slackData, so a genuine failure (e.g.
+// error_name_taken) propagates.
+export async function addCustomEmoji(
+  client: Pick<SlackClient, 'addEmoji'>,
+  name: string,
+  filePath: string,
+): Promise<AddedEmojiResult> {
+  await client.addEmoji(name, filePath);
+  return { name, is_alias: false };
+}
+
+// Create an alias of an existing emoji. Returns the added alias record.
+export async function addCustomEmojiAlias(
+  client: Pick<SlackClient, 'addEmojiAlias'>,
+  name: string,
+  aliasFor: string,
+): Promise<AddedEmojiResult> {
+  await client.addEmojiAlias(name, aliasFor);
+  return { name, is_alias: true, alias_for: aliasFor };
+}
+
+// Remove a custom emoji. Idempotent: Slack answers error_emoji_not_found when
+// the name is gone; that is a success with
+// `removed: false, already_removed: true`, so a retry is safe. Every other
+// failure is rethrown. (Mirrors deleteMessage/removeReaction in message.ts.)
+export async function removeCustomEmoji(
+  client: Pick<SlackClient, 'removeEmoji'>,
+  name: string,
+): Promise<RemovedEmojiResult> {
+  try {
+    await client.removeEmoji(name);
+    return { name, removed: true, already_removed: false };
+  } catch (error) {
+    const code = (error as { slackData?: { error?: unknown } })?.slackData?.error;
+    if (code !== 'error_emoji_not_found' && code !== 'emoji_not_found') throw error;
+    return { name, removed: false, already_removed: true };
+  }
+}

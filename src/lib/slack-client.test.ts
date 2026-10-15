@@ -2263,3 +2263,61 @@ describe('SlackClient scheduled messages (#379)', () => {
     expect(() => standardClient().client.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE)).not.toThrow();
   });
 });
+
+describe('SlackClient emoji writes go through request() (maintainer feedback)', () => {
+  function browserClient() {
+    return new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    });
+  }
+
+  afterEach(() => { /* each test restores its own fetch spy in finally */ });
+
+  it('emoji.add with an image sends multipart/form-data with the browser cookie', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-emoji-mp-'));
+    const file = join(dir, 'party.png');
+    await import('node:fs/promises').then((m) => m.writeFile(file, Buffer.from([1, 2, 3, 4])));
+    let captured: { url: string; headers: Headers; body: unknown } | undefined;
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (input: any, init: any) => {
+      captured = { url: String(input), headers: new Headers(init?.headers), body: init?.body };
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as typeof fetch);
+    try {
+      await browserClient().addEmoji('party', file);
+      expect(captured?.url).toBe('https://example.slack.com/api/emoji.add');
+      expect(captured?.body).toBeInstanceOf(FormData);
+      const form = captured!.body as FormData;
+      expect(form.get('mode')).toBe('data');
+      expect(form.get('name')).toBe('party');
+      expect(form.get('token')).toBe('xoxc-test');
+      expect(form.get('image')).toBeInstanceOf(Blob);
+      // fetch sets multipart Content-Type itself; we must NOT force urlencoded.
+      expect(captured?.headers.get('Content-Type')).not.toBe('application/x-www-form-urlencoded');
+      expect(captured?.headers.get('Cookie')).toBe('d=xoxd-test');
+    } finally {
+      fetchSpy.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('emoji.remove (no file) stays urlencoded', async () => {
+    let captured: { body: unknown; headers: Headers } | undefined;
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (_input: any, init: any) => {
+      captured = { body: init?.body, headers: new Headers(init?.headers) };
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as typeof fetch);
+    try {
+      await browserClient().removeEmoji('party');
+      expect(captured?.body).toBeInstanceOf(URLSearchParams);
+      expect((captured!.body as URLSearchParams).get('name')).toBe('party');
+      expect(captured?.headers.get('Content-Type')).toBe('application/x-www-form-urlencoded');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});

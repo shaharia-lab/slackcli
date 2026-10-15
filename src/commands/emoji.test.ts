@@ -38,4 +38,27 @@ describe('emoji command', () => {
     expect(opts).toContain('--workspace');
     expect(opts).toContain('--json');
   });
+
+  it('exposes the add and remove write subcommands', () => {
+    const names = createEmojiCommand().commands.map((command) => command.name());
+    expect(names).toContain('add');
+    expect(names).toContain('remove');
+  });
+
+  it('gives add a required name plus --file, --alias-for, --workspace and --json', () => {
+    expect(argumentNames('add')).toEqual([{ name: 'name', required: true }]);
+    const opts = longOptions('add');
+    expect(opts).toContain('--file');
+    expect(opts).toContain('--alias-for');
+    expect(opts).toContain('--workspace');
+    expect(opts).toContain('--json');
+  });
+
+  it('makes remove take a required name positional plus --yes, --workspace and --json', () => {
+    expect(argumentNames('remove')).toEqual([{ name: 'name', required: true }]);
+    const opts = longOptions('remove');
+    expect(opts).toContain('--yes');
+    expect(opts).toContain('--workspace');
+    expect(opts).toContain('--json');
+  });
 });

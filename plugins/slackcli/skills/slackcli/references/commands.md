@@ -148,6 +148,7 @@ files info <F…|url> [--json]                            # --json has private U
 files read <F…|url> [--raw] [--json]                    # text only, 10 MB cap; {id,name,title,mimetype,source,content}
 files download <F…|url> --output PATH                   # refuses to overwrite
 emoji list [--filter=SUBSTR] [--limit=N] [--no-aliases] [--json]   |   emoji get <name> [--json]
+emoji add <name> (--file=PATH | --alias-for=NAME) [--json]   |   emoji remove <name> [--yes] [--json]   # browser auth only; remove is retry-safe
 update check   |   update                               # refuses under Homebrew / from source
 logs path [--json]   |   logs show [--last=N | --run=ID] [--json]   |   logs clear [--yes]   # log is redacted
 ```

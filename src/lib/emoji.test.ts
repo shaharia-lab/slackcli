@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { fetchCustomEmoji, filterEmojiByName, getCustomEmoji, normalizeEmojiMap, parseEmojiLimit } from './emoji.ts';
+import {
+  addCustomEmoji,
+  addCustomEmojiAlias,
+  normalizeEmojiName,
+  removeCustomEmoji,
+  resolveAddMode,
+  validateEmojiName,
+} from './emoji.ts';
 import type { CustomEmoji } from '../types/index.ts';
 import type { SlackClient } from './slack-client.ts';
 
@@ -166,5 +174,106 @@ describe('filterEmojiByName', () => {
     const before = emoji.length;
     filterEmojiByName(emoji, 'kiro');
     expect(emoji).toHaveLength(before);
+  });
+});
+
+describe('validateEmojiName', () => {
+  it('accepts lower-case letters, digits, dashes and underscores', () => {
+    expect(validateEmojiName('party-kiro_2')).toEqual({ name: 'party-kiro_2' });
+  });
+
+  it('strips surrounding colons', () => {
+    expect(validateEmojiName(':party:')).toEqual({ name: 'party' });
+  });
+
+  it('rejects an empty name', () => {
+    expect(validateEmojiName('::').error).toBeDefined();
+    expect(validateEmojiName('   ').error).toBeDefined();
+  });
+
+  it('rejects upper-case and punctuation', () => {
+    expect(validateEmojiName('Party').error).toBeDefined();
+    expect(validateEmojiName('party!').error).toBeDefined();
+    expect(validateEmojiName('party parrot').error).toBeDefined();
+  });
+});
+
+describe('normalizeEmojiName', () => {
+  it('strips colons and trims', () => {
+    expect(normalizeEmojiName('  :foo:  ')).toBe('foo');
+  });
+});
+
+describe('resolveAddMode', () => {
+  it('is data mode for --file', () => {
+    expect(resolveAddMode({ file: './x.png' })).toEqual({ mode: 'data' });
+  });
+
+  it('is alias mode for --alias-for', () => {
+    expect(resolveAddMode({ aliasFor: 'rapid7' })).toEqual({ mode: 'alias' });
+  });
+
+  it('rejects both set', () => {
+    expect(resolveAddMode({ file: './x.png', aliasFor: 'rapid7' }).error).toBeDefined();
+  });
+
+  it('rejects neither set', () => {
+    expect(resolveAddMode({}).error).toBeDefined();
+    expect(resolveAddMode({ file: '', aliasFor: '' }).error).toBeDefined();
+  });
+});
+
+describe('addCustomEmoji / addCustomEmojiAlias', () => {
+  it('uploads a file and reports a non-alias record', async () => {
+    const calls: Array<[string, string]> = [];
+    const client = { addEmoji: (n: string, f: string) => { calls.push([n, f]); return Promise.resolve({ ok: true }); } };
+    const result = await addCustomEmoji(client as any, 'party', './party.png');
+    expect(result).toEqual({ name: 'party', is_alias: false });
+    expect(calls).toEqual([['party', './party.png']]);
+  });
+
+  it('creates an alias and reports the target', async () => {
+    const client = { addEmojiAlias: () => Promise.resolve({ ok: true }) };
+    const result = await addCustomEmojiAlias(client as any, 'r7', 'rapid7');
+    expect(result).toEqual({ name: 'r7', is_alias: true, alias_for: 'rapid7' });
+  });
+});
+
+describe('removeCustomEmoji', () => {
+  it('reports a real delete', async () => {
+    const client = { removeEmoji: () => Promise.resolve({ ok: true }) };
+    expect(await removeCustomEmoji(client as any, 'party')).toEqual({
+      name: 'party', removed: true, already_removed: false,
+    });
+  });
+
+  it('is idempotent: a missing emoji is a no-op success (error_emoji_not_found)', async () => {
+    const client = {
+      removeEmoji: () => Promise.reject(Object.assign(new Error('x'), { slackData: { error: 'error_emoji_not_found' } })),
+    };
+    expect(await removeCustomEmoji(client as any, 'ghost')).toEqual({
+      name: 'ghost', removed: false, already_removed: true,
+    });
+  });
+
+  it('also treats the bare emoji_not_found code as the no-op', async () => {
+    const client = {
+      removeEmoji: () => Promise.reject(Object.assign(new Error('x'), { slackData: { error: 'emoji_not_found' } })),
+    };
+    expect((await removeCustomEmoji(client as any, 'ghost')).already_removed).toBe(true);
+  });
+
+  it('rethrows any other error (non-vacuous: a different code must NOT be swallowed)', async () => {
+    const client = {
+      removeEmoji: () => Promise.reject(Object.assign(new Error('nope'), { slackData: { error: 'not_authed' } })),
+    };
+    await expect(removeCustomEmoji(client as any, 'party')).rejects.toThrow('nope');
+  });
+
+  it('does NOT treat a policy denial (enterprise_is_restricted) as the idempotent no-op', async () => {
+    const client = {
+      removeEmoji: () => Promise.reject(Object.assign(new Error('restricted'), { slackData: { error: 'enterprise_is_restricted' } })),
+    };
+    await expect(removeCustomEmoji(client as any, 'party')).rejects.toThrow('restricted');
   });
 });

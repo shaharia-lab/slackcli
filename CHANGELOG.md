@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Add and remove custom emoji**: `emoji add <name> --file <path>` uploads an image as a new custom emoji, `emoji add <name> --alias-for <existing>` creates an alias, and `emoji remove <name>` deletes one, so a set of emoji can be scripted instead of uploaded one at a time in the web UI (#414)
+  - Browser session tokens (`xoxd`/`xoxc`) only, through the same `emoji.add` / `emoji.remove` endpoints the web client's Add Emoji button uses; app tokens fail with `unsupported_auth_type`
+  - `remove` asks for confirmation (`--yes`) and is retry-safe: an emoji that is already gone exits 0 with `already_removed: true`, while a policy refusal such as `enterprise_is_restricted` fails with `permission_denied`
+  - Both take `--json`, `--dry-run` and `--workspace`
 - **`search messages` can search by `--in`/`--from` alone, with no positional query**: because `--in` and `--from` become `in:`/`from:` query operators, a search specified entirely by filters is a complete query, so the positional term is now optional (`slackcli search messages --from=rafael`). `search channels` and `search people` keep their required positional, since they have no filter flags to stand in for it. A call with neither a query nor a filter fails with `invalid_input` before any Slack call (#405)
 
 ### Changed

@@ -58,3 +58,49 @@ and the `--json` schema stay the same regardless of which kind it is.
 
 Both auth types work: `emoji.list` is available to standard (`xoxb`/`xoxp`) and
 browser (`xoxd`/`xoxc`) tokens alike.
+
+## `emoji add <name>`
+
+Adds a custom emoji — either a new image or an alias of an existing emoji.
+**Browser authentication only**: Slack's custom-emoji write endpoint
+authenticates with a browser session, so a standard app token is refused with
+a clear message. This is a regular workspace-member action on most workspaces,
+not an Enterprise-Grid admin action.
+
+```bash
+slackcli emoji add party-kiro --file ./party-kiro.png
+slackcli emoji add r7 --alias-for rapid7
+slackcli emoji add party-kiro --file ./party-kiro.png --json
+slackcli emoji add party-kiro --file ./party-kiro.png --dry-run
+```
+
+`--file` and `--alias-for` are mutually exclusive; exactly one is required.
+The name may use only lower-case letters, digits, dashes and underscores. A
+`--file` image larger than Slack's 128×128 / 64 KB guidance is warned about,
+not blocked — Slack downscales it.
+
+| Option | Purpose |
+|---|---|
+| `--file <path>` | Local image to upload as a new emoji |
+| `--alias-for <existing>` | Create an alias of this existing emoji |
+| `--workspace <id\|name>` | Workspace to use |
+| `--json` | JSON output: `{ name, is_alias, alias_for? }` |
+| `--dry-run` | Show what would be done without doing it |
+
+## `emoji remove <name>`
+
+Removes a custom emoji. **Browser authentication only.** Idempotent: removing
+one that does not exist succeeds as a no-op (exit 0), the same contract as
+`messages unreact` and `messages delete`.
+
+```bash
+slackcli emoji remove party-kiro
+slackcli emoji remove :party-kiro: --json
+slackcli emoji remove party-kiro --dry-run
+```
+
+| Option | Purpose |
+|---|---|
+| `--workspace <id\|name>` | Workspace to use |
+| `--json` | JSON output: `{ name, removed, already_removed }` |
+| `--dry-run` | Show what would be done without doing it |

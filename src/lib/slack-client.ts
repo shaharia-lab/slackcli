@@ -221,6 +221,14 @@ export const DRAFT_LIST_AUTH_MESSAGE = 'Draft listing requires browser authentic
 export const DRAFT_DELETE_AUTH_MESSAGE = 'Draft deletion requires browser authentication';
 export const UNREAD_MESSAGES_AUTH_MESSAGE = 'Reading unread messages (--messages) requires browser authentication';
 
+// Custom-emoji writes use Slack's web-client emoji.add/emoji.remove endpoints,
+// which authenticate with a browser session; a standard app token has no
+// equivalent (the admin.emoji.* API is Enterprise-Grid-only and out of scope
+// here). Mirrors the DRAFT_*_AUTH_MESSAGE refusals.
+export const EMOJI_WRITE_AUTH_MESSAGE =
+  'Managing custom emoji (emoji add/remove) requires browser authentication; ' +
+  'sign in with a browser session (slackcli auth login --browser)';
+
 // The refusal of the scheduled-message calls on browser session tokens: Slack
 // answers them with `not_allowed_token_type` (#379).
 export const SCHEDULED_MESSAGES_AUTH_MESSAGE =
@@ -433,27 +441,47 @@ export class SlackClient {
 
     const url = `${this.config.workspace_url}/api/${method}`;
 
-    const formParams: Record<string, string> = { token: this.config.xoxc_token };
-    for (const [key, value] of Object.entries(params)) {
-      if (value === undefined) continue;
-      formParams[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
-    }
-    const formBody = new URLSearchParams(formParams);
     // URL-encode the xoxd token for the cookie
     const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
+    const baseHeaders: Record<string, string> = {
+      'Cookie': `d=${encodedXoxdToken}`,
+      'Origin': 'https://app.slack.com',
+      'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
+    };
+
+    // A Blob param (e.g. emoji.add's image) means a multipart upload: build a
+    // FormData body and let fetch set the multipart Content-Type with its
+    // boundary. Everything else is urlencoded. Either way the call stays inside
+    // request() -> attempt(), so it keeps its rate-limiter slot, retry policy
+    // and auth-error mapping.
+    const hasBlob = Object.values(params).some((v) => v instanceof Blob);
+    let body: FormData | URLSearchParams;
+    const headers = { ...baseHeaders };
+    if (hasBlob) {
+      const form = new FormData();
+      form.append('token', this.config.xoxc_token);
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined) continue;
+        if (value instanceof Blob) {
+          form.append(key, value, (value as any).name ?? key);
+        } else {
+          form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+        }
+      }
+      body = form;
+    } else {
+      const formParams: Record<string, string> = { token: this.config.xoxc_token };
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined) continue;
+        formParams[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      }
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      body = new URLSearchParams(formParams);
+    }
 
     let response: Response;
     try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Cookie': `d=${encodedXoxdToken}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Origin': 'https://app.slack.com',
-          'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
-        },
-        body: formBody,
-      });
+      response = await fetch(url, { method: 'POST', headers, body });
     } catch (error: any) {
       // No response at all: the request may or may not have reached Slack.
       throw new SlackTransportError(`Slack API error: ${error?.message}`, undefined, undefined, true);
@@ -1054,6 +1082,35 @@ export class SlackClient {
   // Returns { ok, emoji: { <name>: <image-url|"alias:<other>"> } }.
   async listEmoji(): Promise<any> {
     return this.request('emoji.list', {});
+  }
+
+  // Add a custom emoji from a local image via the web-client emoji.add endpoint
+  // (mode=data). Browser auth only — see EMOJI_WRITE_AUTH_MESSAGE. The endpoint
+  // needs multipart/form-data (the urlencoded request() path cannot carry a
+  // file), so this posts directly. Slack answers 200 with { ok:false, error }
+  // on failure, so the caller branches on ok.
+  async addEmoji(name: string, filePath: string): Promise<any> {
+    this.requireBrowserAuth(EMOJI_WRITE_AUTH_MESSAGE);
+    const fileBytes = await readFile(filePath);
+    const image = new Blob([fileBytes]);
+    // Named so browserRequest's multipart branch sets the form field's filename.
+    (image as any).name = basename(filePath);
+    return this.request('emoji.add', { mode: 'data', name, image });
+  }
+
+  // Create an alias of an existing emoji via emoji.add (mode=alias). No file, so
+  // this rides the standard urlencoded request() path. Browser auth only.
+  async addEmojiAlias(name: string, aliasFor: string): Promise<any> {
+    this.requireBrowserAuth(EMOJI_WRITE_AUTH_MESSAGE);
+    return this.request('emoji.add', { mode: 'alias', name, alias_for: aliasFor });
+  }
+
+  // Remove a custom emoji via emoji.remove. Browser auth only. The caller treats
+  // the no-such-emoji error as an idempotent no-op (mirrors messages unreact); a
+  // policy denial (e.g. enterprise_is_restricted) is a real permission error.
+  async removeEmoji(name: string): Promise<any> {
+    this.requireBrowserAuth(EMOJI_WRITE_AUTH_MESSAGE);
+    return this.request('emoji.remove', { name });
   }
 
   // Get unread counts (browser: client.counts, standard: conversations.list with unread data)

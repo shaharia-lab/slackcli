@@ -4,11 +4,14 @@ import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatEmoji, formatEmojiList, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { describeCommand, type CommandHelp } from '../lib/help.ts';
-import { fetchCustomEmoji, filterEmojiByName, getCustomEmoji, parseEmojiLimit } from '../lib/emoji.ts';
 import {
   addCustomEmoji,
   addCustomEmojiAlias,
   EMOJI_MAX_BYTES,
+  fetchCustomEmoji,
+  filterEmojiByName,
+  getCustomEmoji,
+  parseEmojiLimit,
   removeCustomEmoji,
   resolveAddMode,
   validateEmojiName,

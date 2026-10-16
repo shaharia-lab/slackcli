@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import ora from 'ora';
+import ora, { type Ora } from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatEmoji, formatEmojiList, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
@@ -7,6 +7,7 @@ import { describeCommand, type CommandHelp } from '../lib/help.ts';
 import {
   addCustomEmoji,
   addCustomEmojiAlias,
+  type AddedEmojiResult,
   EMOJI_MAX_BYTES,
   fetchCustomEmoji,
   filterEmojiByName,
@@ -108,6 +109,27 @@ const HELP = {
     ],
   },
 } satisfies Record<string, CommandHelp>;
+
+// Warn, before the upload, that Slack may downscale an image over its size guidance.
+// fileSize is only set in --file mode.
+function warnIfOversized(spinner: Ora, fileSize: number | undefined): void {
+  if (fileSize === undefined || fileSize <= EMOJI_MAX_BYTES) return;
+  spinner.warn(`Image is ${Math.round(fileSize / 1024)} KB; Slack's guidance is 128×128 / 64 KB — it may be downscaled.`);
+  spinner.start('Adding custom emoji...');
+}
+
+// The success line for "emoji add", then the result itself under --json.
+function reportAdded(result: AddedEmojiResult, spinner: Ora, json: boolean): void {
+  if (result.is_alias) {
+    spinner.succeed(`Added alias :${result.name}: → :${result.alias_for}:`);
+  } else {
+    spinner.succeed(`Added :${result.name}:`);
+  }
+
+  if (json) {
+    writeJson(result);
+  }
+}
 
 export function createEmojiCommand(): Command {
   const emoji = describeCommand(new Command('emoji'), HELP.group);
@@ -259,24 +281,13 @@ export function createEmojiCommand(): Command {
         }
 
         spinner.start('Adding custom emoji...');
-        if (mode === 'data' && fileSize !== undefined && fileSize > EMOJI_MAX_BYTES) {
-          spinner.warn(`Image is ${Math.round(fileSize / 1024)} KB; Slack's guidance is 128×128 / 64 KB — it may be downscaled.`);
-          spinner.start('Adding custom emoji...');
-        }
+        warnIfOversized(spinner, fileSize);
 
         const result = mode === 'data'
           ? await addCustomEmoji(client, validName, options.file)
           : await addCustomEmojiAlias(client, validName, aliasTarget as string);
 
-        if (result.is_alias) {
-          spinner.succeed(`Added alias :${result.name}: → :${result.alias_for}:`);
-        } else {
-          spinner.succeed(`Added :${result.name}:`);
-        }
-
-        if (options.json) {
-          writeJson(result);
-        }
+        reportAdded(result, spinner, options.json);
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to add custom emoji' });
       }

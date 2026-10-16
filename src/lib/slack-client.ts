@@ -73,6 +73,75 @@ interface CallMeta {
   httpStatus?: number;
 }
 
+// One browser-auth form field: objects as JSON, everything else as a string.
+function browserFormValue(value: unknown): string {
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+// The body of a browser-auth call, token first and `undefined` params left out.
+// A Blob param means a multipart FormData body with no Content-Type, so fetch
+// sets the multipart type with its boundary; anything else is urlencoded.
+function buildBrowserBody(
+  params: Record<string, any>,
+  xoxcToken: string,
+): { body: FormData | URLSearchParams; contentType?: string } {
+  const entries = Object.entries(params).filter(([, value]) => value !== undefined);
+  if (entries.some(([, value]) => value instanceof Blob)) {
+    const form = new FormData();
+    form.append('token', xoxcToken);
+    for (const [key, value] of entries) {
+      if (value instanceof Blob) {
+        form.append(key, value, (value as any).name ?? key);
+      } else {
+        form.append(key, browserFormValue(value));
+      }
+    }
+    return { body: form };
+  }
+
+  const formParams: Record<string, string> = { token: xoxcToken };
+  for (const [key, value] of entries) {
+    formParams[key] = browserFormValue(value);
+  }
+  return { body: new URLSearchParams(formParams), contentType: 'application/x-www-form-urlencoded' };
+}
+
+// The error for a non-2xx browser-auth response. Best effort on the body: one
+// that already errored rejects its cancel(), and that must not replace the
+// transport error the retry policy acts on.
+async function transportErrorFor(response: Response): Promise<SlackTransportError> {
+  await response.body?.cancel().catch(() => {});
+  return new SlackTransportError(
+    `Slack API error: HTTP error! status: ${response.status}`,
+    response.status,
+    parseRetryAfter(response.headers.get('retry-after')),
+    false,
+  );
+}
+
+// The JSON of a 2xx browser-auth response. An `ok: false` payload and an
+// unparseable body both become `Slack API error: …`; the former keeps the full
+// payload on `slackData` so callers can inspect structured non-error fields
+// (e.g. conversations.leave's `not_in_channel`, which comes back with ok:false
+// but no `error` string).
+async function parseBrowserResponse(response: Response): Promise<any> {
+  try {
+    const data: any = await response.json();
+    if (!data.ok) {
+      const err = new Error(data.error || 'Unknown API error');
+      (err as any).slackData = data;
+      throw err;
+    }
+    return data;
+  } catch (error: any) {
+    const wrapped = new Error(`Slack API error: ${error.message}`);
+    if (error && typeof error === 'object' && 'slackData' in error) {
+      (wrapped as any).slackData = (error as any).slackData;
+    }
+    throw wrapped;
+  }
+}
+
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Routes @slack/web-api's own logging (rate-limit retries, response warnings,
@@ -449,35 +518,12 @@ export class SlackClient {
       'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
     };
 
-    // A Blob param (e.g. emoji.add's image) means a multipart upload: build a
-    // FormData body and let fetch set the multipart Content-Type with its
-    // boundary. Everything else is urlencoded. Either way the call stays inside
-    // request() -> attempt(), so it keeps its rate-limiter slot, retry policy
-    // and auth-error mapping.
-    const hasBlob = Object.values(params).some((v) => v instanceof Blob);
-    let body: FormData | URLSearchParams;
-    const headers = { ...baseHeaders };
-    if (hasBlob) {
-      const form = new FormData();
-      form.append('token', this.config.xoxc_token);
-      for (const [key, value] of Object.entries(params)) {
-        if (value === undefined) continue;
-        if (value instanceof Blob) {
-          form.append(key, value, (value as any).name ?? key);
-        } else {
-          form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
-        }
-      }
-      body = form;
-    } else {
-      const formParams: Record<string, string> = { token: this.config.xoxc_token };
-      for (const [key, value] of Object.entries(params)) {
-        if (value === undefined) continue;
-        formParams[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
-      }
-      headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      body = new URLSearchParams(formParams);
-    }
+    // A Blob param (e.g. emoji.add's image) means a multipart upload; see
+    // buildBrowserBody(). Either way the call stays inside request() ->
+    // attempt(), so it keeps its rate-limiter slot, retry policy and
+    // auth-error mapping.
+    const { body, contentType } = buildBrowserBody(params, this.config.xoxc_token);
+    const headers = contentType ? { ...baseHeaders, 'Content-Type': contentType } : baseHeaders;
 
     let response: Response;
     try {
@@ -489,37 +535,10 @@ export class SlackClient {
     meta.httpStatus = response.status;
 
     if (!response.ok) {
-      // Best effort: a body that already errored rejects its cancel(), and that
-      // must not replace the transport error the retry policy acts on.
-      await response.body?.cancel().catch(() => {});
-      throw new SlackTransportError(
-        `Slack API error: HTTP error! status: ${response.status}`,
-        response.status,
-        parseRetryAfter(response.headers.get('retry-after')),
-        false,
-      );
+      throw await transportErrorFor(response);
     }
 
-    try {
-      const data: any = await response.json();
-
-      if (!data.ok) {
-        const err = new Error(data.error || 'Unknown API error');
-        // Preserve the full Slack payload so callers can inspect structured
-        // non-error fields (e.g. conversations.leave's `not_in_channel`, which
-        // comes back with ok:false but no `error` string).
-        (err as any).slackData = data;
-        throw err;
-      }
-
-      return data;
-    } catch (error: any) {
-      const wrapped = new Error(`Slack API error: ${error.message}`);
-      if (error && typeof error === 'object' && 'slackData' in error) {
-        (wrapped as any).slackData = (error as any).slackData;
-      }
-      throw wrapped;
-    }
+    return parseBrowserResponse(response);
   }
 
   // Test authentication

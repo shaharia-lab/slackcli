@@ -74,7 +74,9 @@ interface CallMeta {
 }
 
 // One browser-auth form field: objects as JSON, everything else as a string.
-function browserFormValue(value: unknown): string {
+// Typed `any` like the params it comes from: `unknown` makes Sonar read the
+// String() branch as a possible '[object Object]' (S6551).
+function browserFormValue(value: any): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 

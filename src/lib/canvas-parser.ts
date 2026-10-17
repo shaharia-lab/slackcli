@@ -217,7 +217,8 @@ function convertListBlock(html: string, style: string, depth: number): string {
   for (const part of parts) {
     if (part.type === 'item') {
       const isChecked = /class="checked"/.test(part.attrs);
-      const text = part.content.replace(/<\/?[a-zA-Z][^>]*>/g, '').trim();
+      // Convert links before stripping tags, or the URL is lost
+      const text = part.content.replace(LINK_ALL_RE, '[$3]($2)').replace(/<\/?[a-zA-Z][^>]*>/g, '').trim();
       if (!text) continue;
 
       result += formatListItem(style, indent, text, isChecked, itemIndex);
@@ -316,15 +317,16 @@ function convertBlocks(html: string): string {
   let result = html;
 
   // Headings
-  result = result.replace(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi, (_m, c: string) => `\n# ${stripTags(c).trim()}\n\n`);
-  result = result.replace(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi, (_m, c: string) => `\n## ${stripTags(c).trim()}\n\n`);
-  result = result.replace(/<h3\b[^>]*>([\s\S]*?)<\/h3>/gi, (_m, c: string) => `\n### ${stripTags(c).trim()}\n\n`);
+  const heading = (c: string) => stripTags(c.replace(LINK_ALL_RE, '[$3]($2)')).trim();
+  result = result.replace(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi, (_m, c: string) => `\n# ${heading(c)}\n\n`);
+  result = result.replace(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi, (_m, c: string) => `\n## ${heading(c)}\n\n`);
+  result = result.replace(/<h3\b[^>]*>([\s\S]*?)<\/h3>/gi, (_m, c: string) => `\n### ${heading(c)}\n\n`);
 
   // Blockquotes
   result = result.replace(
     /<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi,
     (_m, c: string) => {
-      const text = stripTags(c.replace(/<br\s*\/?>/gi, '\n')).trim();
+      const text = stripTags(c.replace(LINK_ALL_RE, '[$3]($2)').replace(/<br\s*\/?>/gi, '\n')).trim();
       return '\n' + text.split('\n').map(line => `> ${line}`).join('\n') + '\n\n';
     },
   );

@@ -209,6 +209,28 @@ describe('canvasHtmlToMarkdown', () => {
       expect(canvasHtmlToMarkdown(`<p class='line'><lnk>plain</lnk></p>`)).toBe('plain\n');
     });
 
+    it('should keep links in headings, list items and blockquotes (#424, #426)', () => {
+      const html = `<h1><a href="https://example.com/h1">Title</a></h1>
+<blockquote>Quote <lnk href="https://example.com/q">source</lnk></blockquote>
+<h2>See <lnk href="https://example.com/h2">heading</lnk></h2>
+<div data-section-style='5'><ul>
+<li class='parent'><a href="https://example.com/li">item</a><br/></li>
+<ul>
+<li class=''><lnk href="https://example.com/nested">nested</lnk><br/></li>
+</ul>
+</ul></div>
+<div data-section-style='7'><ul>
+<li class='checked'><lnk href="https://example.com/todo">task</lnk><br/></li>
+</ul></div>`;
+      const result = canvasHtmlToMarkdown(html);
+      expect(result).toContain('# [Title](https://example.com/h1)');
+      expect(result).toContain('## See [heading](https://example.com/h2)');
+      expect(result).toContain('- [item](https://example.com/li)');
+      expect(result).toContain('  - [nested](https://example.com/nested)');
+      expect(result).toContain('- [x] [task](https://example.com/todo)');
+      expect(result).toContain('> Quote [source](https://example.com/q)');
+    });
+
     it('should preserve underlined text without formatting', () => {
       const result = canvasHtmlToMarkdown(UNDERLINE);
       expect(result).toContain('underlined text');

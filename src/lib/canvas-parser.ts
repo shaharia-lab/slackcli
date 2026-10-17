@@ -33,6 +33,15 @@ export function isAuthPage(html: string): boolean {
 // Pipeline steps
 // ---------------------------------------------------------------------------
 
+/**
+ * A hyperlink: `<a href="url">text</a>`, or `<lnk href="url">text</lnk>`, the
+ * tag Slack's canvas HTML actually uses (#423). The back-reference makes the
+ * closing tag match the opening one. Groups: 1 tag, 2 url, 3 text.
+ */
+const LINK_SOURCE = String.raw`<(a|lnk)\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/\1>`;
+const LINK_ONE_RE = new RegExp(LINK_SOURCE, 'i');
+const LINK_ALL_RE = new RegExp(LINK_SOURCE, 'gi');
+
 /** Extract meaningful content from full HTML document. */
 function extractContent(html: string): string {
   const mainMatch = /<main\b[^>]*>([\s\S]*)<\/main>/i.exec(html);
@@ -99,6 +108,7 @@ function stripNoise(html: string): string {
  * - User mentions: <control data-remapped...><a>@U...</a></control>
  * - Channel mentions: <control data-remapped...><a>#C...</a></control>
  * - Links inside control: <control data-remapped...><a href="url">text</a></control>
+ *   (or <lnk href="url">text</lnk>, Slack's own link tag)
  * - Dates/text: <control data-remapped...>September 15th</control>
  */
 function convertControlElements(html: string): string {
@@ -119,9 +129,9 @@ function convertControlElements(html: string): string {
       const channelMatch = /<a[^>]*>#(C[A-Z0-9]+)<\/a>/i.exec(inner);
       if (channelMatch) return `<#${channelMatch[1]}>`;
 
-      // Link with href: <a href="url">text</a>
-      const linkMatch = /<a\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i.exec(inner);
-      if (linkMatch) return `[${linkMatch[2]}](${linkMatch[1]})`;
+      // Link with href: <a href="url">text</a> or <lnk href="url">text</lnk>
+      const linkMatch = LINK_ONE_RE.exec(inner);
+      if (linkMatch) return `[${linkMatch[3]}](${linkMatch[2]})`;
 
       // Plain text (dates, etc.)
       const text = stripAngleSpans(inner).trim();
@@ -354,7 +364,7 @@ function convertInline(html: string): string {
   // Inline code
   result = result.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, '`$1`');
   // Links
-  result = result.replace(/<a\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)');
+  result = result.replace(LINK_ALL_RE, '[$3]($2)');
   // Underline (no markdown equiv — just unwrap)
   result = result.replace(/<\/?u\b[^>]*>/gi, '');
   // Line breaks

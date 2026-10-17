@@ -16,6 +16,9 @@ const FORMATTING = `<p class='line'><b>bold</b> and <i>italic</i> and <del>strik
 
 const LINK = `<p class='line'>Visit <a href="https://example.com">Example</a></p>`;
 
+// Slack's canvas HTML marks hyperlinks with its own <lnk> tag (#423)
+const LNK_LINK = `<p class='line'>Visit <lnk href="https://example.com/docs">the docs</lnk> today</p>`;
+
 const UNDERLINE = `<p class='line'><u>underlined text</u></p>`;
 
 const BULLET_LIST = `<div data-section-style='5'><ul>
@@ -112,6 +115,8 @@ const CHANNEL_MENTION = `<control data-remapped="true"><a>#CNMU9L92Q</a></contro
 
 const MESSAGE_LINK = `<control data-remapped="true"><a href="https://team.slack.com/archives/C0C78SG9L/p1758150775836749">message</a></control>`;
 
+const MESSAGE_LNK = `<control data-remapped="true"><lnk href="https://team.slack.com/archives/C0C78SG9L/p1758150775836749">message</lnk></control>`;
+
 const DATE_ELEMENT = `<control data-remapped="true">September 15th</control>`;
 
 const EMBEDDED_FILE = `<p class='embedded-file'>File ID: F08TY7LMG0J File URL: https://team.slack.com/files/U09FF/F08TY7LMG0J/_confessions.gif</p>`;
@@ -174,6 +179,34 @@ describe('canvasHtmlToMarkdown', () => {
     it('should convert links', () => {
       const result = canvasHtmlToMarkdown(LINK);
       expect(result).toContain('[Example](https://example.com)');
+    });
+
+    it('should convert Slack <lnk> links like <a> links (#423)', () => {
+      expect(canvasHtmlToMarkdown(LNK_LINK)).toBe('Visit [the docs](https://example.com/docs) today\n');
+    });
+
+    it('should convert every <lnk> and <a> link on one line', () => {
+      const html = `<p class='line'><lnk href="https://a.example">A</lnk>, <a href="https://b.example">B</a> and <LNK href="https://c.example" target="_blank">C</LNK></p>`;
+      expect(canvasHtmlToMarkdown(html)).toBe('[A](https://a.example), [B](https://b.example) and [C](https://c.example)\n');
+    });
+
+    it('should keep inline formatting inside a <lnk> link', () => {
+      const html = `<p class='line'><lnk href="https://example.com"><b>bold</b> link</lnk></p>`;
+      expect(canvasHtmlToMarkdown(html)).toBe('[**bold** link](https://example.com)\n');
+    });
+
+    it('should not pair an opening <a> with a closing </lnk>', () => {
+      const html = `<p class='line'><a href="https://a.example">one</lnk> two</p>`;
+      expect(canvasHtmlToMarkdown(html)).toBe('one two\n');
+    });
+
+    it('should not pair an opening <lnk> with a closing </a>', () => {
+      const html = `<p class='line'><lnk href="https://a.example">one</a> two</p>`;
+      expect(canvasHtmlToMarkdown(html)).toBe('one two\n');
+    });
+
+    it('should not treat a <lnk> without href as a link', () => {
+      expect(canvasHtmlToMarkdown(`<p class='line'><lnk>plain</lnk></p>`)).toBe('plain\n');
     });
 
     it('should preserve underlined text without formatting', () => {
@@ -312,6 +345,10 @@ describe('canvasHtmlToMarkdown', () => {
       expect(result).toContain('[message](https://team.slack.com/archives/C0C78SG9L/p1758150775836749)');
     });
 
+    it('should convert <lnk> links inside control elements (#423)', () => {
+      expect(canvasHtmlToMarkdown(MESSAGE_LNK)).toBe('[message](https://team.slack.com/archives/C0C78SG9L/p1758150775836749)\n');
+    });
+
     it('should convert date control elements to plain text', () => {
       const result = canvasHtmlToMarkdown(DATE_ELEMENT);
       expect(result).toContain('September 15th');
@@ -364,6 +401,14 @@ describe('canvasHtmlToMarkdown', () => {
       expect(result).toContain('Alice');
       expect(result).not.toContain('<h1>');
       expect(result).not.toContain('<b>');
+    });
+
+    it('should convert <lnk> links inside table cells (#423)', () => {
+      const html = `<table>
+<tr><td><p class='line'>Name</p></td><td><p class='line'>Link</p></td></tr>
+<tr><td><p class='line'>Docs</p></td><td><p class='line'><lnk href="https://example.com/docs">docs</lnk></p></td></tr>
+</table>`;
+      expect(canvasHtmlToMarkdown(html)).toContain('| Docs | [docs](https://example.com/docs) |');
     });
 
     it('should preserve user mentions inside table cells', () => {

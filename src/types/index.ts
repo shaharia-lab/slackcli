@@ -582,7 +582,7 @@ export interface DryRunWorkspace {
 }
 
 export interface DryRunTarget {
-  // channel | user | message | draft | usergroup | scheduled_message
+  // channel | user | message | draft | usergroup | scheduled_message | emoji | canvas
   kind: string;
   // Absent only when the write creates the target (usergroups create).
   id?: string;

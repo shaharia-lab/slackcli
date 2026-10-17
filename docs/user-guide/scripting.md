@@ -15,7 +15,7 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 
 The writing commands support it too — `messages send`, `messages edit`, `messages delete`,
 `messages react`, `messages unreact`, `messages draft`, `messages send-draft`, `messages delete-draft`, `messages schedule`,
-`messages delete-scheduled`, `emoji add`, `emoji remove`, the `usergroups` write verbs (`create`, `update`, `add`,
+`messages delete-scheduled`, `emoji add`, `emoji remove`, `canvas create`, `canvas edit`, the `usergroups` write verbs (`create`, `update`, `add`,
 `remove`, `enable`, `disable`), the `conversations` membership write/self
 verbs (`members add`, `members remove`, `join`, `leave`), and
 `conversations mark-read` — where it returns the
@@ -137,7 +137,8 @@ Every command that changes something in Slack takes `--dry-run`:
 `messages send`, `edit`, `delete`, `react`, `unreact`, `draft`, `send-draft`, `delete-draft`,
 `schedule`, `delete-scheduled`;
 `conversations members add`, `members remove`, `join`, `leave`, `mark-read`;
-`emoji add`, `remove`; and
+`emoji add`, `remove`;
+`canvas create`, `edit`; and
 `usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.
 
 A dry run does everything except the write: it picks the workspace, resolves
@@ -234,7 +235,7 @@ failure line is left out, so that last line parses on its own:
 | `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, a channel name or handle that matches more than one ID, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a `--at` or `--in` that is unreadable, in the past or more than 120 days ahead (also Slack's `time_in_past`, `time_too_far`), a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
 | `network` | Slack could not be reached, or answered with a 5xx | Retry |
 | `confirmation_required` | A write needs `--yes` when stdin is not a terminal, or the prompt was declined | Pass `--yes` once the write is confirmed |
-| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages and canvas sections need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
+| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages and the canvas sections, create and edit commands need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
 | `unknown` | Anything else | Read `message` |
 
 ```bash
@@ -471,6 +472,10 @@ done
   with a non-zero exit when stdin is not a terminal and `--yes` is absent. It
   reads the pending list before asking, so a refusal still makes that one read.
   See [Messages](messages.md#messages-delete-scheduled).
+- **`canvas edit --operation replace|delete` needs `--yes`.** Same rule: it
+  refuses to change the canvas with a non-zero exit when stdin is not a terminal
+  and `--yes` is absent. The inserts and `rename` do not ask. See
+  [Canvas](canvas.md#canvas-edit).
 - **`--dry-run` never needs `--yes`.** It changes nothing, so it never prompts
   and is not refused when stdin is not a terminal. See [`--dry-run`](#--dry-run).
 - **`files download` needs `--yes` to write outside the working directory.** An

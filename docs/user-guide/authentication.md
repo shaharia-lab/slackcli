@@ -26,7 +26,8 @@ in one call (`conversations unread --messages`).
 
 Some features go the other way and need a standard token: scheduling a message
 for later (`messages schedule`, `messages list-scheduled`,
-`messages delete-scheduled`) and looking up canvas sections (`canvas sections`).
+`messages delete-scheduled`) and the canvas sections, create and edit commands (`canvas sections`,
+`canvas create`, `canvas edit`).
 Slack answers its scheduling and canvases APIs with `not_allowed_token_type` on a
 browser session, so those commands refuse a browser profile before calling Slack.
 
@@ -55,6 +56,7 @@ Useful scopes, by what you want to do:
 | Search messages | `search:read` (user tokens only) |
 | Read canvases | `files:read` |
 | Look up canvas sections | `canvases:read` |
+| Create and edit canvases | `canvases:write` |
 
 ## 2. Automatic browser login (easiest)
 

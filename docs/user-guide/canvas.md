@@ -1,8 +1,10 @@
-# Read a Slack Canvas as Markdown
+# Read and edit Slack canvases
 
 `slackcli canvas` lists Slack canvases and reads them as Markdown, which makes
 them usable in a terminal, a diff, or an AI agent's context. `canvas sections`
-finds the IDs of a canvas's sections by section type or text.
+finds the IDs of a canvas's sections by section type or text, and `canvas create`
+and `canvas edit` write canvases from Markdown, so a script can keep a status
+page or a checklist current: read it, find the section, edit it.
 
 ## `canvas list`
 
@@ -127,3 +129,95 @@ With no match, `section_count` is `0` and `sections` is empty.
 `not_allowed_token_type` on a browser session (`xoxc`/`xoxd`), so with a browser
 profile the command fails with `unsupported_auth_type` before calling Slack. The
 token needs the `canvases:read` scope.
+
+## `canvas create`
+
+Create a standalone canvas from Markdown, through Slack's `canvases.create`,
+optionally added to a channel as a tab.
+
+```bash
+slackcli canvas create --title "Release checklist" --markdown-file ./checklist.md
+slackcli canvas create --title "Status" --channel C1234567890 --markdown-file - < ./status.md
+slackcli canvas create --title "Notes" --markdown-file ./notes.md --json
+slackcli canvas create --title "Notes" --markdown-file ./notes.md --dry-run
+```
+
+| Option | Purpose |
+|---|---|
+| `--title <title>` | Title of the new canvas |
+| `--markdown-file <path>` | Markdown file for the content; `-` reads piped standard input |
+| `--channel <id>` | Channel ID, URL or name (`"#general"`) to add the canvas to as a tab |
+| `--workspace <id\|name>` | Workspace to use |
+| `--json` | JSON output: `{ canvas_id, title?, channel_id? }` |
+| `--dry-run` | Show what would be created without creating it |
+
+Give `--title`, `--markdown-file` or both. Free Slack workspaces cannot create
+standalone canvases, so there `--channel` is needed, and each channel can hold
+only one canvas tab; Slack's refusal is reported as `permission_denied`. The new canvas
+ID is in the success line on stderr and in `canvas_id` under `--json`.
+
+## `canvas edit`
+
+Apply one change to a canvas, through Slack's `canvases.edit` (it takes exactly
+one change per call).
+
+```bash
+# Add to the end, or the start
+slackcli canvas edit F1234567890 --operation insert_at_end --markdown-file ./update.md
+
+# Insert after a section found with canvas sections
+section=$(slackcli canvas sections F1234567890 --type h2 --contains Status --json | jq -r '.sections[0].id')
+slackcli canvas edit F1234567890 --operation insert_after --section "$section" --markdown-file - < ./item.md
+
+# Replace that section, or delete it (both ask for confirmation)
+slackcli canvas edit F1234567890 --operation replace --section "$section" --markdown-file ./status.md --yes
+slackcli canvas edit F1234567890 --operation delete --section "$section" --yes
+
+# Rename the canvas
+slackcli canvas edit F1234567890 --operation rename --title "Q3 plan"
+```
+
+| Option | Purpose |
+|---|---|
+| `--operation <operation>` | `insert_at_start`, `insert_at_end`, `insert_before`, `insert_after`, `replace`, `delete` or `rename` |
+| `--section <section-id>` | The section to act on, from `canvas sections` |
+| `--markdown-file <path>` | Markdown file for the content; `-` reads piped standard input |
+| `--title <title>` | The new title, with `rename` |
+| `--yes` | Confirm `replace` or `delete` without a prompt |
+| `--workspace <id\|name>` | Workspace to use |
+| `--json` | JSON output: `{ canvas_id, operation, section_id? }` |
+| `--dry-run` | Show the change without making it |
+
+What each operation needs:
+
+| Operation | `--section` | `--markdown-file` | `--title` | Asks to confirm |
+|---|---|---|---|---|
+| `insert_at_start`, `insert_at_end` | no | required | no | no |
+| `insert_before`, `insert_after` | required | required | no | no |
+| `replace` | optional: without it the **whole canvas** is replaced | required | no | yes |
+| `delete` | required | no | no | yes |
+| `rename` | no | no | required | no |
+
+A missing or extra option fails with `invalid_input` before calling Slack.
+`replace` and `delete` ask y/N in a terminal; without a terminal on stdin (an
+agent, a pipe, `--markdown-file -`) they need `--yes`, or they refuse with
+`confirmation_required` and change nothing. `--dry-run` never asks.
+
+Markdown Slack cannot apply comes back as `canvas_editing_failed`
+(`invalid_input`); `canvas_editing_locked` means another edit is in progress, so
+retry after a moment.
+
+### Markdown input
+
+`--markdown-file` takes a path, or `-` to read piped standard input (only `-`
+itself; `./-` is a file). The text is sent as read. Empty Markdown is refused, and
+so is Markdown longer than Slack's limit of 1,048,576 characters per create or
+change. A terminal on stdin is refused rather than waiting for typing.
+
+### Tokens and scopes
+
+`canvas create` and `canvas edit` work with standard app tokens only and need
+the `canvases:write` scope. Slack answers the canvases API with
+`not_allowed_token_type` on a browser session, so a browser profile fails with
+`unsupported_auth_type` before any call (a `--channel` name is not looked up
+either).

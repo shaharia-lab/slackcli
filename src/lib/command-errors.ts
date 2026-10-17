@@ -59,6 +59,9 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   ekm_access_denied: 'permission_denied',
   // canvases.*: canvases are turned off for the team.
   canvas_disabled_user_team: 'permission_denied',
+  free_teams_cannot_create_standalone_canvases: 'permission_denied',
+  free_teams_cannot_edit_standalone_canvases: 'permission_denied',
+  free_team_canvas_tab_already_exists: 'permission_denied',
   cant_update_message: 'permission_denied',
   cant_delete_message: 'permission_denied',
 
@@ -86,6 +89,10 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   too_many_attachments: 'invalid_input',
   time_in_past: 'invalid_input',
   time_too_far: 'invalid_input',
+  // canvases.*: Markdown Slack cannot apply, or a canvas past its size limit.
+  canvas_editing_failed: 'invalid_input',
+  canvas_creation_failed: 'invalid_input',
+  canvas_too_large: 'invalid_input',
 
   not_allowed_token_type: 'unsupported_auth_type',
 

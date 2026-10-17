@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`canvas sections`**: look up the section IDs of a canvas by section type (`--type h2`, `any_header`, `list`, `table`, …), by text (`--contains`), or both, through Slack's `canvases.sections.lookup`, so a script can target a section without guessing its ID. Takes a canvas ID or URL, `--json` (`{ canvas_id, section_count, sections: [{ id }] }`), `--fields` and `--workspace`; without `--json` it prints one ID per line. Standard app tokens only (`canvases:read`): Slack refuses the canvases API to browser sessions, so a browser profile fails with `unsupported_auth_type` before any call (#431)
+- **`canvas create` and `canvas edit`**: create a canvas from Markdown (`--title`, `--markdown-file <path|->`, optionally tabbed in a channel with `--channel`), and apply one change to a canvas (`--operation insert_at_start|insert_at_end|insert_before|insert_after|replace|delete|rename`, with `--section` from `canvas sections`, `--markdown-file` or `--title`), so a status page or checklist can be kept current from a script. Each operation's required options are checked before any Slack call; Markdown is read from a file or standard input and refused past Slack's 1,048,576-character limit. Both take `--json`, `--dry-run` and `--workspace`; `replace` and `delete` ask for confirmation (`--yes`), the inserts, `rename` and `create` do not. Standard app tokens only (`canvases:write`), refused on browser sessions before any call (#431)
 
 ## [0.16.0] - 2026-10-17
 

@@ -77,3 +77,75 @@ describe('lookupCanvasSections', () => {
     expect(seen).toEqual([['canvases.sections.lookup', { canvas_id: 'F123', criteria: '{"section_types":["any_header"]}' }]]);
   });
 });
+
+describe('createCanvas', () => {
+  it('sends the title, the Markdown as document_content and the channel, and returns the ID', async () => {
+    const { client, calls } = clientFor(STANDARD, { ok: true, canvas_id: 'F0NEW' });
+
+    const id = await client.createCanvas({ title: 'Notes', markdown: '# Hi\n', channelId: 'C123' });
+
+    expect(id).toBe('F0NEW');
+    expect(calls).toStrictEqual([{
+      method: 'canvases.create',
+      params: { title: 'Notes', document_content: '{"type":"markdown","markdown":"# Hi\\n"}', channel_id: 'C123' },
+    }]);
+  });
+
+  it('leaves out what was not given', async () => {
+    const { client, calls } = clientFor(STANDARD, { ok: true, canvas_id: 'F0NEW' });
+
+    await client.createCanvas({ title: 'Notes' });
+    await client.createCanvas({ markdown: 'x' });
+
+    expect(calls.map((call) => call.params)).toStrictEqual([
+      { title: 'Notes' },
+      { document_content: '{"type":"markdown","markdown":"x"}' },
+    ]);
+  });
+
+  it.each([[{ ok: true }], [{ ok: true, canvas_id: '' }], [{ ok: true, canvas_id: 7 }], [null]])(
+    'fails when Slack answers %j without a canvas ID',
+    async (answer) => {
+      const { client } = clientFor(STANDARD, answer);
+      await expect(client.createCanvas({ title: 'Notes' })).rejects.toThrow('returned no canvas ID');
+    },
+  );
+
+  it('refuses browser session tokens before making a request', async () => {
+    const { client, calls } = clientFor(BROWSER);
+
+    await expect(client.createCanvas({ title: 'Notes' })).rejects.toThrow(CANVAS_AUTH_MESSAGE);
+    expect(calls).toEqual([]);
+  });
+
+  it('is never repeated after an ambiguous failure', () => {
+    expect(isReadMethod('canvases.create')).toBe(false);
+  });
+});
+
+describe('editCanvas', () => {
+  it('sends the canvas ID and the one change as a JSON array', async () => {
+    const { client, calls } = clientFor(STANDARD);
+
+    await client.editCanvas('F123', { operation: 'insert_after', section_id: 'temp:C:abc', document_content: { type: 'markdown', markdown: '- x' } });
+
+    expect(calls).toStrictEqual([{
+      method: 'canvases.edit',
+      params: {
+        canvas_id: 'F123',
+        changes: '[{"operation":"insert_after","section_id":"temp:C:abc","document_content":{"type":"markdown","markdown":"- x"}}]',
+      },
+    }]);
+  });
+
+  it('refuses browser session tokens before making a request', async () => {
+    const { client, calls } = clientFor(BROWSER);
+
+    await expect(client.editCanvas('F123', { operation: 'delete', section_id: 'temp:C:abc' })).rejects.toThrow(UnsupportedAuthTypeError);
+    expect(calls).toEqual([]);
+  });
+
+  it('is never repeated after an ambiguous failure', () => {
+    expect(isReadMethod('canvases.edit')).toBe(false);
+  });
+});

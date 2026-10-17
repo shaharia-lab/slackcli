@@ -6,6 +6,16 @@ import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../l
 import { canvasHtmlToMarkdown } from '../lib/canvas-parser.ts';
 import { buildSectionCriteria, sectionsOf } from '../lib/canvas-sections.ts';
 import {
+  buildCanvasChange,
+  checkEditOptions,
+  isDestructiveOperation,
+  parseEditOperation,
+  readCanvasMarkdown,
+  type CanvasEditOperation,
+} from '../lib/canvas-write.ts';
+import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
+import { confirmWrite } from './usergroups.ts';
+import {
   applyCanvasMentions,
   CanvasReadError,
   fetchCanvasHtml,
@@ -13,7 +23,7 @@ import {
   resolveCanvasMentions,
 } from '../lib/canvas-read.ts';
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
-import type { SlackClient } from '../lib/slack-client.ts';
+import { CANVAS_AUTH_MESSAGE, type SlackClient } from '../lib/slack-client.ts';
 import { resolveIdentifier } from '../lib/name-resolver.ts';
 import type { SlackCanvas } from '../types/index.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, type CommandHelp } from '../lib/help.ts';
@@ -23,10 +33,11 @@ import { InvalidInputError } from '../lib/cli-errors.ts';
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
   group: {
-    summary: 'List and read Slack canvases as Markdown',
+    summary: 'List, read, create and edit Slack canvases',
     description:
       'List canvas documents in the workspace or a channel, read one as Markdown, with ' +
-      'user and channel mentions resolved to names, and look up the IDs of its sections.',
+      'user and channel mentions resolved to names, look up the IDs of its sections, ' +
+      'create a canvas from Markdown, and change one part of a canvas.',
   },
   list: {
     summary: 'List canvas documents',
@@ -93,6 +104,57 @@ const HELP = {
       'Needs the canvases:read scope.',
     ],
   },
+  create: {
+    summary: 'Create a canvas from Markdown',
+    standardOnly: true,
+    dryRun: true,
+    description:
+      'Create a standalone canvas from a Markdown file or standard input, optionally added to a ' +
+      'channel as a tab with --channel.',
+    examples: [
+      'slackcli canvas create --title "Release checklist" --markdown-file ./checklist.md',
+      'slackcli canvas create --title "Status" --channel C0123456789 --markdown-file - < ./status.md',
+      'slackcli canvas create --title "Notes" --markdown-file ./notes.md --json',
+      'slackcli canvas create --title "Notes" --markdown-file ./notes.md --dry-run',
+    ],
+    json: '{ canvas_id, title?, channel_id? }.',
+    notes: [
+      'Give --title, --markdown-file or both. --markdown-file - reads the Markdown from piped standard input.',
+      'The Markdown may be at most 1,048,576 characters (Slack\'s limit).',
+      '--channel takes a channel ID, a Slack URL or a channel name; free Slack workspaces need it.',
+      CHANNEL_NAME_NOTE,
+      'Needs the canvases:write scope.',
+    ],
+  },
+  edit: {
+    summary: 'Change one part of a canvas',
+    standardOnly: true,
+    confirms: true,
+    dryRun: true,
+    description:
+      'Apply one change to a canvas: insert Markdown at the start or end, or before or after a ' +
+      'section; replace a section or the whole canvas; delete a section; or rename the canvas. ' +
+      'Find section IDs with "canvas sections".',
+    examples: [
+      'slackcli canvas edit F0123456789 --operation insert_at_end --markdown-file ./update.md',
+      'slackcli canvas edit F0123456789 --operation insert_after --section temp:C:abc123 --markdown-file - < ./item.md',
+      'slackcli canvas edit F0123456789 --operation replace --section temp:C:abc123 --markdown-file ./status.md --yes --json',
+      'slackcli canvas edit F0123456789 --operation delete --section temp:C:abc123 --dry-run',
+      'slackcli canvas edit https://acme.slack.com/docs/T0123456789/F0123456789 --operation rename --title "Q3 plan"',
+    ],
+    json: '{ canvas_id, operation, section_id? }.',
+    notes: [
+      '<canvas-id> takes a canvas file ID (F...) or a Slack URL.',
+      '--operation is one of insert_at_start, insert_at_end, insert_before, insert_after, replace, delete, rename. ' +
+        'insert_before, insert_after and delete need --section; the inserts and replace need --markdown-file; ' +
+        'rename needs --title and takes nothing else.',
+      'replace without --section replaces the whole canvas.',
+      'Only replace and delete ask for confirmation; the inserts and rename do not. With --markdown-file - ' +
+        'stdin is not a terminal, so a replace needs --yes.',
+      'The Markdown may be at most 1,048,576 characters (Slack\'s limit).',
+      'Needs the canvases:write scope.',
+    ],
+  },
 } satisfies Record<string, CommandHelp>;
 
 // Warn when a pasted link points at a different workspace than the one we will call,
@@ -131,6 +193,37 @@ async function resolveChannelOption(
   return resolveIdentifier(client, raw, id, 'channel', '--channel', {
     onProgress: (text) => { spinner.text = text; },
   });
+}
+
+// A --title that is given must say something.
+function titleOption(title: string | undefined): string | undefined {
+  if (title !== undefined && title.trim() === '') {
+    throw new InvalidInputError('--title needs some text');
+  }
+  return title;
+}
+
+// The confirmation question for a change that removes content.
+function confirmPrompt(canvasId: string, operation: CanvasEditOperation, section: string | undefined): string {
+  if (operation === 'delete') return `Delete section ${section} from canvas ${canvasId}?`;
+  return section === undefined
+    ? `Replace the whole content of canvas ${canvasId}?`
+    : `Replace section ${section} of canvas ${canvasId}?`;
+}
+
+// What a successful edit did, for the spinner's closing line.
+function editSummary(canvasId: string, operation: CanvasEditOperation, section: string | undefined): string {
+  if (operation === 'rename') return `Renamed canvas ${canvasId}`;
+  if (operation === 'delete') return `Deleted section ${section} from canvas ${canvasId}`;
+  if (operation === 'replace' && section === undefined) return `Replaced the content of canvas ${canvasId}`;
+  return section === undefined
+    ? `Applied ${operation} to canvas ${canvasId}`
+    : `Applied ${operation} to section ${section} of canvas ${canvasId}`;
+}
+
+// Drop keys whose value is undefined, so --json shows only what is there.
+function definedOnly(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 export function createCanvasCommand(): Command {
@@ -301,6 +394,121 @@ export function createCanvasCommand(): Command {
         if (sections.length > 0) writeText(sections.map((section) => section.id).join('\n'));
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to look up canvas sections' });
+      }
+    });
+
+  // Create a canvas
+  describeCommand(canvas.command('create'), HELP.create)
+    .option('--title <title>', 'Title of the new canvas')
+    .option('--markdown-file <path>', 'Markdown file for the content, or - for standard input')
+    .option('--channel <id>', 'Channel ID, URL or name to add the canvas to as a tab')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (options) => {
+      const spinner = ora('Creating canvas...').start();
+
+      try {
+        const title = titleOption(options.title);
+        if (title === undefined && options.markdownFile === undefined) {
+          throw new InvalidInputError('Give --title, --markdown-file or both');
+        }
+        const channelInput = options.channel
+          ? normalizeIdentifier(options.channel, 'channel', '--channel')
+          : undefined;
+        const markdown = options.markdownFile === undefined
+          ? undefined
+          : await readCanvasMarkdown(options.markdownFile);
+
+        const client = await getAuthenticatedClient(options.workspace);
+        // Before the channel lookup, so a browser profile makes no Slack call.
+        client.requireStandardAuth(CANVAS_AUTH_MESSAGE);
+        warnOnWorkspaceMismatch(client, workspaceOf(options.channel));
+        const channelId = await resolveChannelOption(client, options.channel, channelInput, spinner);
+
+        if (options.dryRun) {
+          spinner.stop();
+          emitDryRun(
+            await buildPreview(client, 'create canvas', { kind: 'canvas', name: title }, { title, channel_id: channelId, markdown }),
+            options.json,
+          );
+          return;
+        }
+
+        spinner.text = 'Creating canvas...';
+        const canvasId = await client.createCanvas({ title, markdown, channelId });
+        spinner.succeed(`Created canvas ${canvasId}`);
+
+        if (options.json) {
+          writeJson(definedOnly({ canvas_id: canvasId, title, channel_id: channelId }));
+        }
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to create canvas' });
+      }
+    });
+
+  // Edit a canvas
+  describeCommand(canvas.command('edit'), HELP.edit)
+    .argument('<canvas-id>', 'Canvas file ID or URL (e.g., F1234567890)')
+    .option('--operation <operation>', 'insert_at_start, insert_at_end, insert_before, insert_after, replace, delete or rename')
+    .option('--section <section-id>', 'Section ID to act on (from "canvas sections")')
+    .option('--markdown-file <path>', 'Markdown file for the content, or - for standard input')
+    .option('--title <title>', 'New title, with --operation rename')
+    .option('--yes', 'Confirm replace or delete without a prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (canvasIdArg, options) => {
+      const spinner = ora('Editing canvas...').start();
+
+      try {
+        const canvasId = normalizeIdentifier(canvasIdArg, 'file', '<canvas-id>');
+        if (options.operation === undefined) {
+          throw new InvalidInputError('Give --operation (insert_at_start, insert_at_end, insert_before, insert_after, replace, delete or rename)');
+        }
+        const operation = parseEditOperation(options.operation);
+        const section: string | undefined = options.section?.trim();
+        // Check the combination before reading Markdown, which may wait on a pipe.
+        checkEditOptions({ operation, section: options.section, hasMarkdown: options.markdownFile !== undefined, title: options.title });
+        const markdown = options.markdownFile === undefined
+          ? undefined
+          : await readCanvasMarkdown(options.markdownFile);
+        const change = buildCanvasChange({ operation, section: options.section, markdown, title: options.title });
+
+        const client = await getAuthenticatedClient(options.workspace);
+        client.requireStandardAuth(CANVAS_AUTH_MESSAGE);
+        warnOnWorkspaceMismatch(client, workspaceOf(canvasIdArg));
+        spinner.stop();
+
+        if (options.dryRun) {
+          emitDryRun(
+            await buildPreview(
+              client,
+              'edit canvas',
+              { kind: 'canvas', id: canvasId },
+              { operation, section_id: section, markdown, title: options.title },
+            ),
+            options.json,
+          );
+          return;
+        }
+
+        if (isDestructiveOperation(operation)
+          && !(await confirmWrite(confirmPrompt(canvasId, operation, section), options.yes, options.json))) {
+          // confirmWrite() set the exit code and, under --json, reported the refusal.
+          if (!options.json) error(`Canvas ${canvasId} was not changed`);
+          return;
+        }
+
+        spinner.start('Editing canvas...');
+        await client.editCanvas(canvasId, change);
+        spinner.succeed(editSummary(canvasId, operation, section));
+
+        if (options.json) {
+          writeJson(definedOnly({ canvas_id: canvasId, operation, section_id: section }));
+        }
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to edit canvas' });
       }
     });
 

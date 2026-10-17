@@ -190,11 +190,11 @@ scheduling API, which Slack refuses to browser session tokens. Use a profile
 logged in with `auth login --token=xoxb-…` (or `xoxp-…`) and pick it with
 `--workspace`. See [Messages](messages.md#messages-schedule).
 
-## Canvas sections fail with `requires a standard Slack app token`
+## Canvas commands fail with `requires a standard Slack app token`
 
-`canvas sections` uses Slack's `canvases.*` API, which Slack refuses to browser
+`canvas sections`, `canvas create` and `canvas edit` use Slack's `canvases.*` API, which Slack refuses to browser
 session tokens (`not_allowed_token_type`). Use a profile logged in with
-`auth login --token=xoxb-…` (or `xoxp-…`) that has the `canvases:read` scope,
+`auth login --token=xoxb-…` (or `xoxp-…`) that has the `canvases:read` scope (`canvases:write` to create or edit),
 and pick it with `--workspace`. See [Canvas](canvas.md#canvas-sections).
 
 ## Truncated output when piping

@@ -5,8 +5,8 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
 
 ## Everywhere
 
-- `--json`: every read command, plus `messages send|edit|delete|draft|schedule|delete-scheduled`
-  and `usergroups` writes. JSON on stdout; spinners, warnings, errors on stderr. A failure with
+- `--json`: every read command, plus `messages send|edit|delete|draft|schedule|delete-scheduled`,
+  `canvas create|edit` and `usergroups` writes. JSON on stdout; spinners, warnings, errors on stderr. A failure with
   `--json` exits 1 and ends stderr with one line
   `{"error":{"code","message","hint"?,"retryable","slack_error"?}}`: branch on
   `code`, never on message text.
@@ -25,7 +25,7 @@ Condensed from https://github.com/shaharia-lab/slackcli/tree/main/docs/user-guid
   `conversations read|get|mark-read`. A reply link targets the parent thread
   (`get` and `mark-read` use the linked message's own timestamp).
 - `--dry-run` on every Slack write (`messages send|edit|delete|react|unreact|draft|send-draft|delete-draft|schedule|delete-scheduled`,
-  `conversations members add|remove`, `join`, `leave`, `mark-read`, every `usergroups` write):
+  `conversations members add|remove`, `join`, `leave`, `mark-read`, `canvas create|edit`, every `usergroups` write):
   resolves and validates, writes nothing, never prompts or needs `--yes`, exits 0.
   With `--json`: `{dry_run: true, action, workspace: {name,id,profile}, target: {kind,id?,name?,ts?,thread_ts?}, payload}`.
 - Exit `0` success (empty result is success), `1` failure.
@@ -145,6 +145,8 @@ saved list [--limit=N] [--state=saved|to_do|completed] [--json]
 canvas list [--limit=20] [--channel=C] [--json]
 canvas read <F…|url> | --channel=C [--raw] [--json]     # Markdown; --json has `markdown`
 canvas sections <F…|url> (--type=h1,h2,any_header,list,… | --contains=T) [--json]   # app token only; section IDs
+canvas create (--title=T | --markdown-file=F|-) [--channel=C] [--json]          # app token only; {canvas_id}
+canvas edit <F…|url> --operation=OP [--section=ID] [--markdown-file=F|-] [--title=T] [--yes] [--json]   # app token only; replace/delete need --yes
 files info <F…|url> [--json]                            # --json has private URLs
 files read <F…|url> [--raw] [--json]                    # text only, 10 MB cap; {id,name,title,mimetype,source,content}
 files download <F…|url> --output PATH                   # refuses to overwrite

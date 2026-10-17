@@ -12,6 +12,7 @@ import * as authLib from '../lib/auth.ts';
 import { READ_METHODS } from '../lib/retry.ts';
 import { SlackClient } from '../lib/slack-client.ts';
 import type { WorkspaceConfig } from '../types/index.ts';
+import { createCanvasCommand } from './canvas.ts';
 import { createConversationsCommand } from './conversations.ts';
 import { createEmojiCommand } from './emoji.ts';
 import { createMessagesCommand } from './messages.ts';
@@ -42,6 +43,7 @@ const DRAFT = {
 };
 
 const factories: Record<string, () => Command> = {
+  canvas: createCanvasCommand,
   conversations: createConversationsCommand,
   emoji: createEmojiCommand,
   messages: createMessagesCommand,
@@ -143,7 +145,7 @@ describe('--dry-run', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  // The 18 writes that work on browser tokens: a preview, exit 0, no prompt, reads only.
+  // The 20 writes that work on browser tokens: a preview, exit 0, no prompt, reads only.
   it.each([
     [['messages', 'send', '--recipient-id', 'C0123456789', '--message', 'Deploy done'], 'send message'],
     [['messages', 'edit', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100', '--message', 'Fixed'], 'edit message'],
@@ -177,15 +179,18 @@ describe('--dry-run', () => {
     expect(stderr).not.toContain('[y/N]');
   });
 
-  // The two scheduled-message writes (#379) need a standard token.
+  // The scheduled-message writes (#379) and the canvas writes (#431) need a
+  // standard token.
   it.each([
-    [['messages', 'schedule', '--recipient-id', 'C0123456789', '--message', 'Standup', '--in', '1h'], 'schedule message'],
-    [['messages', 'delete-scheduled', 'Q0123ABCDEF'], 'delete scheduled message'],
-  ])('%j previews without writing', async (argv, action) => {
+    [['messages', 'schedule', '--recipient-id', 'C0123456789', '--message', 'Standup', '--in', '1h'], 'schedule message', true],
+    [['messages', 'delete-scheduled', 'Q0123ABCDEF'], 'delete scheduled message', true],
+    [['canvas', 'create', '--title', 'Notes', '--channel', '#deploys'], 'create canvas', true],
+    [['canvas', 'edit', 'F0123456789', '--operation', 'delete', '--section', 'temp:C:abc123'], 'edit canvas', false],
+  ])('%j previews without writing', async (argv, action, reads) => {
     const preview = await runJson(argv, STANDARD);
     expect(preview).toMatchObject({ dry_run: true, action, workspace: { name: 'Acme Corp', id: 'T0123456789' } });
     expect(Object.keys(preview).sort()).toEqual(['action', 'dry_run', 'payload', 'target', 'workspace']);
-    expect(methods.length).toBeGreaterThan(0);
+    expect(methods.length > 0).toBe(reads);
     expect(methods.every((method) => READ_METHODS.has(method))).toBe(true);
     expect(stderr).not.toContain('[y/N]');
   });

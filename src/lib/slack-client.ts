@@ -20,6 +20,7 @@ import type { RetryOptions } from './retry.ts';
 import { InvalidInputError, UnsupportedAuthTypeError } from './cli-errors.ts';
 import { SlackAuthError, authErrorProfile, isAuthErrorCode } from './auth-errors.ts';
 import type { CanvasSectionCriteria } from './canvas-sections.ts';
+import type { CanvasChange } from './canvas-write.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
@@ -1184,6 +1185,33 @@ export class SlackClient {
       canvas_id: canvasId,
       criteria: JSON.stringify(criteria),
     });
+  }
+
+  // Create a canvas (standard auth only), optionally tabbed in a channel.
+  // Returns the new canvas's ID. A write: never repeated after an ambiguous
+  // failure, so a retry cannot create a second canvas.
+  async createCanvas(options: { title?: string; markdown?: string; channelId?: string } = {}): Promise<string> {
+    this.requireStandardAuth(CANVAS_AUTH_MESSAGE);
+
+    const params: Record<string, any> = {};
+    if (options.title !== undefined) params.title = options.title;
+    if (options.markdown !== undefined) {
+      params.document_content = JSON.stringify({ type: 'markdown', markdown: options.markdown });
+    }
+    if (options.channelId) params.channel_id = options.channelId;
+
+    const response = await this.request('canvases.create', params);
+    if (typeof response?.canvas_id !== 'string' || response.canvas_id === '') {
+      throw new Error('Slack created the canvas but returned no canvas ID');
+    }
+    return response.canvas_id;
+  }
+
+  // Apply one change to a canvas (standard auth only); Slack takes exactly
+  // one per call. buildCanvasChange() in canvas-write.ts validates it.
+  async editCanvas(canvasId: string, change: CanvasChange): Promise<void> {
+    this.requireStandardAuth(CANVAS_AUTH_MESSAGE);
+    await this.request('canvases.edit', { canvas_id: canvasId, changes: JSON.stringify([change]) });
   }
 
   // Get file info (used to get canvas download URL)

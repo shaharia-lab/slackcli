@@ -24,6 +24,8 @@ const BROWSER_ONLY = new Set([
 // say so.
 const STANDARD_ONLY = new Set([
   'slackcli canvas sections',
+  'slackcli canvas create',
+  'slackcli canvas edit',
   'slackcli messages schedule',
   'slackcli messages list-scheduled',
   'slackcli messages delete-scheduled',
@@ -32,6 +34,8 @@ const STANDARD_ONLY = new Set([
 // Every command that writes to Slack takes --dry-run (#328). A new write
 // command belongs here; commands that only change local state do not.
 const SLACK_WRITES = new Set([
+  'slackcli canvas create',
+  'slackcli canvas edit',
   'slackcli messages send',
   'slackcli messages edit',
   'slackcli messages delete',

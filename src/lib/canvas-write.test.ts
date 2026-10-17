@@ -49,7 +49,7 @@ describe('checkCanvasMarkdown', () => {
   it('counts characters, not UTF-16 units', () => {
     // Each emoji is two UTF-16 units but one character.
     const atLimit = '😀'.repeat(CANVAS_MARKDOWN_MAX_CHARS);
-    expect(atLimit.length).toBe(2 * CANVAS_MARKDOWN_MAX_CHARS);
+    expect(atLimit).toHaveLength(2 * CANVAS_MARKDOWN_MAX_CHARS);
     expect(() => checkCanvasMarkdown(atLimit, 'x')).not.toThrow();
     expect(() => checkCanvasMarkdown(`${atLimit}😀`, 'x')).toThrow(InvalidInputError);
   });

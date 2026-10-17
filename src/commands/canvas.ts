@@ -197,7 +197,7 @@ async function resolveChannelOption(
 
 // A --title that is given must say something.
 function titleOption(title: string | undefined): string | undefined {
-  if (title !== undefined && title.trim() === '') {
+  if (title?.trim() === '') {
     throw new InvalidInputError('--title needs some text');
   }
   return title;

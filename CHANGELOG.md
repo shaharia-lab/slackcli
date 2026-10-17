@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`canvas sections`**: look up the section IDs of a canvas by section type (`--type h2`, `any_header`, `list`, `table`, …), by text (`--contains`), or both, through Slack's `canvases.sections.lookup`, so a script can target a section without guessing its ID. Takes a canvas ID or URL, `--json` (`{ canvas_id, section_count, sections: [{ id }] }`), `--fields` and `--workspace`; without `--json` it prints one ID per line. Standard app tokens only (`canvases:read`): Slack refuses the canvases API to browser sessions, so a browser profile fails with `unsupported_auth_type` before any call (#431)
+
 ## [0.16.0] - 2026-10-17
 
 ### Added

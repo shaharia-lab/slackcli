@@ -44,7 +44,7 @@ export const BROWSER_ONLY_NOTE =
 
 export const STANDARD_ONLY_NOTE =
   'Standard app tokens only (xoxb or xoxp, from auth login). With browser session tokens it ' +
-  'fails before calling Slack, because Slack refuses its scheduling API to them.';
+  'fails before calling Slack, because Slack refuses the API it uses to them.';
 
 export const CONFIRM_NOTE =
   'Asks for confirmation (y/N on stderr) in a terminal. --yes skips the prompt. ' +

@@ -80,6 +80,7 @@ const ANSWERS: Record<string, unknown> = {
     },
   },
   downloadFile: '<h1>Notes</h1><p>hello</p>',
+  lookupCanvasSections: { ok: true, sections: [{ id: 'temp:C:abc123' }, { id: 'temp:C:def456' }] },
   listCanvases: { ok: true, files: [{ id: 'F0123456789', title: 'Notes', created: 1712345678, size: 5, permalink: 'p' }] },
   listEmoji: { ok: true, emoji: { party: 'https://emoji.example.com/party.png', fiesta: 'alias:party' } },
   getUnreadCounts: { ok: true, channels: [{ id: 'C0123456789', has_unreads: true, mention_count: 2 }] },
@@ -235,6 +236,7 @@ describe('--fields, in process', () => {
   // Every --fields command, with the argument it needs.
   const COMMAND_ARGS: Record<string, string[]> = {
     'canvas read': ['F0123456789'],
+    'canvas sections': ['F0123456789', '--type', 'h2'],
     'conversations get': ['C0123456789', '1712345678.000100'],
     'conversations read': ['C0123456789'],
     'emoji get': ['party'],
@@ -254,6 +256,7 @@ describe('--fields, in process', () => {
   const PROBE: Record<keyof typeof FIELDS_LIST_KEYS, string> = {
     'canvas list': 'id',
     'canvas read': 'markdown',
+    'canvas sections': 'id',
     'conversations get': 'ts',
     'conversations list': 'id',
     'conversations read': 'ts',
@@ -275,6 +278,10 @@ describe('--fields, in process', () => {
     'users list': 'id',
   };
 
+  // Commands whose items carry one field only (a section is just its ID), so
+  // projecting that field leaves each item as it was.
+  const SINGLE_FIELD_ITEMS = new Set(['canvas sections']);
+
   it.each(commands)('%s prints only the requested field of its items', async (path, argv) => {
     const field = PROBE[path as keyof typeof FIELDS_LIST_KEYS];
     const full = await run([...argv, '--json']);
@@ -294,7 +301,7 @@ describe('--fields, in process', () => {
     expect(items.length).toBeGreaterThan(0);
     expect(items).toHaveLength(fullItems.length);
     items.forEach((item: Record<string, unknown>, i: number) => {
-      expect(Object.keys(fullItems[i]).length).toBeGreaterThan(1);
+      expect(Object.keys(fullItems[i]).length).toBeGreaterThan(SINGLE_FIELD_ITEMS.has(path) ? 0 : 1);
       expect(item).toEqual({ [field]: fullItems[i][field] });
     });
     // Everything outside the list is what it was.

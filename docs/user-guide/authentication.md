@@ -24,11 +24,11 @@ standard auth), fetching an arbitrary thread reply by timestamp alone
 (`conversations get`), and reading the unread messages and unread thread replies
 in one call (`conversations unread --messages`).
 
-One feature goes the other way and needs a standard token: scheduling a message
+Some features go the other way and need a standard token: scheduling a message
 for later (`messages schedule`, `messages list-scheduled`,
-`messages delete-scheduled`). Slack answers its scheduling API with
-`not_allowed_token_type` on a browser session, so those commands refuse a
-browser profile before calling Slack.
+`messages delete-scheduled`) and looking up canvas sections (`canvas sections`).
+Slack answers its scheduling and canvases APIs with `not_allowed_token_type` on a
+browser session, so those commands refuse a browser profile before calling Slack.
 
 ## 1. Standard Slack app tokens
 
@@ -54,6 +54,7 @@ Useful scopes, by what you want to do:
 | Upload files | `files:write` |
 | Search messages | `search:read` (user tokens only) |
 | Read canvases | `files:read` |
+| Look up canvas sections | `canvases:read` |
 
 ## 2. Automatic browser login (easiest)
 

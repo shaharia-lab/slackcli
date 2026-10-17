@@ -368,6 +368,7 @@ slackcli search people "ada@example.com"
 slackcli saved list --state=to_do            # saved | to_do | completed
 slackcli canvas list --channel=C1234567890
 slackcli canvas read F1234567890             # Canvas -> Markdown
+slackcli canvas sections F1234567890 --type h2   # section IDs (app token)
 slackcli files info F1234567890
 slackcli files read F1234567890              # email plain_text or original text
 slackcli files download F1234567890 --output ./report.pdf

@@ -58,6 +58,8 @@ describe('classifyError', () => {
     ['message_not_found', 'not_found'],
     ['no_such_subteam', 'not_found'],
     ['invalid_scheduled_message_id', 'not_found'],
+    ['canvas_not_found', 'not_found'],
+    ['canvas_deleted', 'not_found'],
     ['missing_scope', 'permission_denied'],
     ['not_in_channel', 'permission_denied'],
     ['restricted_action', 'permission_denied'],

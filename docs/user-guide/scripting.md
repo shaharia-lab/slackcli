@@ -8,7 +8,7 @@ hand.
 Every read command supports `--json`: `conversations list`, `conversations read`,
 `conversations get`, `conversations unread`, `conversations members list`,
 `search messages`, `search channels`,
-`search people`, `saved list`, `canvas list`, `canvas read`, `team info`,
+`search people`, `saved list`, `canvas list`, `canvas read`, `canvas sections`, `team info`,
 `usergroups list`, `usergroups read`, `emoji list`, `emoji get`, `files info`,
 `files read`, `users info`, `users list`, `messages list-drafts`,
 `messages list-scheduled`, `auth whoami`, `auth list`.
@@ -119,6 +119,7 @@ Useful field sets, and what each command projects:
 | `saved list` | each of `items` | `type,channel_id,message.ts,message.text` |
 | `canvas list` | each of `canvases` | `id,title,permalink` |
 | `canvas read` | the canvas record | `id,title,markdown` |
+| `canvas sections` | each of `sections` | `id` |
 | `files info` | the file record | `id,name,mimetype,size,permalink` |
 | `files read` | the file record | `id,name,content` |
 | `emoji list` | each of `emoji` | `name,url` |
@@ -227,13 +228,13 @@ failure line is left out, so that last line parses on its own:
 | `code` | When | What to do |
 |---|---|---|
 | `auth_failed` | Slack refused the stored credentials (`invalid_auth`, `token_expired`, `token_revoked`, `not_authed`, `account_inactive`), a download returned Slack's sign-in page, or no workspace is configured | Log in again; `hint` has the command |
-| `not_found` | The channel, user, message, file, draft, pending scheduled message, user group, profile or log run does not exist (`channel_not_found`, `user_not_found`, `invalid_scheduled_message_id`, …), or a channel name, `@handle` or email matched nothing | Fix the ID or name |
+| `not_found` | The channel, user, message, file, canvas, draft, pending scheduled message, user group, profile or log run does not exist (`channel_not_found`, `user_not_found`, `invalid_scheduled_message_id`, `canvas_not_found`, …), or a channel name, `@handle` or email matched nothing | Fix the ID or name |
 | `permission_denied` | The identity may not do this (`missing_scope`, `not_in_channel`, `restricted_action`, `enterprise_is_restricted`, …) | Join the channel, add the scope, or use another profile |
 | `rate_limited` | Slack throttled the call (HTTP 429, `ratelimited`), or too many messages were scheduled for one channel in a short window (`restricted_too_many`) | Wait, then retry |
 | `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, a channel name or handle that matches more than one ID, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a `--at` or `--in` that is unreadable, in the past or more than 120 days ahead (also Slack's `time_in_past`, `time_too_far`), a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
 | `network` | Slack could not be reached, or answered with a 5xx | Retry |
 | `confirmation_required` | A write needs `--yes` when stdin is not a terminal, or the prompt was declined | Pass `--yes` once the write is confirmed |
-| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
+| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages and canvas sections need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
 | `unknown` | Anything else | Read `message` |
 
 ```bash

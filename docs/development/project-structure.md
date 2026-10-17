@@ -40,7 +40,7 @@ They hold no Slack API knowledge.
 | File | Subcommands |
 |---|---|
 | `auth.ts` | `login`, `login-browser`, `login-auto`, `whoami`, `list`, `set-default`, `remove`, `logout`, `extract-tokens`, `parse-curl` |
-| `canvas.ts` | `list`, `read` |
+| `canvas.ts` | `list`, `read`, `sections` |
 | `conversations.ts` | `list`, `read`, `get`, `unread`, `mark-read`, `members list`/`add`/`remove`, `join`, `leave` |
 | `files.ts` | `info`, `read`, `download` |
 | `logs.ts` | `path`, `show`, `clear` |
@@ -69,6 +69,7 @@ They hold no Slack API knowledge.
 | `schedule-time.ts` | `parseScheduleTime()`: the `--at` / `--in` of `messages schedule` → Slack's `post_at` (Unix seconds). Strict regexes instead of `Date.parse` or a date library; refuses impossible dates, skipped local times, the past and anything beyond `MAX_SCHEDULE_DAYS` (120). Pure, with an injected clock. |
 | `drafts.ts` | Validates draft-list limits, extracts text from `rich_text`, and projects undocumented responses into the public command contract. |
 | `canvas-parser.ts` | Slack canvas HTML → Markdown. |
+| `canvas-sections.ts` | `canvas sections`'s lookup criteria (`buildSectionCriteria()`: `--type` / `--contains`, at least one, validated before any Slack call) and the section IDs read back from `canvases.sections.lookup` (`sectionsOf()`). |
 | `canvas-read.ts` | `canvas read`'s work: resolves the canvas ID (explicit or a channel's canvas), downloads its HTML, and resolves `<@U…>` / `<#C…>` mentions. Expected failures throw `CanvasReadError` carrying their exit code. |
 | `rate-limiter.ts` | Concurrency cap and minimum interval shared by every Slack API call. Logs waits at `debug`. |
 | `auth-errors.ts` | Pure classifier for Slack's five authentication codes (`invalid_auth`, `token_expired`, `token_revoked`, `not_authed`, `account_inactive`): the meaning and fix for a profile, the three-line message, the `SlackAuthError` that `SlackClient.request()` throws for them on both auth paths, and the separate wording for a token rejected during login. |

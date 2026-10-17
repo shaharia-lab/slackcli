@@ -4,6 +4,7 @@ import { getAuthenticatedClient } from '../lib/auth.ts';
 import { error, formatCanvasList, formatCanvasContent, warning, writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { canvasHtmlToMarkdown } from '../lib/canvas-parser.ts';
+import { buildSectionCriteria, sectionsOf } from '../lib/canvas-sections.ts';
 import {
   applyCanvasMentions,
   CanvasReadError,
@@ -24,8 +25,8 @@ const HELP = {
   group: {
     summary: 'List and read Slack canvases as Markdown',
     description:
-      'List canvas documents in the workspace or a channel, and read one as Markdown, with ' +
-      'user and channel mentions resolved to names.',
+      'List canvas documents in the workspace or a channel, read one as Markdown, with ' +
+      'user and channel mentions resolved to names, and look up the IDs of its sections.',
   },
   list: {
     summary: 'List canvas documents',
@@ -66,6 +67,30 @@ const HELP = {
       'Give [canvas-id] or --channel; when both are given the canvas ID wins.',
       '--raw prints the source HTML and takes precedence over --json (stdout is then HTML, not JSON).',
       'A channel without a canvas is reported on stderr with exit 0 and no stdout. An unknown canvas ID exits 1 with Slack\'s error.',
+    ],
+  },
+  sections: {
+    summary: 'Look up section IDs in a canvas',
+    fields: 'each item of sections',
+    standardOnly: true,
+    description:
+      'Find the sections of one canvas that match a section type, a piece of text, or both, and print ' +
+      'their section IDs, one per line, so a script can target a section without guessing its ID.',
+    examples: [
+      'slackcli canvas sections F0123456789 --type h2',
+      'slackcli canvas sections F0123456789 --contains "Status"',
+      'slackcli canvas sections https://acme.slack.com/docs/T0123456789/F0123456789 --type h1,h2 --contains Status --json',
+    ],
+    json:
+      '{ canvas_id, section_count, sections: [{ id }] }, in Slack\'s order. ' +
+      'With no match, section_count is 0 and sections is empty.',
+    notes: [
+      '<canvas-id> takes a canvas file ID (F...) or a Slack URL.',
+      'Give --type, --contains or both; with both, a section must match both. --type takes ' +
+        'comma-separated section types: any_header, h1, h2, h3, or a block type such as list, ' +
+        'table, callout or blockquote (several types match any of them).',
+      'Without --json, a lookup with no match prints nothing on stdout (exit 0).',
+      'Needs the canvases:read scope.',
     ],
   },
 } satisfies Record<string, CommandHelp>;
@@ -239,6 +264,43 @@ export function createCanvasCommand(): Command {
         writeText('\n' + formatCanvasContent(file, markdown));
       } catch (err: any) {
         reportCanvasReadFailure(spinner, err, options.json);
+      }
+    });
+
+  // Look up section IDs
+  describeCommand(canvas.command('sections'), HELP.sections)
+    .argument('<canvas-id>', 'Canvas file ID or URL (e.g., F1234567890)')
+    .option('--type <list>', 'Comma-separated section types, e.g. h1,h2 or any_header')
+    .option('--contains <text>', 'Only sections containing this text')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
+    .action(async (canvasIdArg, options) => {
+      const spinner = ora('Looking up canvas sections...').start();
+
+      try {
+        const fields = fieldsOption(options);
+        const canvasId = normalizeIdentifier(canvasIdArg, 'file', '<canvas-id>');
+        const criteria = buildSectionCriteria({ type: options.type, contains: options.contains });
+
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspaceOf(canvasIdArg));
+        const sections = sectionsOf(await client.lookupCanvasSections(canvasId, criteria));
+
+        spinner.succeed(sections.length === 0 ? 'No matching sections' : `Found ${sections.length} sections`);
+
+        if (options.json) {
+          writeJson(applyFields('canvas sections', {
+            canvas_id: canvasId,
+            section_count: sections.length,
+            sections,
+          }, fields));
+          return;
+        }
+
+        if (sections.length > 0) writeText(sections.map((section) => section.id).join('\n'));
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to look up canvas sections' });
       }
     });
 

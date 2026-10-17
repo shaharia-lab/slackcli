@@ -19,9 +19,11 @@ const BROWSER_ONLY = new Set([
   'slackcli emoji remove',
 ]);
 
-// Commands that only work with a standard app token (#379): Slack refuses its
-// scheduling API to browser session tokens. Their help must say so.
+// Commands that only work with a standard app token (#379, #431): Slack refuses
+// its scheduling and canvases APIs to browser session tokens. Their help must
+// say so.
 const STANDARD_ONLY = new Set([
+  'slackcli canvas sections',
   'slackcli messages schedule',
   'slackcli messages list-scheduled',
   'slackcli messages delete-scheduled',

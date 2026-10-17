@@ -19,6 +19,7 @@ import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
 import type { RetryOptions } from './retry.ts';
 import { InvalidInputError, UnsupportedAuthTypeError } from './cli-errors.ts';
 import { SlackAuthError, authErrorProfile, isAuthErrorCode } from './auth-errors.ts';
+import type { CanvasSectionCriteria } from './canvas-sections.ts';
 
 interface ExternalUploadUrlResponse {
   upload_url?: string;
@@ -305,6 +306,12 @@ export const EMOJI_WRITE_AUTH_MESSAGE =
 export const SCHEDULED_MESSAGES_AUTH_MESSAGE =
   'Scheduled messages require a standard Slack app token (xoxb or xoxp); ' +
   'browser session tokens cannot use Slack\'s scheduling API';
+
+// The refusal of the canvases.* calls on browser session tokens: Slack answers
+// them with `not_allowed_token_type` (tested on #431 with an xoxc/xoxd session).
+export const CANVAS_AUTH_MESSAGE =
+  'This canvas command requires a standard Slack app token (xoxb or xoxp); ' +
+  'browser session tokens cannot use Slack\'s canvases API';
 
 // chat.scheduledMessages.list page size, and a bound on the pages followed so a
 // cursor that never ends cannot loop forever.
@@ -1166,6 +1173,17 @@ export class SlackClient {
     if (options.limit) params.count = options.limit;
     if (options.channel) params.channel = options.channel;
     return this.request('files.list', params);
+  }
+
+  // The IDs of a canvas's sections that match the criteria (standard auth
+  // only). Slack needs at least one criterion; buildSectionCriteria() in
+  // canvas-sections.ts guarantees it.
+  async lookupCanvasSections(canvasId: string, criteria: CanvasSectionCriteria): Promise<any> {
+    this.requireStandardAuth(CANVAS_AUTH_MESSAGE);
+    return this.request('canvases.sections.lookup', {
+      canvas_id: canvasId,
+      criteria: JSON.stringify(criteria),
+    });
   }
 
   // Get file info (used to get canvas download URL)

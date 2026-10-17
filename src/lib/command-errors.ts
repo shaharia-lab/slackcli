@@ -41,6 +41,9 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   no_such_subteam: 'not_found',
   team_not_found: 'not_found',
   invalid_scheduled_message_id: 'not_found',
+  // canvases.*: an unknown or inaccessible canvas, or one moved to the trash.
+  canvas_not_found: 'not_found',
+  canvas_deleted: 'not_found',
 
   missing_scope: 'permission_denied',
   not_in_channel: 'permission_denied',

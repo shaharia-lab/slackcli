@@ -21,6 +21,7 @@
  */
 export const READ_METHODS: ReadonlySet<string> = new Set([
   'auth.test',
+  'canvases.sections.lookup',
   'chat.getPermalink',
   'chat.scheduledMessages.list',
   'client.counts',

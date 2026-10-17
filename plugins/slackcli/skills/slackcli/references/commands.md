@@ -144,6 +144,7 @@ disable it instead. Enterprise Grid writes need `--team=T…`.
 saved list [--limit=N] [--state=saved|to_do|completed] [--json]
 canvas list [--limit=20] [--channel=C] [--json]
 canvas read <F…|url> | --channel=C [--raw] [--json]     # Markdown; --json has `markdown`
+canvas sections <F…|url> (--type=h1,h2,any_header,list,… | --contains=T) [--json]   # app token only; section IDs
 files info <F…|url> [--json]                            # --json has private URLs
 files read <F…|url> [--raw] [--json]                    # text only, 10 MB cap; {id,name,title,mimetype,source,content}
 files download <F…|url> --output PATH                   # refuses to overwrite

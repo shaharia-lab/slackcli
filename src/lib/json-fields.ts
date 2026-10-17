@@ -19,6 +19,7 @@ export const FIELDS_DESCRIPTION = 'With --json, include only these comma-separat
 export const FIELDS_LIST_KEYS = {
   'canvas list': 'canvases',
   'canvas read': null,
+  'canvas sections': 'sections',
   'conversations get': 'message',
   'conversations list': 'conversations',
   'conversations read': 'messages',

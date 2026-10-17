@@ -421,9 +421,9 @@ export function createCanvasCommand(): Command {
           : await readCanvasMarkdown(options.markdownFile);
 
         const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspaceOf(options.channel));
         // Before the channel lookup, so a browser profile makes no Slack call.
         client.requireStandardAuth(CANVAS_AUTH_MESSAGE);
-        warnOnWorkspaceMismatch(client, workspaceOf(options.channel));
         const channelId = await resolveChannelOption(client, options.channel, channelInput, spinner);
 
         if (options.dryRun) {
@@ -476,8 +476,8 @@ export function createCanvasCommand(): Command {
         const change = buildCanvasChange({ operation, section: options.section, markdown, title: options.title });
 
         const client = await getAuthenticatedClient(options.workspace);
-        client.requireStandardAuth(CANVAS_AUTH_MESSAGE);
         warnOnWorkspaceMismatch(client, workspaceOf(canvasIdArg));
+        client.requireStandardAuth(CANVAS_AUTH_MESSAGE);
         spinner.stop();
 
         if (options.dryRun) {

@@ -178,6 +178,22 @@ describe('canvas create and edit (#431)', () => {
       expect(calls).toEqual([]);
     });
 
+    it('warns when a --channel link names another workspace than the profile', async () => {
+      const other: WorkspaceConfig = { ...BROWSER, workspace_url: 'https://other.slack.com' };
+      const error = await failJson(['create', '--title', 'T', '--channel', 'https://acme.slack.com/archives/C0123456789'], other);
+
+      expect(stderr).toContain('This link belongs to the "acme" workspace but you are authenticated against "other"');
+      expect(error.code).toBe('unsupported_auth_type');
+      expect(calls).toEqual([]);
+    });
+
+    it('does not warn when the links match the profile workspace', async () => {
+      await failJson(['create', '--title', 'T', '--channel', 'https://acme.slack.com/archives/C0123456789'], BROWSER);
+      await failJson(['edit', 'https://acme.slack.com/docs/T0123456789/F0ABCDEF123', '--operation', 'rename', '--title', 'T'], BROWSER);
+
+      expect(stderr).not.toContain('This link belongs to');
+    });
+
     it('reports a free-team refusal as permission_denied', async () => {
       answers['canvases.create'] = Object.assign(new Error('Slack API error: free_teams_cannot_create_standalone_canvases'), {
         slackData: { ok: false, error: 'free_teams_cannot_create_standalone_canvases' },
@@ -301,6 +317,20 @@ describe('canvas create and edit (#431)', () => {
       const error = await failJson(['edit', 'F0123456789', '--operation', 'delete', '--section', SECTION, '--yes'], BROWSER);
 
       expect(error).toMatchObject({ code: 'unsupported_auth_type' });
+      expect(calls).toEqual([]);
+    });
+
+    it('warns when a canvas link names another workspace than the profile', async () => {
+      // Only a browser profile stores its workspace URL, so only there can a
+      // mismatch be seen; the auth refusal still follows, with no Slack call.
+      const other: WorkspaceConfig = { ...BROWSER, workspace_url: 'https://other.slack.com' };
+      const error = await failJson(
+        ['edit', 'https://acme.slack.com/docs/T0123456789/F0ABCDEF123', '--operation', 'rename', '--title', 'T'],
+        other,
+      );
+
+      expect(stderr).toContain('This link belongs to the "acme" workspace but you are authenticated against "other"');
+      expect(error.code).toBe('unsupported_auth_type');
       expect(calls).toEqual([]);
     });
 

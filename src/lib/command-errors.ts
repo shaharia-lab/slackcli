@@ -57,7 +57,7 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   enterprise_is_restricted: 'permission_denied',
   team_access_not_granted: 'permission_denied',
   ekm_access_denied: 'permission_denied',
-  // canvases.*: canvases are turned off for the team.
+  // canvases.*: canvases turned off for the team, or a free-team limit.
   canvas_disabled_user_team: 'permission_denied',
   free_teams_cannot_create_standalone_canvases: 'permission_denied',
   free_teams_cannot_edit_standalone_canvases: 'permission_denied',

@@ -204,8 +204,8 @@ agent, a pipe, `--markdown-file -`) they need `--yes`, or they refuse with
 `confirmation_required` and change nothing. `--dry-run` never asks.
 
 Markdown Slack cannot apply comes back as `canvas_editing_failed`
-(`invalid_input`); `canvas_editing_locked` means another edit is in progress, so
-retry after a moment.
+(`invalid_input`). Another edit in progress comes back as `code: "unknown"` with
+`slack_error: "canvas_editing_locked"`; that one is worth retrying after a moment.
 
 ### Markdown input
 

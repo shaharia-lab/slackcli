@@ -163,7 +163,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Search the workspace | `slackcli search messages "release notes"` | [search](docs/user-guide/search.md) |
 | Find a channel or a person | `slackcli search people "ada"` | [search](docs/user-guide/search.md) |
 | Work through "saved for later" | `slackcli saved list --state=to_do` | [saved items](docs/user-guide/saved.md) |
-| Read a Canvas as Markdown, or edit one | `slackcli canvas read F123` | [canvas](docs/user-guide/canvas.md) |
+| Read a Canvas as Markdown | `slackcli canvas read F123` | [canvas](docs/user-guide/canvas.md) |
 | Inspect or download a Slack file | `slackcli files info F123` | [files](docs/user-guide/files.md) |
 | Upload a file with a message | `slackcli messages send --file=./report.pdf …` | [messages](docs/user-guide/messages.md) |
 | Post rich Block Kit content | `slackcli messages send --blocks=@blocks.json …` | [messages](docs/user-guide/messages.md) |

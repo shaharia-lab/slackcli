@@ -133,13 +133,17 @@ describe('canvas sections (#431)', () => {
   });
 
   it('applies --fields to the sections and keeps the envelope', async () => {
+    // A section is only its ID, so a field that is not there is what shows the
+    // projection ran: every item stays, emptied, and the envelope is kept.
+    const out = await runJson(['F0123456789', '--type', 'h1', '--fields', 'title']);
+
+    expect(out).toEqual({ canvas_id: 'F0123456789', section_count: 2, sections: [{}, {}] });
+  });
+
+  it('keeps the section IDs with --fields id', async () => {
     const out = await runJson(['F0123456789', '--type', 'h1', '--fields', 'id']);
 
-    expect(out).toEqual({
-      canvas_id: 'F0123456789',
-      section_count: 2,
-      sections: [{ id: 'temp:C:abc123' }, { id: 'temp:C:def456' }],
-    });
+    expect(out.sections).toEqual([{ id: 'temp:C:abc123' }, { id: 'temp:C:def456' }]);
   });
 
   it('needs --type or --contains, and fails before any Slack call', async () => {
@@ -179,6 +183,23 @@ describe('canvas sections (#431)', () => {
     expect(error).toMatchObject({ code: 'unsupported_auth_type', retryable: false });
     expect(error.message).toContain('standard Slack app token (xoxb or xoxp)');
     expect(calls).toEqual([]);
+  });
+
+  it('warns when a canvas link names another workspace than the profile', async () => {
+    // Only a browser profile stores its workspace URL, so only there can a
+    // mismatch be seen; the auth refusal still follows.
+    const other: WorkspaceConfig = { ...BROWSER, workspace_url: 'https://other.slack.com' };
+    const error = await failJson(['https://acme.slack.com/docs/T0123456789/F0123456789', '--type', 'h1'], other);
+
+    expect(stderr).toContain('This link belongs to the "acme" workspace but you are authenticated against "other"');
+    expect(error.code).toBe('unsupported_auth_type');
+    expect(calls).toEqual([]);
+  });
+
+  it('does not warn when the link matches the profile workspace', async () => {
+    await failJson(['https://acme.slack.com/docs/T0123456789/F0123456789', '--type', 'h1'], BROWSER);
+
+    expect(stderr).not.toContain('This link belongs to');
   });
 
   it('reports a Slack refusal with its code', async () => {

@@ -82,9 +82,9 @@ after conversion, so you get `@Rafael` and `#engineering` rather than raw IDs.
 ## `canvas sections`
 
 Look up the IDs of the sections in one canvas that match a section type (a
-heading level, a list, a table, …), a piece of text, or both, through Slack's `canvases.sections.lookup`. A section ID is
-what a canvas edit targets, so a script can find "the `## Status` heading"
-instead of guessing an ID.
+heading level, a list, a table, …), a piece of text, or both, through Slack's
+`canvases.sections.lookup`. A section ID is what a canvas edit targets, so a
+script can find "the `## Status` heading" instead of guessing an ID.
 
 ```bash
 # Every level-2 heading
@@ -108,8 +108,7 @@ slackcli canvas sections https://myteam.slack.com/docs/T012AB/F1234567890 --type
 `--type` takes Slack's section types: `any_header`, `h1`, `h2`, `h3`,
 `blockquote`, `callout`, `canvas_unfurl`, `chart`, `citation`, `file_unfurl`,
 `flexbox`, `horizontal_line`, `list`, `message_unfurl`, `sfdc_record_mention`,
-`sfdc_record_unfurl`, `table`, `user_mention`, `user_unfurl`. With both `--type`
-and `--contains`, a section must match both.
+`sfdc_record_unfurl`, `table`, `user_mention`, `user_unfurl`.
 
 Give `--type`, `--contains` or both; Slack's lookup needs a criterion, so a call
 with neither fails with `invalid_input` before calling Slack, as does an unknown

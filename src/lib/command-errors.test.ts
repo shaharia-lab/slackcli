@@ -61,6 +61,7 @@ describe('classifyError', () => {
     ['canvas_not_found', 'not_found'],
     ['canvas_deleted', 'not_found'],
     ['missing_scope', 'permission_denied'],
+    ['canvas_disabled_user_team', 'permission_denied'],
     ['not_in_channel', 'permission_denied'],
     ['restricted_action', 'permission_denied'],
     ['enterprise_is_restricted', 'permission_denied'],

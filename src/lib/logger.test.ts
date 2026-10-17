@@ -582,15 +582,20 @@ describe('process integration', () => {
   it('keeps a record logged right before process.exit(1)', () => {
     const dir = join(tmp, 'logs');
     const script = join(tmp, 'exit.ts');
+    // The script lives in the temp dir, which has no node_modules, so every
+    // import is resolved from the repo and given by absolute path.
+    const logtape = Bun.resolveSync('@logtape/logtape', root);
     writeFileSync(script, `
       import { configureLogging } from ${JSON.stringify(join(root, 'src/lib/logger.ts'))};
-      import { getLogger } from '@logtape/logtape';
+      import { getLogger } from ${JSON.stringify(logtape)};
       configureLogging({ level: 'info', verbose: false, dir: ${JSON.stringify(dir)} });
       getLogger(['slackcli', 'x']).error('last words');
       process.exit(1);
     `);
 
-    const result = Bun.spawnSync([process.execPath, script], { cwd: root });
+    // --no-install stops Bun from fetching a bare import out of its global
+    // cache, which is what hid the bare import on Linux (#427).
+    const result = Bun.spawnSync([process.execPath, '--no-install', script], { cwd: root });
 
     expect(result.exitCode).toBe(1);
     const lines = readLines(join(dir, LOG_FILE_NAME));

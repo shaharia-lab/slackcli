@@ -57,7 +57,7 @@ function isSectionType(value: string): value is CanvasSectionType {
  */
 export function parseSectionTypes(input: string): CanvasSectionType[] {
   const entries = input.split(',').map((entry) => entry.trim().toLowerCase());
-  if (entries.some((entry) => entry === '')) {
+  if (entries.includes('')) {
     throw new InvalidInputError('--type needs comma-separated section types without empty entries, e.g. --type h1,h2');
   }
   const types: CanvasSectionType[] = [];

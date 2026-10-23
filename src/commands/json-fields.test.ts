@@ -206,6 +206,18 @@ describe('--fields, in process', () => {
     expect(Array.isArray(out.users)).toBe(true);
   });
 
+  it('conversations get keeps attachments, where Slack puts a table block (#446)', async () => {
+    const attachments = [{ id: 1, blocks: [{ type: 'table', rows: [[{ type: 'raw_text', text: 'A' }]] }] }];
+    const saved = ANSWERS.listMessages;
+    ANSWERS.listMessages = { ok: true, messages: { C0123456789: [{ ...MESSAGES[1], attachments }] } };
+    try {
+      const out = await run(['conversations', 'get', 'C0123456789', '1712345678.000200', '--json', '--fields', 'attachments']);
+      expect(out.message).toEqual({ attachments });
+    } finally {
+      ANSWERS.listMessages = saved;
+    }
+  });
+
   it.each([
     [['conversations', 'list'], 'id,name', ['conversation_count', 'conversations', 'users', 'next_cursor']],
     [['users', 'list'], 'id,email', ['total', 'status', 'users']],

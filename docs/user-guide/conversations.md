@@ -74,6 +74,9 @@ slackcli conversations read C1234567890 --oldest="$CURSOR" --exclude-self --json
 Channel history comes back newest-first from Slack and is reversed so you read
 top to bottom. Thread replies are already chronological. `--json` also includes
 reactions, blocks, attachments, file metadata, and a resolved `users` array.
+A table in a message (a Slack `table` block, sent in `blocks` or
+`attachments` rather than in the message text) prints as aligned rows under
+the message text.
 
 `--json` also carries a polling cursor:
 
@@ -99,6 +102,10 @@ slackcli conversations get C1234567890 1234567890.123456
 slackcli conversations get --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456"
 slackcli conversations get C1234567890 p1234567890123456 --json
 ```
+
+`--json` gives `{ channel_id, message, users }`. `message` carries `ts`,
+`thread_ts`, `user`, `text`, `type`, `reply_count`, `reactions`, `bot_id`,
+`blocks`, `attachments` and, when the message has files, their metadata.
 
 **Auth-type caveat.** With browser auth this resolves both top-level messages and
 thread replies. With a standard token it can only resolve **top-level** messages

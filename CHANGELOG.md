@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The message is named like `messages delete`: `--channel-id` (ID, link or channel name) + `--timestamp`, or `--permalink`. `--due` takes the `messages schedule --at` formats, without the future check or the 120-day limit
   - `remove` asks for confirmation (`--yes`); all five take `--json`, `--dry-run` and `--workspace`
 
+### Fixed
+- **Messages with a Slack table no longer lose it**: Slack sends a table as a `table` block in `blocks` or `attachments[].blocks`, not in the message text, so `conversations read`, `conversations get`, thread replies and `conversations unread --messages` printed only the text above it. The table now prints as aligned rows under the message text, and `conversations get --json` includes `attachments` the way `conversations read --json` already did (#446)
+
 ## [0.16.0] - 2026-10-17
 
 ### Added

@@ -152,7 +152,7 @@ const HELP = {
       'slackcli conversations get --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --json',
     ],
     json:
-      '{ channel_id, message: { ts, thread_ts, user, text, type, reply_count, reactions, bot_id, blocks, files? }, ' +
+      '{ channel_id, message: { ts, thread_ts, user, text, type, reply_count, reactions, bot_id, blocks, attachments, files? }, ' +
       'users: [{ id, name, real_name, email }] }.',
     notes: [
       'Give <channel-id> and <timestamp>, or --permalink alone; combining them is an error. ' +
@@ -715,6 +715,7 @@ export function createConversationsCommand(): Command {
               reactions: msg.reactions,
               bot_id: msg.bot_id,
               blocks: msg.blocks,
+              attachments: msg.attachments,
               ...(msg.files?.length ? { files: msg.files.map(f => ({
                 id: f.id,
                 name: f.name,

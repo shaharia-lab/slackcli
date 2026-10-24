@@ -371,6 +371,23 @@ A value that matches no stored profile fails the command with
 to the default. See
 [workspaces and profiles](workspaces.md#pin-a-workspace-for-one-shell).
 
+**In a sandbox or CI job, pass a token in the environment** instead of
+logging in. With `SLACKCLI_TOKEN` or `SLACK_BOT_TOKEN` set (and neither
+`--workspace` nor `SLACKCLI_WORKSPACE`), every command uses that token and
+nothing is stored, so a rotated token never leaves a stale profile on disk. The
+value may be a placeholder that a proxy swaps for the real token; the workspace
+comes from Slack's `auth.test`. Add `SLACKCLI_NO_UPDATE_NOTIFIER=1` to keep
+`~/.config/slackcli` untouched entirely:
+
+```bash
+export SLACK_BOT_TOKEN=xoxb-your-bot-token SLACKCLI_NO_UPDATE_NOTIFIER=1
+slackcli auth whoami --json | jq -r '.source'   # env_token
+slackcli conversations list --json
+```
+
+A refused token fails with `auth_failed`, naming the variable and never its
+value. See [authentication](authentication.md#5-a-token-from-the-environment-nothing-stored).
+
 **Check the identity before a write**, so a job stops on an expired session or
 the wrong workspace instead of failing halfway. `auth whoami` exits `1` unless
 Slack accepted the credentials, and its `--json` object says which profile and

@@ -199,8 +199,15 @@ export function formatWorkspace(
 const SELECTION_SOURCE_LABELS: Record<IdentityResult['source'], string> = {
   flag: '--workspace flag',
   env: 'SLACKCLI_WORKSPACE',
+  env_token: 'env token',
   default: 'stored default',
 };
+
+// An env token has no stored profile: `profile` holds the variable's name.
+function selectionLine(identity: IdentityResult): string {
+  const label = SELECTION_SOURCE_LABELS[identity.source];
+  return identity.source === 'env_token' ? `${label} (${identity.profile})` : label;
+}
 
 function identityStatusLine(identity: IdentityResult): string {
   switch (identity.status) {
@@ -220,7 +227,9 @@ export function formatIdentity(identity: IdentityResult): string {
   const lines = [
     chalk.bold(identity.workspace_name),
     `  ID: ${identity.workspace_id}`,
-    `  Profile: ${chalk.cyan(identity.profile)}`,
+    identity.source === 'env_token'
+      ? `  Profile: ${chalk.dim('none (token from the environment, not stored)')}`
+      : `  Profile: ${chalk.cyan(identity.profile)}`,
   ];
 
   if (identity.status === 'ok') {
@@ -233,7 +242,7 @@ export function formatIdentity(identity: IdentityResult): string {
 
   lines.push(
     `  Auth: ${authType}`,
-    `  Selected by: ${SELECTION_SOURCE_LABELS[identity.source]}`,
+    `  Selected by: ${selectionLine(identity)}`,
     `  Status: ${identityStatusLine(identity)}`,
   );
   return lines.join('\n');

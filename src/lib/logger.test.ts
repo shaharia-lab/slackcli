@@ -608,7 +608,9 @@ describe('process integration', () => {
       [process.execPath, 'run', join(root, 'src/index.ts'), 'team', 'info', '--json', '-v'],
       {
         cwd: root,
-        env: { ...process.env, HOME: tmp, SLACKCLI_LOG_DIR: dir, SLACKCLI_LOG_LEVEL: 'trace' },
+        // Blank token variables: a token in the developer's shell would let the
+        // command reach Slack.
+        env: { ...process.env, HOME: tmp, SLACKCLI_LOG_DIR: dir, SLACKCLI_LOG_LEVEL: 'trace', SLACKCLI_TOKEN: '', SLACK_BOT_TOKEN: '' },
       },
     );
 
@@ -627,7 +629,7 @@ describe('process integration', () => {
   it('warns once about an invalid SLACKCLI_LOG_LEVEL, naming the level actually used', () => {
     const run = (extra: string[]) => Bun.spawnSync(
       [process.execPath, 'run', join(root, 'src/index.ts'), 'team', 'info', ...extra],
-      { cwd: root, env: { ...process.env, HOME: tmp, SLACKCLI_LOG_DIR: join(tmp, 'logs'), SLACKCLI_LOG_LEVEL: 'loud' } },
+      { cwd: root, env: { ...process.env, HOME: tmp, SLACKCLI_LOG_DIR: join(tmp, 'logs'), SLACKCLI_LOG_LEVEL: 'loud', SLACKCLI_TOKEN: '', SLACK_BOT_TOKEN: '' } },
     ).stderr.toString();
 
     const quiet = run([]);

@@ -7,6 +7,7 @@ import type {
   DryRunPreview, DryRunTarget,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
+import { extractTables, formatTableRows } from './table-blocks.ts';
 
 // Serialise a value as JSON and write it to stdout.
 //
@@ -322,6 +323,14 @@ export function formatMessage(
   const textLines = msg.text.split('\n');
   textLines.forEach(line => {
     output += `${indentStr}  ${line}\n`;
+  });
+
+  // Tables (Slack sends them as blocks, not in the message text)
+  extractTables(msg).forEach((rows, idx) => {
+    if (idx > 0) output += '\n';
+    formatTableRows(rows).forEach(line => {
+      output += `${indentStr}  ${line}\n`;
+    });
   });
 
   // Show timestamps for threading

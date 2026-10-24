@@ -3,4 +3,4 @@
 #   python3 -m venv /tmp/pctools && /tmp/pctools/bin/pip install pip-tools
 #   /tmp/pctools/bin/pip-compile --generate-hashes --strip-extras \
 #     .github/requirements/pre-commit.in
-pre-commit==4.6.2
+pre-commit==4.7.0

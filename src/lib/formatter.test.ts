@@ -512,6 +512,69 @@ describe('formatMessage file display', () => {
   });
 });
 
+describe('formatMessage table display', () => {
+  const users = new Map<string, SlackUser>([
+    ['U1', { id: 'U1', name: 'alice', real_name: 'Alice' }],
+  ]);
+  const raw = (text: string) => ({ type: 'raw_text', text });
+  const table = (rows: unknown[][]) => ({ type: 'table', block_id: 'b1', rows });
+
+  it('prints a table from attachments after the message text, before the ts line (#446)', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1', text: "I'll post here too:", ts: '1700000000.000100',
+      attachments: [{ id: 1, blocks: [table([
+        [
+          { type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'Header A', style: { bold: true } }] }] },
+          { type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'Header B', style: { bold: true } }] }] },
+        ],
+        [raw('Row 1 col A'), raw('Row 1 col B')],
+      ])] }],
+    };
+    const lines = formatMessage(msg, users).split('\n');
+    const text = lines.indexOf("  I'll post here too:");
+    expect(lines.slice(text + 1, text + 3)).toEqual([
+      '  Header A    | Header B',
+      '  Row 1 col A | Row 1 col B',
+    ]);
+    expect(lines[text + 3]).toContain('ts: 1700000000.000100');
+  });
+
+  it('prints a table from blocks', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1', text: 'see below', ts: '1700000000.000100',
+      blocks: [table([[raw('a'), raw('b')]])],
+    };
+    expect(formatMessage(msg, users)).toContain('  a | b\n');
+  });
+
+  it('honours the indent', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1', text: 'reply', ts: '1700000000.000100',
+      blocks: [table([[raw('a'), raw('b')]])],
+    };
+    expect(formatMessage(msg, users, 4)).toContain('\n      a | b\n');
+  });
+
+  it('separates several tables with a blank line', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1', text: 'two tables', ts: '1700000000.000100',
+      blocks: [table([[raw('one')]])],
+      attachments: [{ blocks: [table([[raw('two')]])] }],
+    };
+    expect(formatMessage(msg, users)).toContain('  one\n\n  two\n');
+  });
+
+  it('prints nothing extra for blocks without a table', () => {
+    const msg: SlackMessage = {
+      type: 'message', user: 'U1', text: 'plain', ts: '1700000000.000100',
+      blocks: [{ type: 'rich_text', elements: [] }, { type: 'mystery' }],
+      attachments: [{ text: 'legacy' }],
+    };
+    const plain: SlackMessage = { type: 'message', user: 'U1', text: 'plain', ts: '1700000000.000100' };
+    expect(formatMessage(msg, users)).toBe(formatMessage(plain, users));
+  });
+});
+
 describe('formatFileSize', () => {
   it('formats 0 bytes', () => {
     expect(formatFileSize(0)).toBe('0 B');

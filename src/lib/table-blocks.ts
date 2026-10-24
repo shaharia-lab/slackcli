@@ -23,7 +23,23 @@ export function tableCellText(cell: unknown): string {
   let text = '';
   if (record.type === 'raw_text' && typeof record.text === 'string') text = record.text;
   if (record.type === 'rich_text') text = extractDraftText([record]);
-  return text.replace(/\s*\n\s*/g, ' ');
+  return collapseLineBreaks(text);
+}
+
+// Every whitespace run holding a `\n` becomes one space. Not `/\s*\n\s*/g`:
+// that retries its leading `\s*` across a long run with no newline, O(n²) (#448).
+function collapseLineBreaks(text: string): string {
+  const lines = text.split('\n');
+  const last = lines.length - 1;
+  return lines
+    .map((line, i) => {
+      let part = line;
+      if (i > 0) part = part.trimStart();
+      if (i < last) part = part.trimEnd();
+      return part;
+    })
+    .filter((part, i) => part !== '' || i === 0 || i === last)
+    .join(' ');
 }
 
 function tableRows(block: Record<string, unknown>): string[][] {

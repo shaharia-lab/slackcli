@@ -35,6 +35,45 @@ describe('tableCellText', () => {
     expect(tableCellText(rich({ type: 'text', text: 'a \n b' }))).toBe('a b');
   });
 
+  it('turns every whitespace run holding a line break into one space', () => {
+    expect(tableCellText(raw('a\r\nb'))).toBe('a b');
+    expect(tableCellText(raw('a \n\t\n \r\n b'))).toBe('a b');
+    expect(tableCellText(raw('a\n\nb\n c'))).toBe('a b c');
+    expect(tableCellText(raw('\n a'))).toBe(' a');
+    expect(tableCellText(raw('a \n'))).toBe('a ');
+    expect(tableCellText(raw(' \n a \n '))).toBe(' a ');
+    expect(tableCellText(raw('\n'))).toBe(' ');
+    expect(tableCellText(raw('\n\n\n'))).toBe(' ');
+  });
+
+  it('keeps whitespace away from a line break as it is', () => {
+    expect(tableCellText(raw('  a  b\tc  '))).toBe('  a  b\tc  ');
+    expect(tableCellText(raw('a  b\nc  d'))).toBe('a  b c  d');
+  });
+
+  it('matches the old /\\s*\\n\\s*/g output on short strings', () => {
+    const oracle = (text: string) => text.replace(/\s*\n\s*/g, ' ');
+    const alphabet = ['a', 'b', ' ', '\t', '\n', '\r', ' ', ' '];
+    let seed = 448;
+    for (let n = 0; n < 2000; n++) {
+      let text = '';
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      const length = (seed >>> 16) % 12;
+      for (let i = 0; i < length; i++) {
+        seed = (seed * 1103515245 + 12345) >>> 0;
+        text += alphabet[(seed >>> 16) % alphabet.length];
+      }
+      expect(tableCellText(raw(text))).toBe(oracle(text));
+    }
+  });
+
+  it('stays fast on a long whitespace run with no line break', () => {
+    const text = `a${' '.repeat(50_000)}b`;
+    const started = performance.now();
+    expect(tableCellText(raw(text))).toBe(text);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
   it('returns empty for empty, unknown or malformed cells', () => {
     expect(tableCellText(raw(''))).toBe('');
     expect(tableCellText(rich())).toBe('');

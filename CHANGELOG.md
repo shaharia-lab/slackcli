@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-24
+
 ### Added
 - **Token from the environment**: with `SLACKCLI_TOKEN` or `SLACK_BOT_TOKEN` set to a standard app token, every command uses it with no `auth login` and nothing written to `~/.config/slackcli` or the secret store, for sandboxes and CI jobs. Precedence: `--workspace` > `SLACKCLI_WORKSPACE` > token variable > stored default; `SLACKCLI_TOKEN` wins over `SLACK_BOT_TOKEN`. The workspace, user and token type come from one `auth.test` call, so a placeholder without an `xox` prefix works. `auth whoami` reports `source: "env_token"` with the variable name as `profile`, a refused token fails `auth_failed` naming the variable (never the value), and `slackcli --help` lists both variables (#453)
 - **`canvas sections`**: look up the section IDs of a canvas by section type (`--type h2`, `any_header`, `list`, `table`, …), by text (`--contains`), or both, through Slack's `canvases.sections.lookup`, so a script can target a section without guessing its ID. Takes a canvas ID or URL, `--json` (`{ canvas_id, section_count, sections: [{ id }] }`), `--fields` and `--workspace`; without `--json` it prints one ID per line. Standard app tokens only (`canvases:read`): Slack refuses the canvases API to browser sessions, so a browser profile fails with `unsupported_auth_type` before any call (#431)

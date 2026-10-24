@@ -503,6 +503,9 @@ export async function workspaceFromEnvToken(
     workspace_name: authTest.team,
     user_id: authTest.user_id,
     token_type: authTest.bot_id ? 'bot' : 'user',
+    // Nothing is stored, so the variable's name stands in for the profile key,
+    // as in `auth whoami`; a dry-run preview then reports the same.
+    profile: name,
   };
   logger.debug('Using {auth_type} workspace {workspace_id} ({source} {env_var})', {
     auth_type: config.auth_type,

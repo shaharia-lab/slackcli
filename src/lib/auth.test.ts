@@ -994,6 +994,7 @@ describe('workspaceFromEnvToken', () => {
       token: PLACEHOLDER,
       token_type: 'bot',
       user_id: 'U_BOT',
+      profile: 'SLACK_BOT_TOKEN',
     });
     expect(authTest).toBe(answer);
     expect(client.seen).toHaveLength(1);
@@ -1155,6 +1156,9 @@ describe('getAuthenticatedClient with an env token', () => {
     expect(testAuth).toHaveBeenCalledTimes(1);
     expect(lookups).not.toHaveBeenCalled();
     expect(client.isBotToken).toBe(true);
+    // A dry-run preview names the variable, as `auth whoami` does, not a
+    // profile key that nothing is stored under.
+    expect(client.workspaceIdentity).toStrictEqual({ name: 'Example Inc', id: 'T9', profile: 'SLACK_BOT_TOKEN' });
   });
 
   it('uses the stored profile when no token variable is set', async () => {

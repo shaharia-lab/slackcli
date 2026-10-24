@@ -590,7 +590,8 @@ export interface DryRunWorkspace {
   name: string;
   id: string;
   // The profile key the workspace is stored under (its workspace ID when no
-  // profile name was given at login).
+  // profile name was given at login). With a token from the environment,
+  // nothing is stored and this is the variable's name, e.g. SLACK_BOT_TOKEN.
   profile: string;
 }
 

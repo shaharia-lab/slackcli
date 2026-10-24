@@ -177,6 +177,10 @@ With `--json` the preview is one object on stdout:
   `add saved item`, `update saved item`, `complete saved item`, `reopen saved item`, `remove saved item`,
   `create user group`, `update user group`, `add user group members`,
   `remove user group members`, `enable user group`, `disable user group`.
+- `workspace.profile` is the profile key the workspace is stored under. With a
+  [token from the environment](authentication.md#5-a-token-from-the-environment-nothing-stored)
+  nothing is stored, and it is the variable's name (`SLACKCLI_TOKEN` or
+  `SLACK_BOT_TOKEN`), as in `auth whoami`.
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
   `message` (with `ts`), `draft`, `scheduled_message`, `emoji` or `usergroup`. `thread_ts` is set for a
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up

@@ -279,6 +279,15 @@ is valid.
   passing `options.workspace`; they never read the variable themselves. The
   `auth` management commands (`list`, `set-default`, `remove`, logins) do not go
   through this seam and so ignore the variable.
+- When neither the flag nor `SLACKCLI_WORKSPACE` is set, `effectiveSelection(flag,
+  env)` — also pure — checks the token variables (`TOKEN_ENV_VARS`:
+  `SLACKCLI_TOKEN`, then `SLACK_BOT_TOKEN`; blank counts as unset) ahead of the
+  stored default. A token found there goes to `workspaceFromEnvToken()`, which
+  builds an in-memory `StandardAuthConfig` from one `auth.test` call (`token_type`
+  from `bot_id`, never the prefix, since a sandbox placeholder has none) and
+  never touches `workspaces.ts` or the secret store. A refused token becomes a
+  `CliError('auth_failed')` that names the variable. `checkIdentity()` reuses the
+  same call, reporting `source: 'env_token'` with the variable name as `profile`.
 
 Per-workspace failures in `authenticateAuto()` are collected rather than thrown:
 when several workspaces are captured at once, one stale token must not discard

@@ -212,6 +212,8 @@ describe('renderRootFooter', () => {
       '--workspace <id|name>',
       'auth set-default',
       'SLACKCLI_WORKSPACE',
+      'SLACKCLI_TOKEN',
+      'SLACK_BOT_TOKEN',
       'SLACKCLI_LOG_LEVEL',
       'SLACKCLI_LOG_DIR',
       'SLACKCLI_BROWSER',
@@ -233,9 +235,14 @@ describe('renderRootFooter', () => {
     expect(block.length).toBeGreaterThanOrEqual(6);
     for (const line of block) {
       // A variable line or its continuation: the description starts at column 32.
-      expect(line.slice(0, 32)).toMatch(/^( {2}SLACKCLI_[A-Z_]+ +| {32})$/);
+      expect(line.slice(0, 32)).toMatch(/^( {2}SLACK(CLI)?_[A-Z_]+ +| {32})$/);
       expect(line[32]).toMatch(/\S/);
     }
+  });
+
+  it('states the precedence of the token variables', () => {
+    const footer = renderRootFooter().replace(/\s+/g, ' ');
+    expect(footer).toContain('Precedence: --workspace > SLACKCLI_WORKSPACE > token variable > stored default.');
   });
 
   it('contains no token-looking value', () => {

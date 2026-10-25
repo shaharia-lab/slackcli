@@ -1161,6 +1161,21 @@ describe('formatIdentity', () => {
     expect(output).toContain(`  Selected by: ${label}`);
   });
 
+  it('names the token variable and no stored profile for an env token', () => {
+    const output = formatIdentity({
+      ...profile,
+      profile: 'SLACK_BOT_TOKEN',
+      auth_type: 'standard',
+      source: 'env_token',
+      status: 'ok',
+      user: 'deploybot',
+      user_id: 'U999',
+      bot_id: 'B42',
+    });
+    expect(output).toContain('  Profile: none (token from the environment, not stored)');
+    expect(output).toContain('  Selected by: env token (SLACK_BOT_TOKEN)');
+  });
+
   const authFailure = { code: 'invalid_auth', meaning: 'The stored token is invalid.', fix: 'slackcli auth login-auto' };
 
   it('keeps the stored details and names the code when Slack refused the credentials', () => {

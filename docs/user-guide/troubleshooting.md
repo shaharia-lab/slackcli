@@ -3,7 +3,16 @@
 ## `No workspace configured`
 
 Nothing is authenticated yet. Run `slackcli auth login-auto`, or see
-[authentication](authentication.md).
+[authentication](authentication.md). In a sandbox or CI job, set
+`SLACKCLI_TOKEN` or `SLACK_BOT_TOKEN` instead — see
+[a token from the environment](authentication.md#5-a-token-from-the-environment-nothing-stored).
+
+## `Slack rejected the token in SLACK_BOT_TOKEN`
+
+The token in that variable (or `SLACKCLI_TOKEN`) is invalid, revoked or
+expired; the Slack code is in brackets. Set the variable to a working token, or
+unset it to go back to your stored profiles. `--workspace` and
+`SLACKCLI_WORKSPACE` select a stored profile even while it is set.
 
 ## `Workspace not found: <name>`
 

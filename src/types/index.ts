@@ -206,13 +206,17 @@ export interface SlackAuthTestResponse {
 }
 
 // Where the effective workspace selector came from, highest precedence first:
-// the `--workspace` flag, `SLACKCLI_WORKSPACE`, or the stored default.
-export type WorkspaceSelectorSource = 'flag' | 'env' | 'default';
+// the `--workspace` flag, `SLACKCLI_WORKSPACE`, a token in the environment
+// (`SLACKCLI_TOKEN` / `SLACK_BOT_TOKEN`, nothing stored), or the stored default.
+export type WorkspaceSelectorSource = 'flag' | 'env' | 'env_token' | 'default';
 
 // What `auth whoami` knows about a profile before Slack answers. Never a
 // credential: only names, IDs, the auth type and where the selection came from.
 interface IdentityProfile {
-  /** The key the profile is stored under: its name, or the team id. */
+  /**
+   * The key the profile is stored under: its name, or the team id. For an
+   * `env_token` source, the name of the variable that held the token.
+   */
   profile: string;
   workspace_id: string;
   workspace_name: string;
@@ -586,7 +590,8 @@ export interface DryRunWorkspace {
   name: string;
   id: string;
   // The profile key the workspace is stored under (its workspace ID when no
-  // profile name was given at login).
+  // profile name was given at login). With a token from the environment,
+  // nothing is stored and this is the variable's name, e.g. SLACK_BOT_TOKEN.
   profile: string;
 }
 

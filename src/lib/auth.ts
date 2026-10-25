@@ -19,6 +19,7 @@ import type {
   ProfileCheck,
   ProfileList,
   WorkspaceSelectorSource,
+  SlackAuthTestResponse,
 } from '../types/index.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
 import {
@@ -340,7 +341,8 @@ export type { WorkspaceSelectorSource };
 export interface WorkspaceSelector {
   /** Absent when the stored default applies. */
   identifier?: string;
-  source: WorkspaceSelectorSource;
+  /** A selector always names a stored profile, so it never comes from a token. */
+  source: Exclude<WorkspaceSelectorSource, 'env_token'>;
 }
 
 /**
@@ -405,10 +407,122 @@ export async function selectWorkspaceEntry(
   return selectWith(selector, lookup, (entry) => entry.config);
 }
 
+/**
+ * Variables that hold a standard token to use without a stored profile, in
+ * precedence order: the CLI's own name first, then the conventional one the
+ * OpenShell `slack-bot` provider injects.
+ */
+export const TOKEN_ENV_VARS = ['SLACKCLI_TOKEN', 'SLACK_BOT_TOKEN'] as const;
+
+export type TokenEnvVar = (typeof TOKEN_ENV_VARS)[number];
+
+/** A token read from the environment, with the variable it came from. */
+export interface EnvToken {
+  name: TokenEnvVar;
+  token: string;
+}
+
+type Env = Readonly<Record<string, string | undefined>>;
+
+/**
+ * The first token variable that is set. Pure. A blank value counts as unset,
+ * the same rule `effectiveWorkspaceSelector()` applies to `SLACKCLI_WORKSPACE`.
+ */
+export function envTokenFrom(env: Env): EnvToken | null {
+  for (const name of TOKEN_ENV_VARS) {
+    const token = env[name]?.trim();
+    if (token) return { name, token };
+  }
+  return null;
+}
+
+/** The env token in effect: no stored profile is involved. */
+export interface EnvTokenSelection {
+  source: 'env_token';
+  envToken: EnvToken;
+}
+
+/**
+ * Where the workspace comes from: `--workspace`, then `SLACKCLI_WORKSPACE`,
+ * then a token variable, then the stored default. An explicit selector always
+ * means a stored profile, so the env token never overrides one. Pure.
+ */
+export function effectiveSelection(flag: string | undefined, env: Env): WorkspaceSelector | EnvTokenSelection {
+  const selector = effectiveWorkspaceSelector(flag, env[WORKSPACE_ENV_VAR]);
+  if (selector.source !== 'default') return selector;
+  const envToken = envTokenFrom(env);
+  return envToken ? { source: 'env_token', envToken } : selector;
+}
+
+/** A workspace built from an env token, held in memory only. */
+export interface EnvTokenWorkspace {
+  config: StandardAuthConfig;
+  authTest: SlackAuthTestResponse;
+}
+
+/**
+ * Build a standard workspace from an env token with one `auth.test` call.
+ * Nothing is read from or written to the config file or the secret store.
+ *
+ * `token_type` comes from the response (`bot_id` present → bot), not from the
+ * token's prefix: in a sandbox the value is a placeholder the proxy swaps for
+ * the real token, and it has no Slack prefix. A refused token fails
+ * `auth_failed` naming the variable, never its value.
+ */
+export async function workspaceFromEnvToken(
+  { name, token }: EnvToken,
+  createClient: (config: WorkspaceConfig) => Pick<SlackClient, 'testAuth'> = (config) => new SlackClient(config),
+): Promise<EnvTokenWorkspace> {
+  // Only the token and auth type matter to the auth.test call itself.
+  const probe: StandardAuthConfig = {
+    workspace_id: name,
+    workspace_name: name,
+    auth_type: 'standard',
+    token,
+    token_type: 'user',
+  };
+
+  let authTest: SlackAuthTestResponse;
+  try {
+    authTest = await createClient(probe).testAuth();
+  } catch (error: unknown) {
+    if (error instanceof SlackAuthError) {
+      logger.warn('Token in {env_var} refused: {slack_error}', { env_var: name, slack_error: error.code });
+      throw new CliError(
+        'auth_failed',
+        `Slack rejected the token in ${name} (${error.code}).`,
+        `Set ${name} to a valid xoxb or xoxp token, or unset it to use a stored profile.`,
+      );
+    }
+    throw error;
+  }
+
+  const config: StandardAuthConfig = {
+    ...probe,
+    workspace_id: authTest.team_id,
+    workspace_name: authTest.team,
+    user_id: authTest.user_id,
+    token_type: authTest.bot_id ? 'bot' : 'user',
+    // Nothing is stored, so the variable's name stands in for the profile key,
+    // as in `auth whoami`; a dry-run preview then reports the same.
+    profile: name,
+  };
+  logger.debug('Using {auth_type} workspace {workspace_id} ({source} {env_var})', {
+    auth_type: config.auth_type,
+    workspace_id: config.workspace_id,
+    source: 'env_token',
+    env_var: name,
+  });
+  return { config, authTest };
+}
+
 // Get authenticated client for workspace
 export async function getAuthenticatedClient(workspaceIdentifier?: string): Promise<SlackClient> {
-  const selector = effectiveWorkspaceSelector(workspaceIdentifier, process.env[WORKSPACE_ENV_VAR]);
-  return new SlackClient(await selectWorkspace(selector));
+  const selection = effectiveSelection(workspaceIdentifier, process.env);
+  if (selection.source === 'env_token') {
+    return new SlackClient((await workspaceFromEnvToken(selection.envToken)).config);
+  }
+  return new SlackClient(await selectWorkspace(selection));
 }
 
 // `@slack/web-api` retries a dead connection for about thirty minutes by
@@ -418,8 +532,11 @@ const IDENTITY_CHECK_SDK_RETRIES = 3;
 
 /** Seams for `checkIdentity()`; the defaults are what the CLI runs with. */
 export interface IdentityCheckDeps {
-  /** The `SLACKCLI_WORKSPACE` value. Defaults to the process environment. */
-  env?: string;
+  /**
+   * The environment `SLACKCLI_WORKSPACE` and the token variables are read
+   * from. Defaults to the process environment.
+   */
+  env?: Env;
   lookup?: (identifier?: string) => Promise<ResolvedWorkspace | null>;
   createClient?: (config: WorkspaceConfig) => Pick<SlackClient, 'testAuth'>;
 }
@@ -438,12 +555,15 @@ export async function checkIdentity(
   deps: IdentityCheckDeps = {},
 ): Promise<IdentityResult> {
   const {
-    env = process.env[WORKSPACE_ENV_VAR],
+    env = process.env,
     lookup = getWorkspaceEntry,
     createClient = (config) => new SlackClient(config, { sdkRetries: IDENTITY_CHECK_SDK_RETRIES }),
   } = deps;
 
-  const selector = effectiveWorkspaceSelector(identifier, env);
+  const selector = effectiveSelection(identifier, env);
+  if (selector.source === 'env_token') {
+    return checkEnvTokenIdentity(selector.envToken, createClient);
+  }
   const { key, config } = await selectWorkspaceEntry(selector, lookup);
   const stored = {
     profile: key,
@@ -497,6 +617,34 @@ export async function checkIdentity(
     }
     throw error;
   }
+}
+
+// The identity of an env token. Its one auth.test call both builds the
+// workspace and verifies it. With no stored profile to report, a refused token
+// or an unreachable Slack fails the command instead of becoming a result.
+async function checkEnvTokenIdentity(
+  envToken: EnvToken,
+  createClient: NonNullable<IdentityCheckDeps['createClient']>,
+): Promise<IdentityResult> {
+  const { config, authTest } = await workspaceFromEnvToken(envToken, createClient);
+  logger.info('Identity check for {env_var}: {status}', {
+    env_var: envToken.name,
+    workspace_id: config.workspace_id,
+    auth_type: config.auth_type,
+    source: 'env_token',
+    status: 'ok',
+  });
+  return {
+    profile: envToken.name,
+    workspace_id: config.workspace_id,
+    workspace_name: config.workspace_name,
+    auth_type: config.auth_type,
+    source: 'env_token',
+    status: 'ok',
+    user: authTest.user,
+    user_id: authTest.user_id,
+    ...(authTest.bot_id ? { bot_id: authTest.bot_id } : {}),
+  };
 }
 
 /** One stored profile's key with the outcome of its check. */

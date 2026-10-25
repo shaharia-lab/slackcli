@@ -428,7 +428,7 @@ describe.skipIf(process.platform === 'win32')('a failing command through the CLI
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
-      env: { ...process.env, HOME: home, SLACKCLI_LOG_LEVEL: 'off', SLACKCLI_NO_UPDATE_NOTIFIER: '1', SLACKCLI_WORKSPACE: '' },
+      env: { ...process.env, HOME: home, SLACKCLI_LOG_LEVEL: 'off', SLACKCLI_NO_UPDATE_NOTIFIER: '1', SLACKCLI_WORKSPACE: '', SLACKCLI_TOKEN: '', SLACK_BOT_TOKEN: '' },
     });
     const [stdout, stderr, code] = await Promise.all([
       new Response(child.stdout).text(),

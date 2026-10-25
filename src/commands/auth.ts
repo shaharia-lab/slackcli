@@ -124,8 +124,10 @@ const HELP = {
       '{ status, profile, workspace_id, workspace_name, auth_type, source, ... }. status is ok (adds user, ' +
       'user_id, bot_id?), auth_failed (adds error: { code, meaning, fix }) or unreachable (adds error: { message, http_status? }).',
     notes: [
-      'source says where the selection came from: flag (--workspace), env (SLACKCLI_WORKSPACE) or default.',
-      'Exits 1 when Slack refuses the credentials or cannot be reached; the output is still printed.',
+      'source says where the selection came from: flag (--workspace), env (SLACKCLI_WORKSPACE), ' +
+        'env_token (SLACKCLI_TOKEN or SLACK_BOT_TOKEN, nothing stored; profile is the variable name) or default.',
+      'Exits 1 when Slack refuses the credentials or cannot be reached; the output is still printed. ' +
+        'With an env token there is no stored profile to print, so it fails with an error object instead.',
     ],
   },
   setDefault: {

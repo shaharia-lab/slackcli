@@ -22,6 +22,8 @@ function childEnv(home: string) {
     SLACKCLI_LOG_LEVEL: 'off',
     SLACKCLI_NO_UPDATE_NOTIFIER: '1',
     SLACKCLI_WORKSPACE: '',
+    SLACKCLI_TOKEN: '',
+    SLACK_BOT_TOKEN: '',
     NO_COLOR: '1',
   };
 }

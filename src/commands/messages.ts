@@ -9,6 +9,7 @@ import {
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import {
   type ResolvedThreadTarget,
+  normalizeTimestamp,
   resolveMessageTarget,
   resolveThreadTarget,
   workspaceMismatchWarning,
@@ -26,7 +27,7 @@ import { CHANNEL_NAME_NOTE, describeCommand, USER_NAME_NOTE, type CommandHelp } 
 import { confirmWrite } from './usergroups.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
-import { resolveIdentifier } from '../lib/name-resolver.ts';
+import { resolveIdentifier, resolveUserList, lazyClient, splitUserRefs } from '../lib/name-resolver.ts';
 import { resolveMessageText } from '../lib/message-input.ts';
 import { parseScheduleTime } from '../lib/schedule-time.ts';
 import { deleteMessage, removeReaction } from '../lib/message.ts';
@@ -70,6 +71,7 @@ const HELP = {
       'slackcli messages send --recipient-id="#general" --message "Deploy done"',
       'slackcli messages send --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --message "Fixed"',
       'slackcli messages send --recipient-id U0123456789 --message-file ./note.md --json',
+      'slackcli messages send --users U0123456789,U0456789012 --message "Shared heads-up"',
       'slackcli messages send --recipient-id C0123456789 --message-file - < ./report.txt',
       'slackcli messages send --recipient-id C0123456789 --message "Charts" --file a.png --file b.png --file c.pdf',
       'slackcli messages send --recipient-id C0123456789 --message "Deploy done" --dry-run',
@@ -93,7 +95,11 @@ const HELP = {
         'which one and at which step, and no message is posted.',
       '--blocks cannot be combined with --file; the message text is the notification fallback.',
       'Sends immediately, with no confirmation prompt.',
-      'A dry run to a user ID does not open the DM; it previews the user as the target.',
+      '--users opens (or resumes) a multi-person DM (group DM / MPIM) and posts to it: user IDs, ' +
+        '@handles or emails, comma- or space-separated, 1-8 of them (more than one makes an MPIM, ' +
+        'one is a 1:1 DM). It cannot be combined with --recipient-id or --permalink.',
+      'A dry run to a user ID does not open the DM; it previews the user as the target. ' +
+        '--users previews a group_dm target carrying the user set, also without opening it.',
     ],
     dryRun: true,
   },
@@ -468,6 +474,38 @@ async function openRecipient(client: SlackClient, recipientId: string, spinner: 
   return dmResponse.channel.id;
 }
 
+// Resolve the --users value into user IDs, reusing the SAME convention as
+// `conversations members add` (<users...>): IDs, @handles or emails, comma- or
+// space-separated, via splitUserRefs + resolveUserList. Then enforce the only
+// MPIM-specific limit: Slack's conversations.open takes 1-8 users (the caller's
+// own ID is added by Slack and must not be passed). Throws InvalidInputError on
+// an empty/oversized set so the command fails loudly, never posting to the
+// wrong place.
+async function resolveGroupDmIds(
+  client: ReturnType<typeof lazyClient>,
+  raw: string,
+): Promise<string[]> {
+  const refs = splitUserRefs([raw]);
+  if (refs.length === 0) {
+    throw new InvalidInputError('--users needs at least one user', 'Pass user IDs, @handles or emails, e.g. --users U0123,U0456.');
+  }
+  if (refs.length > 8) {
+    throw new InvalidInputError(`--users accepts at most 8 users (got ${refs.length})`, 'Slack multi-person DMs are limited to 8 members (plus you).');
+  }
+  return resolveUserList(client.get, refs, '--users');
+}
+
+// Open (or resume) the MPIM / group DM for a set of user IDs and return its
+// channel ID. conversations.open is idempotent: the same user set returns the
+// same channel. On a token that cannot open it, the Slack error
+// (enterprise_is_restricted / missing_scope) propagates — we never silently
+// fall back to individual DMs.
+async function openGroupDm(client: SlackClient, ids: string[], spinner: ReturnType<typeof ora>): Promise<string> {
+  spinner.text = ids.length > 1 ? 'Opening group DM...' : 'Opening direct message...';
+  const response = await client.openConversation(ids.join(','));
+  return response.channel.id;
+}
+
 // The scheduled-message commands refuse browser session tokens before any
 // Slack call: name resolution would otherwise run first and then fail anyway.
 function requireSchedulingAuth(client: SlackClient): void {
@@ -495,6 +533,15 @@ export function createMessagesCommand(): Command {
   // Send message
   describeCommand(messages.command('send'), HELP.send)
     .option('--recipient-id <id>', 'Channel/user ID, Slack URL, #channel, @handle or email')
+    // Open (or resume) a multi-person DM (MPIM / group DM) and post ONE message
+    // all recipients see in a single shared private thread. Takes user IDs,
+    // @handles or emails, comma- or space-separated — the same <users...>
+    // convention as `conversations members add`. 2-8 users make an MPIM; a
+    // single user is a 1:1 DM. Mutually exclusive with --recipient-id and
+    // --permalink; the conflict and the 1-8 count are enforced in the action
+    // through failCommand(InvalidInputError) so --json callers get the
+    // structured `invalid_input` object (not Commander's plain-text conflict).
+    .option('--users <list>', 'User IDs, @handles or emails (comma- or space-separated) for a multi-person DM (group DM / MPIM)')
     .option('--message <text>', 'Message text content')
     .addOption(
       new Option('--message-file <path>', 'Read the message text from a UTF-8 file, or stdin with -')
@@ -522,7 +569,42 @@ export function createMessagesCommand(): Command {
       try {
         const message = await resolveMessageText(options);
         const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
-        const { client, recipientId, target } = await resolveRecipient(options, spinner);
+
+        // --users opens (or resumes) a multi-person DM for a set of users and
+        // posts there. It is mutually exclusive with --recipient-id and
+        // --permalink; we reject the combination here (not via Commander
+        // .conflicts) so a --json caller gets the structured invalid_input
+        // object through failCommand. When set, resolve the user set, open the
+        // MPIM up front, and reuse the normal post path with that channel ID as
+        // the recipient. Otherwise the existing single-recipient path runs.
+        let client: SlackClient;
+        let recipientId: string;
+        let target: ResolvedThreadTarget;
+        let groupDmIds: string[] | undefined;
+        if (options.users) {
+          if (options.recipientId || options.permalink) {
+            throw new InvalidInputError(
+              '--users cannot be combined with --recipient-id or --permalink',
+              'Use --users for a multi-person DM, or --recipient-id / --permalink for a single channel/user — not both.',
+            );
+          }
+          const lazy = lazyClient(() => getAuthenticatedClient(options.workspace));
+          groupDmIds = await resolveGroupDmIds(lazy, options.users);
+          client = await lazy.get();
+          // No channel/permalink to resolve for a group DM — the recipient is
+          // the user set. Build the thread target directly (threadTs only);
+          // the channelId is filled from the opened MPIM below.
+          target = {
+            channelId: '',
+            threadTs: options.threadTs ? normalizeTimestamp(options.threadTs, '--thread-ts') : undefined,
+          };
+          // In a dry run we do NOT open the MPIM; the preview uses a dedicated
+          // group_dm target built from groupDmIds below. Only the real path
+          // opens the conversation and yields a channel id to post to.
+          recipientId = options.dryRun ? '' : await openGroupDm(client, groupDmIds, spinner);
+        } else {
+          ({ client, recipientId, target } = await resolveRecipient(options, spinner));
+        }
 
         // --file is repeatable, so options.file is a string[] (or undefined).
         const filePaths: string[] | undefined = options.file;
@@ -545,8 +627,14 @@ export function createMessagesCommand(): Command {
             payload = { text: message, blocks };
           }
           spinner.stop();
+          // A group DM previews as its own kind carrying the user set, with no
+          // name lookup (a users.info on a comma list can only fail, and a
+          // script reading target.id must not get a comma string — see #458).
+          const previewTarget = groupDmIds
+            ? { kind: 'group_dm', ids: groupDmIds, thread_ts: target.threadTs }
+            : recipientTarget(recipientId, target.threadTs);
           emitDryRun(
-            await buildPreview(client, 'send message', recipientTarget(recipientId, target.threadTs), payload, { lookupName: true }),
+            await buildPreview(client, 'send message', previewTarget, payload, { lookupName: !groupDmIds }),
             options.json,
           );
           return;

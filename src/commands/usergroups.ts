@@ -23,7 +23,7 @@ import {
   removeUsergroupMembers,
   resolveUsergroup,
 } from '../lib/usergroups.ts';
-import { lazyClient, resolveUserList } from '../lib/name-resolver.ts';
+import { lazyClient, resolveUserList, splitUserRefs } from '../lib/name-resolver.ts';
 import type { SlackClient } from '../lib/slack-client.ts';
 import type { DryRunTarget, SlackUsergroup } from '../types/index.ts';
 
@@ -245,15 +245,6 @@ async function previewMembershipChange(
   });
   spinner.stop();
   emitDryRun(await buildPreview(client, action, groupTarget(group), { ...plan, team: options.team || undefined }), options.json);
-}
-
-// Split a comma/space-separated list of user references (IDs, @handles,
-// emails) into a clean array, keeping each one as typed. A bare "@" is dropped.
-export function splitUserRefs(raw: string[]): string[] {
-  return raw
-    .flatMap((token) => token.split(/[\s,]+/))
-    .map((s) => s.trim())
-    .filter((s) => s.replace(/^@/, ''));
 }
 
 // Resolve <users...> to IDs before a membership write's confirmation prompt.

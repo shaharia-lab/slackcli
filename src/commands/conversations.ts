@@ -15,7 +15,7 @@ import {
 } from '../lib/unread-messages.ts';
 import { markConversationRead, previousLastRead } from '../lib/mark-read.ts';
 import { processReadPage, resolveSelfIdentity } from '../lib/poll.ts';
-import { confirmWrite, splitUserRefs } from './usergroups.ts';
+import { confirmWrite } from './usergroups.ts';
 import {
   normalizeTimestamp,
   parseSlackLink,
@@ -29,7 +29,7 @@ import type { SlackChannel, SlackMessage, SlackUser, UnreadChannel, UnreadThread
 import { failCommand } from '../lib/command-errors.ts';
 import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
-import { lazyClient, resolveIdentifier, resolveUserList } from '../lib/name-resolver.ts';
+import { lazyClient, resolveIdentifier, resolveUserList, splitUserRefs } from '../lib/name-resolver.ts';
 
 // The authors of the messages `conversations unread --messages` printed, in the
 // shape `conversations read --json` uses for its `users` list.

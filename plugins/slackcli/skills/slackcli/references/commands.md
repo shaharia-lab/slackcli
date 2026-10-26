@@ -76,6 +76,7 @@ Undo: mark again with `--ts=<previous_last_read>` (null when Slack reports none)
 ```
 messages send --recipient-id=<C…|U…|url|"#name"|@handle|email> (--message=T | --message-file=F|-) [--thread-ts=TS] [--file=PATH]… [--blocks=JSON|@file] [--json]
 messages send --permalink=URL --message=T          # reply in that thread
+messages send --users=<U…[,U…]…> (--message=T | --message-file=F|-) [--thread-ts=TS] [--file=PATH]… [--blocks=JSON|@file] [--json]   # group DM (MPIM), 1-8 users
 messages edit (--channel-id=C --timestamp=TS | --permalink=URL) (--message=T | --message-file=F|-) [--json]
 messages delete (--channel-id=C --timestamp=TS | --permalink=URL) [--yes] [--json]   # chat.delete; retry-safe
 messages react (--channel-id=C --timestamp=TS | --permalink=URL) --emoji=NAME [--json]

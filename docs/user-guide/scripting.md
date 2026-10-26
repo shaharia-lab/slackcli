@@ -182,6 +182,8 @@ With `--json` the preview is one object on stdout:
   nothing is stored, and it is the variable's name (`SLACKCLI_TOKEN` or
   `SLACK_BOT_TOKEN`), as in `auth whoami`.
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
+  `group_dm` (a multi-person DM from `messages send --users`, carrying the user
+  set as `ids` instead of a single `id`, with no name lookup),
   `message` (with `ts`), `draft`, `scheduled_message`, `emoji` or `usergroup`. `thread_ts` is set for a
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
   for display and left out when the lookup fails.

@@ -596,10 +596,15 @@ export interface DryRunWorkspace {
 }
 
 export interface DryRunTarget {
-  // channel | user | message | draft | usergroup | scheduled_message | emoji | canvas
+  // channel | user | group_dm | message | draft | usergroup | scheduled_message | emoji | canvas
   kind: string;
-  // Absent only when the write creates the target (usergroups create).
+  // Absent only when the write creates the target (usergroups create), or when
+  // the target is a set of users rather than one id (group_dm uses `ids`).
   id?: string;
+  // The user ids of a multi-person DM (kind "group_dm"); set instead of `id`.
+  // No display-name lookup is done for a group DM, so the preview shows the
+  // joined user set, never a (failing) users.info on a comma list.
+  ids?: string[];
   // Looked up for display when Slack answers; omitted when it does not.
   name?: string;
   // The message a write acts on (messages edit, messages react).

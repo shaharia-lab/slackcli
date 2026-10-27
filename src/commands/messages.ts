@@ -506,6 +506,148 @@ async function openGroupDm(client: SlackClient, ids: string[], spinner: ReturnTy
   return response.channel.id;
 }
 
+// Where `messages send` posts: a group DM for --users, else the single
+// recipient of --recipient-id / --permalink.
+interface SendTarget {
+  client: SlackClient;
+  recipientId: string;
+  target: ResolvedThreadTarget;
+  groupDmIds?: string[];
+}
+
+// --users opens (or resumes) a multi-person DM for a set of users and posts
+// there. It is mutually exclusive with --recipient-id and --permalink; we
+// reject the combination here (not via Commander .conflicts) so a --json
+// caller gets the structured invalid_input object through failCommand. When
+// set, resolve the user set, open the MPIM up front, and reuse the normal post
+// path with that channel ID as the recipient. Otherwise the existing
+// single-recipient path runs.
+async function resolveSendTarget(
+  options: { users?: string; permalink?: string; recipientId?: string; threadTs?: string; workspace?: string; dryRun?: boolean },
+  spinner: ReturnType<typeof ora>,
+): Promise<SendTarget> {
+  if (!options.users) return resolveRecipient(options, spinner);
+
+  if (options.recipientId || options.permalink) {
+    throw new InvalidInputError(
+      '--users cannot be combined with --recipient-id or --permalink',
+      'Use --users for a multi-person DM, or --recipient-id / --permalink for a single channel/user — not both.',
+    );
+  }
+  const lazy = lazyClient(() => getAuthenticatedClient(options.workspace));
+  const groupDmIds = await resolveGroupDmIds(lazy, options.users);
+  const client = await lazy.get();
+  // No channel/permalink to resolve for a group DM — the recipient is
+  // the user set. Build the thread target directly (threadTs only);
+  // the channelId is filled from the opened MPIM below.
+  const target: ResolvedThreadTarget = {
+    channelId: '',
+    threadTs: options.threadTs ? normalizeTimestamp(options.threadTs, '--thread-ts') : undefined,
+  };
+  // In a dry run we do NOT open the MPIM; the preview uses a dedicated
+  // group_dm target built from groupDmIds. Only the real path opens the
+  // conversation and yields a channel id to post to.
+  const recipientId = options.dryRun ? '' : await openGroupDm(client, groupDmIds, spinner);
+  return { client, recipientId, target, groupDmIds };
+}
+
+// The dry-run payload of `messages send`: the files to upload, or the text post.
+async function buildSendDryRunPayload(
+  filePaths: string[] | undefined,
+  message: string,
+  blocks: Array<Record<string, unknown>> | undefined,
+): Promise<Record<string, unknown>> {
+  if (!filePaths) return { text: message, blocks };
+
+  const files = await Promise.all(filePaths.map((p: string) => checkUploadFile(p)));
+  // Additive shape: keep the original single-file `file`/`file_size`
+  // (now the FIRST file) so existing consumers keep working, and add
+  // the full `files` list plus the total size.
+  return {
+    file: filePaths[0],
+    file_size: files[0].size,
+    files: filePaths,
+    total_size: files.reduce((sum, f) => sum + f.size, 0),
+    comment: message,
+  };
+}
+
+async function emitSendDryRun(
+  { client, recipientId, target, groupDmIds }: SendTarget,
+  filePaths: string[] | undefined,
+  message: string,
+  blocks: Array<Record<string, unknown>> | undefined,
+  json: boolean,
+  spinner: ReturnType<typeof ora>,
+): Promise<void> {
+  const payload = await buildSendDryRunPayload(filePaths, message, blocks);
+  spinner.stop();
+  // A group DM previews as its own kind carrying the user set, with no
+  // name lookup (a users.info on a comma list can only fail, and a
+  // script reading target.id must not get a comma string — see #458).
+  const previewTarget = groupDmIds
+    ? { kind: 'group_dm', ids: groupDmIds, thread_ts: target.threadTs }
+    : recipientTarget(recipientId, target.threadTs);
+  emitDryRun(
+    await buildPreview(client, 'send message', previewTarget, payload, { lookupName: !groupDmIds }),
+    json,
+  );
+}
+
+async function sendFiles(
+  client: SlackClient,
+  channelId: string,
+  filePaths: string[],
+  message: string,
+  target: ResolvedThreadTarget,
+  json: boolean,
+  spinner: ReturnType<typeof ora>,
+): Promise<void> {
+  const upload = await client.uploadFilesExternal(channelId, filePaths, {
+    initial_comment: message,
+    thread_ts: target.threadTs,
+  });
+
+  spinner.succeed('Message sent successfully!');
+  if (json) {
+    // The upload flow returns the attached files, not a message ts, so
+    // this branch cannot offer ts/permalink the way a post can.
+    // Additive shape: always emit `file_ids`, and keep `file_id` as the
+    // first one so single-file consumers keep working unchanged.
+    const ids = upload.files?.map((f) => f.id) ?? [];
+    writeJson({ channel_id: channelId, file_id: ids[0], file_ids: ids });
+  } else {
+    const count = upload.files?.length ?? filePaths.length;
+    success(count === 1 ? 'File uploaded successfully' : `${count} files uploaded successfully`);
+  }
+}
+
+async function postText(
+  client: SlackClient,
+  channelId: string,
+  message: string,
+  blocks: Array<Record<string, unknown>> | undefined,
+  target: ResolvedThreadTarget,
+  json: boolean,
+  spinner: ReturnType<typeof ora>,
+): Promise<void> {
+  const response = await client.postMessage(channelId, message, {
+    thread_ts: target.threadTs,
+    blocks,
+  });
+
+  spinner.succeed('Message sent successfully!');
+  if (json) {
+    writeJson({
+      channel_id: channelId,
+      ts: response.ts,
+      ...(await permalinkField(client, channelId, response.ts)),
+    });
+  } else {
+    success(`Message timestamp: ${response.ts}`);
+  }
+}
+
 // The scheduled-message commands refuse browser session tokens before any
 // Slack call: name resolution would otherwise run first and then fail anyway.
 function requireSchedulingAuth(client: SlackClient): void {
@@ -570,115 +712,26 @@ export function createMessagesCommand(): Command {
         const message = await resolveMessageText(options);
         const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
 
-        // --users opens (or resumes) a multi-person DM for a set of users and
-        // posts there. It is mutually exclusive with --recipient-id and
-        // --permalink; we reject the combination here (not via Commander
-        // .conflicts) so a --json caller gets the structured invalid_input
-        // object through failCommand. When set, resolve the user set, open the
-        // MPIM up front, and reuse the normal post path with that channel ID as
-        // the recipient. Otherwise the existing single-recipient path runs.
-        let client: SlackClient;
-        let recipientId: string;
-        let target: ResolvedThreadTarget;
-        let groupDmIds: string[] | undefined;
-        if (options.users) {
-          if (options.recipientId || options.permalink) {
-            throw new InvalidInputError(
-              '--users cannot be combined with --recipient-id or --permalink',
-              'Use --users for a multi-person DM, or --recipient-id / --permalink for a single channel/user — not both.',
-            );
-          }
-          const lazy = lazyClient(() => getAuthenticatedClient(options.workspace));
-          groupDmIds = await resolveGroupDmIds(lazy, options.users);
-          client = await lazy.get();
-          // No channel/permalink to resolve for a group DM — the recipient is
-          // the user set. Build the thread target directly (threadTs only);
-          // the channelId is filled from the opened MPIM below.
-          target = {
-            channelId: '',
-            threadTs: options.threadTs ? normalizeTimestamp(options.threadTs, '--thread-ts') : undefined,
-          };
-          // In a dry run we do NOT open the MPIM; the preview uses a dedicated
-          // group_dm target built from groupDmIds below. Only the real path
-          // opens the conversation and yields a channel id to post to.
-          recipientId = options.dryRun ? '' : await openGroupDm(client, groupDmIds, spinner);
-        } else {
-          ({ client, recipientId, target } = await resolveRecipient(options, spinner));
-        }
+        const send = await resolveSendTarget(options, spinner);
 
         // --file is repeatable, so options.file is a string[] (or undefined).
         const filePaths: string[] | undefined = options.file;
 
         if (options.dryRun) {
-          let payload: Record<string, unknown>;
-          if (filePaths) {
-            const files = await Promise.all(filePaths.map((p: string) => checkUploadFile(p)));
-            // Additive shape: keep the original single-file `file`/`file_size`
-            // (now the FIRST file) so existing consumers keep working, and add
-            // the full `files` list plus the total size.
-            payload = {
-              file: filePaths[0],
-              file_size: files[0].size,
-              files: filePaths,
-              total_size: files.reduce((sum, f) => sum + f.size, 0),
-              comment: message,
-            };
-          } else {
-            payload = { text: message, blocks };
-          }
-          spinner.stop();
-          // A group DM previews as its own kind carrying the user set, with no
-          // name lookup (a users.info on a comma list can only fail, and a
-          // script reading target.id must not get a comma string — see #458).
-          const previewTarget = groupDmIds
-            ? { kind: 'group_dm', ids: groupDmIds, thread_ts: target.threadTs }
-            : recipientTarget(recipientId, target.threadTs);
-          emitDryRun(
-            await buildPreview(client, 'send message', previewTarget, payload, { lookupName: !groupDmIds }),
-            options.json,
-          );
+          await emitSendDryRun(send, filePaths, message, blocks, options.json, spinner);
           return;
         }
 
-        const channelId = await openRecipient(client, recipientId, spinner);
+        const { client, target } = send;
+        const channelId = await openRecipient(client, send.recipientId, spinner);
 
         spinner.text = 'Sending message...';
         if (filePaths) {
-          const upload = await client.uploadFilesExternal(channelId, filePaths, {
-            initial_comment: message,
-            thread_ts: target.threadTs,
-          });
-
-          spinner.succeed('Message sent successfully!');
-          if (options.json) {
-            // The upload flow returns the attached files, not a message ts, so
-            // this branch cannot offer ts/permalink the way a post can.
-            // Additive shape: always emit `file_ids`, and keep `file_id` as the
-            // first one so single-file consumers keep working unchanged.
-            const ids = upload.files?.map((f) => f.id) ?? [];
-            writeJson({ channel_id: channelId, file_id: ids[0], file_ids: ids });
-          } else {
-            const count = upload.files?.length ?? filePaths.length;
-            success(count === 1 ? 'File uploaded successfully' : `${count} files uploaded successfully`);
-          }
+          await sendFiles(client, channelId, filePaths, message, target, options.json, spinner);
           return;
         }
 
-        const response = await client.postMessage(channelId, message, {
-          thread_ts: target.threadTs,
-          blocks,
-        });
-
-        spinner.succeed('Message sent successfully!');
-        if (options.json) {
-          writeJson({
-            channel_id: channelId,
-            ts: response.ts,
-            ...(await permalinkField(client, channelId, response.ts)),
-          });
-        } else {
-          success(`Message timestamp: ${response.ts}`);
-        }
+        await postText(client, channelId, message, blocks, target, options.json, spinner);
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to send message' });
       }

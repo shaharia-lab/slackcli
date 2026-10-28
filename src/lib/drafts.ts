@@ -91,6 +91,13 @@ export function projectDraft(draft: SlackDraft): DraftSummary {
   };
 }
 
+// A draft started in Slack's "New message" composer before a recipient was
+// picked has no channel destination. There is nothing to show for it and
+// send-draft refuses it, so it is skipped like deleted and sent drafts.
+function hasChannelDestination(draft: SlackDraft): boolean {
+  return Boolean(draft.destinations?.[0]?.channel_id);
+}
+
 export async function fetchDrafts(
   client: Pick<SlackClient, 'listDrafts'>,
   options: { limit: number; onProgress?: (message: string) => void },
@@ -99,7 +106,7 @@ export async function fetchDrafts(
   const response = await client.listDrafts({ limit: options.limit });
 
   return (response.drafts ?? [])
-    .filter((draft) => !draft.is_deleted && !draft.is_sent)
+    .filter((draft) => !draft.is_deleted && !draft.is_sent && hasChannelDestination(draft))
     .map(projectDraft)
     .slice(0, options.limit);
 }

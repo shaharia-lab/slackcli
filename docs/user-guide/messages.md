@@ -432,8 +432,10 @@ slackcli messages list-drafts
 slackcli messages list-drafts --limit=25 --json
 ```
 
-Lists the authenticated user's active drafts. The default `--limit` is `100`;
-it must be a positive integer. Human output shows each draft's destination,
+Lists the authenticated user's active drafts. A draft with no recipient yet (one
+started in Slack's "New message" composer before a channel or person was picked)
+is not listed: it has no destination to show, and `send-draft` cannot post it.
+The default `--limit` is `100`; it must be a positive integer. Human output shows each draft's destination,
 age, message preview, draft id, and any thread, file, or scheduled-send metadata.
 
 **Browser auth only.** Slack apps cannot list drafts because Slack exposes no

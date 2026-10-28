@@ -9,7 +9,7 @@ import {
   sendDraft,
   validateSendableDraft,
 } from './drafts.ts';
-import type { SlackDraftListResponse } from '../types/index.ts';
+import type { SlackDraft, SlackDraftListResponse } from '../types/index.ts';
 
 describe('parseDraftLimit', () => {
   it('accepts positive integers', () => {
@@ -218,6 +218,57 @@ describe('fetchDrafts', () => {
       date_created: 1700000000,
       file_ids: [],
     }]);
+  });
+
+  const listOf = (drafts: SlackDraftListResponse['drafts']) => ({
+    listDrafts: async () => ({ ok: true, drafts }),
+  });
+  const active = (id: string, channel: string) => ({
+    id,
+    date_created: 1700000000,
+    destinations: [{ channel_id: channel }],
+  });
+
+  it.each([
+    ['no destinations', {}],
+    ['an empty destinations array', { destinations: [] }],
+    ['a destination with only user_ids', { destinations: [{ user_ids: ['U1'] }] }],
+    ['an empty channel_id', { destinations: [{ channel_id: '' }] }],
+  ])('skips a draft with %s and lists the others', async (_label, shape) => {
+    const drafts = await fetchDrafts(listOf([
+      active('DrBefore', 'C1'),
+      { id: 'DrNoRecipient', date_created: 1700000001, ...shape } as SlackDraft,
+      active('DrAfter', 'C2'),
+    ]), { limit: 10 });
+
+    expect(drafts.map((draft) => draft.draft_id)).toEqual(['DrBefore', 'DrAfter']);
+  });
+
+  it('applies the limit after skipping drafts with no recipient', async () => {
+    const drafts = await fetchDrafts(listOf([
+      { id: 'DrNoRecipient1', date_created: 1700000000 },
+      active('Dr1', 'C1'),
+      { id: 'DrNoRecipient2', date_created: 1700000000, destinations: [] },
+      active('Dr2', 'C2'),
+      active('Dr3', 'C3'),
+    ]), { limit: 2 });
+
+    expect(drafts.map((draft) => draft.draft_id)).toEqual(['Dr1', 'Dr2']);
+  });
+
+  it('still fails on a draft with a recipient but no id or creation date', async () => {
+    await expect(fetchDrafts(listOf([
+      active('Dr1', 'C1'),
+      { destinations: [{ channel_id: 'C2' }], date_created: 1700000000 },
+    ]), { limit: 10 })).rejects.toThrow('without an id');
+    await expect(fetchDrafts(listOf([
+      { id: 'DrUndated', destinations: [{ channel_id: 'C2' }] },
+    ]), { limit: 10 })).rejects.toThrow('without a creation date');
+  });
+
+  it('returns an empty list when every active draft has no recipient', async () => {
+    expect(await fetchDrafts(listOf([{ id: 'DrNoRecipient', date_created: 1700000000 }]), { limit: 10 }))
+      .toEqual([]);
   });
 });
 

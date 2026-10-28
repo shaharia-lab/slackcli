@@ -15,7 +15,8 @@ Every read command supports `--json`: `conversations list`, `conversations read`
 
 The writing commands support it too — `messages send`, `messages edit`, `messages delete`,
 `messages react`, `messages unreact`, `messages draft`, `messages send-draft`, `messages delete-draft`, `messages schedule`,
-`messages delete-scheduled`, `emoji add`, `emoji remove`, `canvas create`, `canvas edit`, the `saved` write verbs
+`messages delete-scheduled`, `emoji add`, `emoji remove`, `canvas create`, `canvas edit`, the `lists` write verbs
+(`add-record`, `edit-cell`, `delete-record`), the `saved` write verbs
 (`add`, `update`, `complete`, `reopen`, `remove`), the `usergroups` write verbs (`create`, `update`, `add`,
 `remove`, `enable`, `disable`), the `conversations` write and self
 verbs (`create`, `members add`, `members remove`, `join`, `leave`), and
@@ -143,7 +144,8 @@ Every command that changes something in Slack takes `--dry-run`:
 `conversations create`, `members add`, `members remove`, `join`, `leave`, `mark-read`;
 `emoji add`, `remove`;
 `saved add`, `update`, `complete`, `reopen`, `remove`;
-`canvas create`, `edit`; and
+`canvas create`, `edit`;
+`lists add-record`, `edit-cell`, `delete-record`; and
 `usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.
 
 A dry run does everything except the write: it picks the workspace, resolves
@@ -179,7 +181,8 @@ With `--json` the preview is one object on stdout:
   `mark conversation read`, `add emoji`, `add emoji alias`, `remove emoji`,
   `add saved item`, `update saved item`, `complete saved item`, `reopen saved item`, `remove saved item`,
   `create user group`, `update user group`, `add user group members`,
-  `remove user group members`, `enable user group`, `disable user group`.
+  `remove user group members`, `enable user group`, `disable user group`,
+  `add list row`, `edit list cell`, `delete list row`.
 - `workspace.profile` is the profile key the workspace is stored under. With a
   [token from the environment](authentication.md#5-a-token-from-the-environment-nothing-stored)
   nothing is stored, and it is the variable's name (`SLACKCLI_TOKEN` or
@@ -187,7 +190,7 @@ With `--json` the preview is one object on stdout:
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
   `group_dm` (a multi-person DM from `messages send --users`, carrying the user
   set as `ids` instead of a single `id`, with no name lookup),
-  `message` (with `ts`), `draft`, `scheduled_message`, `emoji` or `usergroup`. `thread_ts` is set for a
+  `message` (with `ts`), `draft`, `scheduled_message`, `emoji`, `usergroup` or `list` (the list's file ID as `id`). `thread_ts` is set for a
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
   for display and left out when the lookup fails. For `conversations create`
   the `channel` target has no `id` yet, only the `name` to be created.

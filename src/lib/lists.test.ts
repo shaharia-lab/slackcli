@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'bun:test';
-import { columnNamesOf, fetchListRecords, LISTS_MAX_PAGES, listIdOf } from './lists.ts';
+import {
+  columnNamesOf,
+  columnTypeOf,
+  fetchListRecords,
+  LISTS_MAX_PAGES,
+  listCellUpdateOf,
+  listCellWriteOf,
+  listIdOf,
+} from './lists.ts';
 import { formatListRecords } from './formatter.ts';
 import { applyFields, fieldsOption } from './json-fields.ts';
+import { InvalidInputError } from './cli-errors.ts';
 import type { SlackClient } from './slack-client.ts';
 import type { SlackListRecord, SlackListRecordsResponse } from '../types/index.ts';
 
@@ -132,5 +141,117 @@ describe('list JSON and --fields', () => {
 
     expect(applyFields('lists record', payload, fieldsOption({ fields: 'id,date_created', json: true })))
       .toEqual({ id: 'Rec1', date_created: 1700000000 });
+  });
+});
+
+describe('listCellUpdateOf', () => {
+  const row = 'Rec0123456789';
+  const column = 'Col0123456789';
+
+  it('builds a text cell as one rich_text section', () => {
+    expect(listCellUpdateOf(row, column, 'text', 'hello')).toEqual({
+      row_id: row,
+      column_id: column,
+      rich_text: [{ type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'hello' }] }] }],
+    });
+  });
+
+  it('builds a checkbox cell as a boolean', () => {
+    expect(listCellUpdateOf(row, column, 'checkbox', 'true')).toEqual({ row_id: row, column_id: column, checkbox: true });
+    expect(listCellUpdateOf(row, column, 'checkbox', 'false')).toEqual({ row_id: row, column_id: column, checkbox: false });
+  });
+
+  it('builds the to-do list columns with the checkbox, user and date shapes', () => {
+    expect(listCellUpdateOf(row, column, 'todo_completed', 'true')).toEqual({ row_id: row, column_id: column, checkbox: true });
+    expect(listCellUpdateOf(row, column, 'todo_assignee', 'U0123456789')).toEqual({
+      row_id: row,
+      column_id: column,
+      user: ['U0123456789'],
+    });
+    expect(listCellUpdateOf(row, column, 'todo_due_date', '2026-10-30')).toEqual({
+      row_id: row,
+      column_id: column,
+      date: ['2026-10-30'],
+    });
+  });
+
+  it('builds a user cell from a comma list of user IDs under the user key', () => {
+    expect(listCellUpdateOf(row, column, 'user', 'U0123456789, W0123456789')).toEqual({
+      row_id: row,
+      column_id: column,
+      user: ['U0123456789', 'W0123456789'],
+    });
+  });
+
+  it('builds a date cell as a one-item list of YYYY-MM-DD', () => {
+    expect(listCellUpdateOf(row, column, 'date', '2026-10-28')).toEqual({ row_id: row, column_id: column, date: ['2026-10-28'] });
+  });
+
+  it('builds a number cell as a one-item list holding a number, not a string', () => {
+    expect(listCellUpdateOf(row, column, 'number', '7')).toEqual({ row_id: row, column_id: column, number: [7] });
+  });
+
+  it('refuses a value that does not fit its type', () => {
+    expect(() => listCellUpdateOf(row, column, 'checkbox', 'yes')).toThrow(InvalidInputError);
+    expect(() => listCellUpdateOf(row, column, 'user', '')).toThrow(InvalidInputError);
+    expect(() => listCellUpdateOf(row, column, 'user', 'alice')).toThrow(InvalidInputError);
+    expect(() => listCellUpdateOf(row, column, 'date', '2026-02-31')).toThrow(InvalidInputError);
+    expect(() => listCellUpdateOf(row, column, 'date', '28/10/2026')).toThrow(InvalidInputError);
+    expect(() => listCellUpdateOf(row, column, 'number', '')).toThrow(InvalidInputError);
+    expect(() => listCellUpdateOf(row, column, 'number', 'seven')).toThrow(InvalidInputError);
+  });
+
+  it('refuses a column type it cannot set, and names that type', () => {
+    expect(() => listCellUpdateOf(row, column, 'created_by', 'x')).toThrow(InvalidInputError);
+    expect(() => listCellUpdateOf(row, column, 'created_by', 'x')).toThrow('"created_by"');
+    expect(() => listCellUpdateOf(row, column, 'select', 'x')).toThrow('"select"');
+  });
+});
+
+describe('columnTypeOf', () => {
+  const schema = [
+    { id: 'Col0123456789', name: 'Done', type: 'checkbox' },
+    { id: 'Col0987654321', name: 'Owner', type: 'user' },
+  ];
+
+  it('returns the schema type of the column ID', () => {
+    expect(columnTypeOf(schema, 'Col0123456789')).toBe('checkbox');
+    expect(columnTypeOf(schema, 'Col0987654321')).toBe('user');
+  });
+
+  it('throws InvalidInputError for a column ID the schema does not list, or when there is no schema', () => {
+    expect(() => columnTypeOf(schema, 'Col0000000000')).toThrow(InvalidInputError);
+    expect(() => columnTypeOf(undefined, 'Col0123456789')).toThrow(InvalidInputError);
+  });
+});
+
+describe('listCellWriteOf', () => {
+  const schema = [{ id: 'Col0123456789', name: 'Done', type: 'checkbox' }];
+
+  it('reads the record with lists.records.info, then builds the cell for the column type it finds', async () => {
+    const calls: Array<[string, string]> = [];
+    const client: Pick<SlackClient, 'getListRecord'> = {
+      getListRecord: async (listId, recordId) => {
+        calls.push([listId, recordId]);
+        return { ok: true, record: { id: recordId }, list: { list_metadata: { schema } } };
+      },
+    };
+
+    const write = await listCellWriteOf(client, 'F0123456789', 'Rec0123456789', 'Col0123456789', 'true');
+
+    expect(calls).toEqual([['F0123456789', 'Rec0123456789']]);
+    expect(write).toEqual({
+      type: 'checkbox',
+      cell: { row_id: 'Rec0123456789', column_id: 'Col0123456789', checkbox: true },
+    });
+  });
+
+  it('throws for a column the schema does not list, before any cell is built', async () => {
+    const client: Pick<SlackClient, 'getListRecord'> = {
+      getListRecord: async () => ({ ok: true, list: { list_metadata: { schema } } }),
+    };
+
+    await expect(listCellWriteOf(client, 'F0123456789', 'Rec0123456789', 'Col0000000000', 'true'))
+      .rejects.toThrow(InvalidInputError);
   });
 });

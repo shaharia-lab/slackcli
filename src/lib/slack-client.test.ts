@@ -7,6 +7,7 @@ import { resetSync } from '@logtape/logtape';
 import {
   checkUploadFile,
   DRAFT_CREATE_AUTH_MESSAGE,
+  LIST_WRITE_AUTH_MESSAGE,
   SAVED_WRITE_AUTH_MESSAGE,
   SlackClient,
   SlackTransportError,
@@ -90,6 +91,14 @@ class TestSlackClient extends SlackClient {
     }
 
     if (method === 'saved.delete') {
+      return { ok: true };
+    }
+
+    if (method === 'lists.records.create') {
+      return { ok: true, record: { id: 'Rec0123456789', list_id: params.list_id } };
+    }
+
+    if (method === 'lists.cells.update' || method === 'lists.records.delete') {
       return { ok: true };
     }
 
@@ -2508,6 +2517,50 @@ describe('SlackClient Later-list writes (#436)', () => {
       method: 'saved.update',
       params: { item_type: 'message', item_id: 'C123', ts: TS, ...update },
     }]);
+  });
+
+  it('creates a list row with lists.records.create, sending the list ID only', async () => {
+    const client = new TestSlackClient();
+
+    await client.createListRecord('F0123456789');
+
+    expect(client.calls).toEqual([{ method: 'lists.records.create', params: { list_id: 'F0123456789' } }]);
+  });
+
+  it('sends the cells of lists.cells.update as one JSON string', async () => {
+    const client = new TestSlackClient();
+    const cells = [{ row_id: 'Rec0123456789', column_id: 'Col0123456789', checkbox: true }];
+
+    await client.updateListCells('F0123456789', cells);
+
+    expect(client.calls).toEqual([{
+      method: 'lists.cells.update',
+      params: { list_id: 'F0123456789', cells: JSON.stringify(cells) },
+    }]);
+  });
+
+  it('deletes one row with lists.records.delete, naming it as id', async () => {
+    const client = new TestSlackClient();
+
+    await client.deleteListRecord('F0123456789', 'Rec0123456789');
+
+    expect(client.calls).toEqual([{
+      method: 'lists.records.delete',
+      params: { list_id: 'F0123456789', id: 'Rec0123456789' },
+    }]);
+  });
+
+  it('refuses the three list writes on a standard app token before making a request', async () => {
+    const client = new SlackClient({
+      workspace_id: 'T123', workspace_name: 'Test Workspace',
+      auth_type: 'standard', token: 'xoxb-test', token_type: 'bot',
+    });
+    const request = spyOn(client, 'request');
+
+    await expect(client.createListRecord('F0123456789')).rejects.toThrow(LIST_WRITE_AUTH_MESSAGE);
+    await expect(client.updateListCells('F0123456789', [])).rejects.toThrow(LIST_WRITE_AUTH_MESSAGE);
+    await expect(client.deleteListRecord('F0123456789', 'Rec0123456789')).rejects.toThrow(UnsupportedAuthTypeError);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('removes one item with saved.delete', async () => {

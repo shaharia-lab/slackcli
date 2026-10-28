@@ -24,6 +24,9 @@ const BROWSER_ONLY = new Set([
   'slackcli saved remove',
   'slackcli lists read',
   'slackcli lists record',
+  'slackcli lists add-record',
+  'slackcli lists edit-cell',
+  'slackcli lists delete-record',
 ]);
 
 // Commands that only work with a standard app token (#431): Slack refuses its
@@ -69,6 +72,9 @@ const SLACK_WRITES = new Set([
   'slackcli saved complete',
   'slackcli saved reopen',
   'slackcli saved remove',
+  'slackcli lists add-record',
+  'slackcli lists edit-cell',
+  'slackcli lists delete-record',
 ]);
 
 // The read commands that take --fields (#330), from the one table that also

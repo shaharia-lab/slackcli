@@ -7,6 +7,7 @@ import type {
   DryRunWorkspace,
   SlackAuthTestResponse,
   ScheduledMessageSummary,
+  ListCellUpdate,
   SavedItemUpdate,
   SlackDraftListResponse,
   SlackListRecordResponse,
@@ -298,6 +299,11 @@ export const DRAFT_LIST_AUTH_MESSAGE = 'Draft listing requires browser authentic
 export const DRAFT_DELETE_AUTH_MESSAGE = 'Draft deletion requires browser authentication';
 export const DRAFT_UPDATE_AUTH_MESSAGE = 'Draft update requires browser authentication';
 export const LIST_AUTH_MESSAGE = 'Reading lists requires browser authentication';
+// The list writes use Slack's web-client lists.records.create, lists.cells.update
+// and lists.records.delete endpoints, which need a browser session.
+export const LIST_WRITE_AUTH_MESSAGE =
+  'Changing lists (lists add-record, edit-cell, delete-record) requires browser authentication; ' +
+  'sign in with a browser session (slackcli auth login-auto or auth login-browser)';
 export const UNREAD_MESSAGES_AUTH_MESSAGE = 'Reading unread messages (--messages) requires browser authentication';
 
 // Custom-emoji writes use Slack's web-client emoji.add/emoji.remove endpoints,
@@ -819,6 +825,26 @@ export class SlackClient {
     this.requireBrowserAuth(LIST_AUTH_MESSAGE);
 
     return this.request('lists.records.info', { list_id: listId, id: recordId });
+  }
+
+  // Add an empty row to a list (browser auth only). A new row takes its cells
+  // from a later lists.cells.update.
+  async createListRecord(listId: string): Promise<SlackListRecordResponse> {
+    this.requireBrowserAuth(LIST_WRITE_AUTH_MESSAGE);
+    return this.request('lists.records.create', { list_id: listId });
+  }
+
+  // Set cells on a list (browser auth only). Slack takes `cells` as one JSON array.
+  async updateListCells(listId: string, cells: ListCellUpdate[]): Promise<any> {
+    this.requireBrowserAuth(LIST_WRITE_AUTH_MESSAGE);
+    return this.request('lists.cells.update', { list_id: listId, cells: JSON.stringify(cells) });
+  }
+
+  // Delete one row of a list (browser auth only). Slack takes the row ID as `id`.
+  async deleteListRecord(listId: string, recordId: string): Promise<any> {
+    this.requireBrowserAuth(LIST_WRITE_AUTH_MESSAGE);
+    if (!listId || !recordId) throw new InvalidInputError('A list delete needs both the list ID and the record ID.');
+    return this.request('lists.records.delete', { list_id: listId, id: recordId });
   }
 
   // Schedule a message for later. A browser session schedules a draft instead

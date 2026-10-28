@@ -100,6 +100,10 @@ export async function fetchDrafts(
 
   return (response.drafts ?? [])
     .filter((draft) => !draft.is_deleted && !draft.is_sent)
+    // A draft started in the composer before a recipient was picked has no
+    // channel destination. It has nothing to show and cannot be sent, so skip
+    // it instead of failing the whole listing (#461).
+    .filter((draft) => Boolean(draft.destinations?.[0]?.channel_id))
     .map(projectDraft)
     .slice(0, options.limit);
 }

@@ -219,6 +219,78 @@ describe('fetchDrafts', () => {
       file_ids: [],
     }]);
   });
+
+  it('skips drafts without a channel destination instead of failing the listing', async () => {
+    const response: SlackDraftListResponse = {
+      ok: true,
+      drafts: [
+        {
+          id: 'DrNoDestinations',
+          date_created: 1700000000,
+          blocks: [],
+        },
+        {
+          id: 'DrEmptyDestinations',
+          date_created: 1700000001,
+          destinations: [],
+          blocks: [],
+        },
+        {
+          id: 'DrUserOnlyDestination',
+          date_created: 1700000002,
+          destinations: [{ user_ids: ['U1'] }],
+          blocks: [],
+        },
+        {
+          id: 'DrEmptyChannelId',
+          date_created: 1700000003,
+          destinations: [{ channel_id: '' }],
+          blocks: [],
+        },
+        {
+          id: 'DrActive',
+          date_created: 1700000004,
+          destinations: [{ channel_id: 'C1' }],
+          blocks: [],
+        },
+      ],
+    };
+    const client = { listDrafts: async () => response };
+
+    const drafts = await fetchDrafts(client, { limit: 10 });
+
+    expect(drafts.map((draft) => draft.draft_id)).toEqual(['DrActive']);
+  });
+
+  it('applies the limit after the recipient-less drafts are filtered out', async () => {
+    const response: SlackDraftListResponse = {
+      ok: true,
+      drafts: [
+        {
+          id: 'DrNoRecipient',
+          date_created: 1700000000,
+          blocks: [],
+        },
+        {
+          id: 'DrFirst',
+          date_created: 1700000001,
+          destinations: [{ channel_id: 'C1' }],
+          blocks: [],
+        },
+        {
+          id: 'DrSecond',
+          date_created: 1700000002,
+          destinations: [{ channel_id: 'C2' }],
+          blocks: [],
+        },
+      ],
+    };
+    const client = { listDrafts: async () => response };
+
+    const drafts = await fetchDrafts(client, { limit: 2 });
+
+    expect(drafts.map((draft) => draft.draft_id)).toEqual(['DrFirst', 'DrSecond']);
+  });
 });
 
 const sendableDraft = {

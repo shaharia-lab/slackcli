@@ -193,7 +193,8 @@ const HELP = {
     fields: 'each item of drafts',
     description:
       'List the authenticated user\'s active drafts, ' +
-      'excluding deleted and already-sent ones. Use it to find the draft ID for send-draft or delete-draft.',
+      'excluding deleted and already-sent ones. Use it to find the draft ID for send-draft or delete-draft. ' +
+      'Drafts with no recipient yet are not listed.',
     examples: [
       'slackcli messages list-drafts',
       'slackcli messages list-drafts --limit 25 --json',

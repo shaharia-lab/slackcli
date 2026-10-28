@@ -436,6 +436,10 @@ Lists the authenticated user's active drafts. The default `--limit` is `100`;
 it must be a positive integer. Human output shows each draft's destination,
 age, message preview, draft id, and any thread, file, or scheduled-send metadata.
 
+Drafts with no recipient yet — a message started in the Slack composer before a
+channel or person was picked — are not listed. They have no destination to show
+and cannot be sent, so they are skipped instead of failing the whole listing.
+
 **Browser auth only.** Slack apps cannot list drafts because Slack exposes no
 public API for it. This command uses the undocumented web-client `drafts.list`
 endpoint, which may change without notice. With a standard token it fails with

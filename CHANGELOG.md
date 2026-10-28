@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`messages send --users`**: open (or resume) a multi-person DM (group DM / MPIM) and post one message everyone sees in a single shared thread. Takes user IDs, `@handle`s or emails (comma- or space-separated), the same form as `conversations members add <users...>`; 1–8 users, where more than one opens an MPIM and a single user is a 1:1 DM. Mutually exclusive with `--recipient-id` and `--permalink`; `--thread-ts`, `--file`, `--blocks` and `--json` all work with it. A `--dry-run` previews a `group_dm` target carrying the user set without opening the conversation (#457)
 
+### Fixed
+- **`messages list-drafts` no longer fails on a draft with no recipient**: a message started in the Slack composer before a channel or person was picked is stored as a draft with no channel destination, and mapping it through the draft projection failed the whole listing with `Slack returned draft Dr0123456789 without a channel destination`, so no drafts were returned at all. Such drafts are now skipped, the same way deleted and already-sent ones are, and `--limit` still applies to the drafts that remain; a draft that is missing an id or a creation date still fails loudly (#461)
+
 ## [0.17.0] - 2026-10-24
 
 ### Added

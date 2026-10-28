@@ -461,25 +461,37 @@ describe('resolveThreadTarget', () => {
     expect(target.threadTs).toBeUndefined();
   });
 
-  it('resolves a top-level message permalink to that message as thread parent', () => {
+  it('resolves a message permalink without ?thread_ts= to its own ts, flagged as a possible reply', () => {
     const target = resolveThreadTarget(
       { permalink: `${TEAM_URL}/archives/${CHANNEL}/p1786816800107789` },
       flags
     );
-    expect(target).toEqual({ channelId: CHANNEL, threadTs: '1786816800.107789', workspace: 'myteam' });
+    expect(target).toEqual({
+      channelId: CHANNEL,
+      threadTs: '1786816800.107789',
+      workspace: 'myteam',
+      mayBeReply: true,
+    });
   });
 
-  it('resolves a threaded-reply permalink to the PARENT timestamp', () => {
+  it('resolves a threaded-reply permalink to the PARENT timestamp, not flagged', () => {
     const target = resolveThreadTarget(
       { permalink: `${TEAM_URL}/archives/${CHANNEL}/p1786816999222333?thread_ts=1786816800.107789` },
       flags
     );
     expect(target.threadTs).toBe('1786816800.107789');
+    expect('mayBeReply' in target).toBe(false);
+  });
+
+  it('never flags an explicit --thread-ts as a possible reply', () => {
+    const target = resolveThreadTarget({ channelId: CHANNEL, threadTs: '1786816999.222333' }, flags);
+    expect('mayBeReply' in target).toBe(false);
   });
 
   it('resolves a bare channel link to the channel with no thread', () => {
     const target = resolveThreadTarget({ permalink: `${TEAM_URL}/archives/${CHANNEL}` }, flags);
     expect(target).toEqual({ channelId: CHANNEL, threadTs: undefined, workspace: 'myteam' });
+    expect('mayBeReply' in target).toBe(false);
   });
 
   it('accepts a user profile URL for channel-or-user call sites', () => {

@@ -63,7 +63,7 @@ printf '%s' "$REPORT" | slackcli messages send --recipient-id=C1234567890 --mess
 | `--message <text>` | Message text. **Required** unless `--message-file` is given |
 | `--message-file <path>` | Read the message text from a UTF-8 file, or from standard input with `-`; cannot be combined with `--message` |
 | `--thread-ts <ts>` | Post as a reply in this thread |
-| `--permalink <url>` | Replaces `--recipient-id` and `--thread-ts` |
+| `--permalink <url>` | Replaces `--recipient-id` and `--thread-ts`; a reply link posts in its parent's thread ([details](links-and-timestamps.md#--permalink)) |
 | `--file <path>` | Attach a file; the message text becomes the comment. Repeatable — pass `--file` once per attachment to share several files in one message (all-or-nothing) |
 | `--blocks <json\|@file>` | Block Kit JSON array; cannot be combined with `--file` |
 | `--json` | Print the delivered message as JSON instead of the human line |

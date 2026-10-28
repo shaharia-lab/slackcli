@@ -62,7 +62,7 @@ slackcli conversations read C1234567890 --oldest="$CURSOR" --exclude-self --json
 
 | Option | Default | Purpose |
 |---|---|---|
-| `--thread-ts <ts>` | — | Read a specific thread instead of the channel |
+| `--thread-ts <ts>` | — | Read a specific thread instead of the channel; a reply's ts reads its whole thread |
 | `--permalink <url>` | — | Replaces the channel argument and `--thread-ts` |
 | `--exclude-replies` | off | Drop threaded replies from channel history |
 | `--exclude-self` | off | Drop messages sent by the authenticated user (or, for a bot token, its bot) |
@@ -88,7 +88,12 @@ the message text.
 
 Slack's thread API always returns the thread's parent message, whatever
 `--oldest` says, so `read` drops every message with `ts <= --oldest` itself: a
-thread poll does not see the parent again. `--exclude-self` uses the user ID
+thread poll does not see the parent again.
+
+Given a reply's timestamp (`--thread-ts`, or a reply link without
+`?thread_ts=`), Slack's thread API returns only that reply. `read` then reads
+the thread again from the parent the reply names, so you get the parent and
+all replies for one extra call. `--exclude-self` uses the user ID
 saved at login; a workspace saved before that, or a bot token (whose `bot_id`
 is not stored), costs one `auth.test` call. See
 [Poll a channel or thread safely](scripting.md#poll-a-channel-or-thread-safely).

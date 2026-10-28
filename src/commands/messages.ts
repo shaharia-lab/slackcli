@@ -30,10 +30,14 @@ import { resolveIdentifier, resolveUserList, lazyClient, splitUserRefs } from '.
 import { resolveMessageText } from '../lib/message-input.ts';
 import { parseScheduleTime } from '../lib/schedule-time.ts';
 import { deleteMessage, removeReaction } from '../lib/message.ts';
+import { resolvePostThread } from '../lib/thread-parent.ts';
 
 // Help text shared by several commands below.
 const THREAD_TS_NOTE =
   '--thread-ts takes 1712345678.123456 or p1712345678123456.';
+const REPLY_LINK_NOTE =
+  'A link to a reply targets its parent thread. Without ?thread_ts= in the link, that costs one ' +
+  'conversations.replies lookup (also on --dry-run); if the lookup fails, the link\'s own timestamp is used.';
 const PERMALINK_MESSAGE_NOTE =
   '--permalink replaces --channel-id and --timestamp and must be a message link.';
 const MESSAGE_TARGET_TEXT =
@@ -86,6 +90,7 @@ const HELP = {
       THREAD_TS_NOTE,
       '--permalink replaces --recipient-id and --thread-ts: a message link replies in its thread, ' +
         'a channel link posts to the channel.',
+      REPLY_LINK_NOTE,
       'One of --message or --message-file is required; they are mutually exclusive. ' +
         'With --file the text becomes the file comment.',
       STDIN_NOTE,
@@ -222,6 +227,7 @@ const HELP = {
       THREAD_TS_NOTE,
       '--permalink replaces --recipient-id and --thread-ts: a message link drafts a reply in its thread, ' +
         'a channel link drafts in the channel.',
+      REPLY_LINK_NOTE,
       MESSAGE_TEXT_NOTE,
       STDIN_NOTE,
       'Creates the draft immediately, with no confirmation prompt.',
@@ -293,6 +299,7 @@ const HELP = {
       THREAD_TS_NOTE,
       '--permalink replaces --recipient-id and --thread-ts: a message link schedules a reply in its thread, ' +
         'a channel link schedules in the channel.',
+      REPLY_LINK_NOTE,
       MESSAGE_TEXT_NOTE,
       STDIN_NOTE,
       'With --blocks the message text is the notification fallback.',
@@ -460,7 +467,9 @@ async function resolveRecipient(
   warnOnWorkspaceMismatch(client, target.workspace);
 
   const recipientId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
-  return { client, recipientId, target };
+  // A message link without ?thread_ts= may name a reply: post under its parent (#482).
+  if (target.mayBeReply) spinner.text = 'Resolving thread...';
+  return { client, recipientId, target: await resolvePostThread(client, recipientId, target) };
 }
 
 // The conversation to post in: a user ID (starts with U) needs its DM opened.

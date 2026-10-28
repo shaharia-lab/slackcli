@@ -344,6 +344,12 @@ export interface ResolvedThreadTarget {
   channelId: string;
   threadTs?: string;
   workspace?: string;
+  /**
+   * Set when threadTs is a message link's own timestamp (the link had no
+   * `?thread_ts=`), so it may be a reply's rather than the parent's. Resolve it
+   * with `resolveThreadParent()` before posting.
+   */
+  mayBeReply?: true;
 }
 
 interface TargetFlags {
@@ -402,7 +408,8 @@ export function resolveMessageTarget(
  * posts into a channel, from either `--permalink` or the explicit inputs.
  *
  * A permalink pointing at a message resolves to that message's thread; a bare channel
- * link resolves to the channel with no thread.
+ * link resolves to the channel with no thread. A message link without `?thread_ts=`
+ * cannot tell a reply from a parent, so its target carries `mayBeReply`.
  */
 export function resolveThreadTarget(
   input: ThreadTargetInput,
@@ -416,6 +423,7 @@ export function resolveThreadTarget(
       channelId: parsed.channelId,
       threadTs: threadParentOf(parsed),
       workspace: parsed.workspace,
+      ...(parsed.timestamp && !parsed.threadTs ? { mayBeReply: true as const } : {}),
     };
   }
 

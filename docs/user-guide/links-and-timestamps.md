@@ -98,7 +98,7 @@ slackcli messages react --permalink="https://myteam.slack.com/archives/C12345678
 ```
 
 Available on `messages send`, `messages react`, `messages unreact`, `messages edit`, `messages delete`,
-`messages draft`, the `saved` write verbs (`add`, `update`, `complete`, `reopen`, `remove`),
+`messages draft`, `messages schedule`, the `saved` write verbs (`add`, `update`, `complete`, `reopen`, `remove`),
 `conversations read`, `conversations get`, and `conversations mark-read`.
 
 Rules worth knowing:
@@ -106,7 +106,11 @@ Rules worth knowing:
 - Pass either `--permalink` **or** the explicit inputs, not both.
 - When the link points at a threaded reply, commands that take a `--thread-ts`
   correctly use the **parent** message, so a reply link makes you reply in the
-  right thread rather than starting a new one.
+  right thread rather than starting a new one, and `conversations read` reads
+  the whole thread. A link copied from Slack carries the parent as
+  `?thread_ts=`. A link without it (one built from a message's `ts`, say) costs
+  one `conversations.replies` call to find the parent; `messages send`, `draft`
+  and `schedule` fall back to the link's own timestamp if that lookup fails.
 - If the pasted link's workspace subdomain does not match the workspace the
   command will actually call, SlackCLI warns you up front instead of letting
   Slack answer with a confusing `message_not_found`. (This check only applies to

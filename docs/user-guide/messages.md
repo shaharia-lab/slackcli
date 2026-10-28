@@ -379,6 +379,11 @@ slackcli messages send-draft Dr1234567890 --workspace=rafael --yes --json
 slackcli messages delete-draft Dr1234567890 --workspace=rafael --yes --json
 ```
 
+`list-drafts` returns only drafts that have a channel destination. Drafts started
+in the composer without choosing a recipient (empty `destinations` or no
+`channel_id`) are skipped, matching the behaviour for deleted and already-sent
+drafts. `--limit` applies after this filtering.
+
 `send-draft` reads the active draft, posts its original rich-text blocks to the saved
 channel and `thread_ts` (if present), then deletes the draft. `--json` returns
 `{channel_id, ts, permalink?}` like `messages send`. A failed permalink lookup

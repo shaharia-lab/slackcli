@@ -219,6 +219,67 @@ describe('fetchDrafts', () => {
       file_ids: [],
     }]);
   });
+
+  it('skips drafts with no destinations, empty destinations, missing channel_id, or only user_ids', async () => {
+    const response: SlackDraftListResponse = {
+      ok: true,
+      drafts: [
+        {
+          id: 'DrGood',
+          date_created: 1700000000,
+          destinations: [{ channel_id: 'C1' }],
+        },
+        {
+          id: 'DrNoDest',
+          date_created: 1700000001,
+          // destinations omitted
+        },
+        {
+          id: 'DrEmptyDest',
+          date_created: 1700000002,
+          destinations: [],
+        },
+        {
+          id: 'DrEmptyChannel',
+          date_created: 1700000003,
+          destinations: [{ channel_id: '' }],
+        },
+        {
+          id: 'DrOnlyUsers',
+          date_created: 1700000004,
+          destinations: [{ user_ids: ['U123'] }],
+        },
+      ],
+    };
+    const client = {
+      listDrafts: async () => response,
+    };
+
+    const drafts = await fetchDrafts(client, { limit: 10 });
+    expect(drafts).toEqual([{
+      draft_id: 'DrGood',
+      channel_id: 'C1',
+      text: '',
+      date_created: 1700000000,
+      file_ids: [],
+    }]);
+  });
+
+  it('applies limit after filtering recipient-less drafts', async () => {
+    const response: SlackDraftListResponse = {
+      ok: true,
+      drafts: [
+        { id: 'Dr1', date_created: 1, destinations: [{ channel_id: 'C1' }] },
+        { id: 'DrNo', date_created: 2 }, // skipped
+        { id: 'Dr2', date_created: 3, destinations: [{ channel_id: 'C2' }] },
+        { id: 'Dr3', date_created: 4, destinations: [{ channel_id: 'C3' }] },
+      ],
+    };
+    const client = { listDrafts: async () => response };
+
+    const drafts = await fetchDrafts(client, { limit: 2 });
+    expect(drafts.map(d => d.draft_id)).toEqual(['Dr1', 'Dr2']);
+  });
 });
 
 const sendableDraft = {

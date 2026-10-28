@@ -100,6 +100,9 @@ export async function fetchDrafts(
 
   return (response.drafts ?? [])
     .filter((draft) => !draft.is_deleted && !draft.is_sent)
+    // Recipient-less drafts (empty destinations or no channel_id) cannot be
+    // projected or sent; skip them so one such draft does not fail the whole list.
+    .filter((draft) => Boolean(draft.destinations?.[0]?.channel_id))
     .map(projectDraft)
     .slice(0, options.limit);
 }

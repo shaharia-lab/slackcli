@@ -546,7 +546,7 @@ export function createConversationsCommand(): Command {
   // Read conversation history
   describeCommand(conversations.command('read'), HELP.read)
     .argument('[channel-id]', 'Channel ID, Slack URL or channel name to read from')
-    .option('--thread-ts <timestamp>', 'Read this thread (parent message timestamp) instead of the channel')
+    .option('--thread-ts <timestamp>', 'Read this thread instead of the channel (any message timestamp in it; a reply reads its whole thread)')
     .option('--permalink <url>', 'Slack link; reads that channel, or that message\'s thread (replaces <channel-id> and --thread-ts)')
     .option('--exclude-replies', 'Exclude threaded replies (only top-level messages)', false)
     .option('--exclude-self', 'Exclude messages sent by the authenticated user or bot', false)

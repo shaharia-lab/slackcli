@@ -347,7 +347,7 @@ export interface ResolvedThreadTarget {
   /**
    * Set when threadTs is a message link's own timestamp (the link had no
    * `?thread_ts=`), so it may be a reply's rather than the parent's. Resolve it
-   * with `resolveThreadParent()` before posting.
+   * with `resolvePostThread()` before posting.
    */
   mayBeReply?: true;
 }

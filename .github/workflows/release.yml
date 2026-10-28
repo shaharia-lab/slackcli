@@ -79,12 +79,19 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
+      # Bash on every runner: Windows defaults to PowerShell, which does not
+      # understand ${VAR#prefix}, so VERSION came out empty and the Windows
+      # binary was built without a version (#443).
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
-        run: bun build --compile --minify --bytecode --splitting --format=esm --target=${{ matrix.target }} --define __APP_VERSION__='"${{ steps.version.outputs.VERSION }}"' src/index.ts --outfile dist/${{ matrix.artifact }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: bun build --compile --minify --bytecode --splitting --format=esm --target=${{ matrix.target }} --define "__APP_VERSION__=\"$VERSION\"" src/index.ts --outfile dist/${{ matrix.artifact }}
 
       - name: Ad-hoc sign macOS binary
         if: runner.os == 'macOS'
@@ -94,12 +101,20 @@ jobs:
 
       # Run the (signed) binary before it ships: bytecode + --splitting change
       # how modules are wired, and CI only exercises Linux x64 (#137). Skipped
-      # where the target arch differs from the runner's.
+      # where the target arch differs from the runner's. --version must print
+      # the tag's version, not just exit 0 (#443); CR is stripped for Windows.
       - name: Smoke test binary
         if: matrix.smoke
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          ./dist/${{ matrix.artifact }} --version
+          actual="$(./dist/${{ matrix.artifact }} --version | tr -d '\r')"
+          if [ -z "$VERSION" ] || [ "$actual" != "$VERSION" ]; then
+            echo "::error::--version printed '${actual}', expected '${VERSION}'"
+            exit 1
+          fi
+          echo "--version printed ${actual}"
           ./dist/${{ matrix.artifact }} --help > /dev/null
 
       - name: Upload artifact

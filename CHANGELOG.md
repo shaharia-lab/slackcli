@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`lists read` and `lists record`**: read-only access to Slack lists, with a browser login. `lists read <list>` returns every record of a list, across all pages. `lists record <list> <record-id>` returns one record, with column names when Slack sends the schema. `<list>` takes a list file ID or a Slack list URL. Both take `--json` and `--fields` (#469)
 
+### Fixed
+- **`slackcli --version` prints the version on Windows**: the Windows release binary was built without a version, because the release workflow read the tag with bash syntax under PowerShell, so `-V` / `--version` printed an empty line and every release looked newer than the installed one. The release build now runs that step in bash on every platform, and fails if a binary's `--version` does not match the tag (#443)
+
 ## [0.18.0] - 2026-10-28
 
 ### Added

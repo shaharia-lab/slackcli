@@ -47,8 +47,13 @@ The few extra MB are well inside the 150 MB budget. Two things to know:
   first release whose `--bytecode` cross-compiles to Windows x64.
 - CI only runs the Linux x64 binary, so `release.yml` runs `--version` and
   `--help` on each binary its own runner can execute (Linux x64, macOS arm64
-  after signing, Windows x64) before uploading it. The matrix `smoke` flag is
-  `false` for cross-arch targets.
+  after signing, Windows x64) before uploading it. `--version` must print the
+  tag's version exactly, or the job fails. The matrix `smoke` flag is `false`
+  for cross-arch targets.
+- The version extraction, build and smoke steps run with `shell: bash` on
+  every runner. Windows runners default to PowerShell, which reads the bash
+  `${GITHUB_REF#refs/tags/v}` as an empty variable; that is how the Windows
+  binary shipped without a version (#443).
 
 ## Versioning
 

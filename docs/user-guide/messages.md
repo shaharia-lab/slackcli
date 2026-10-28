@@ -435,8 +435,10 @@ slackcli messages list-drafts --limit=25 --json
 Lists the authenticated user's active drafts. A draft with no recipient yet (one
 started in Slack's "New message" composer before a channel or person was picked)
 is not listed: it has no destination to show, and `send-draft` cannot post it.
-The default `--limit` is `100`; it must be a positive integer. Human output shows each draft's destination,
-age, message preview, draft id, and any thread, file, or scheduled-send metadata.
+Slack still counts such a draft toward the `--limit` it is asked for, so the
+list can be shorter than `--limit`. The default `--limit` is `100`; it must be a
+positive integer. Human output shows each draft's destination, age, message
+preview, draft id, and any thread, file, or scheduled-send metadata.
 
 **Browser auth only.** Slack apps cannot list drafts because Slack exposes no
 public API for it. This command uses the undocumented web-client `drafts.list`
@@ -462,8 +464,8 @@ trims each draft further, e.g. `--fields draft_id,text`):
 }
 ```
 
-`thread_ts` and `date_scheduled` are included only when present. Deleted and
-already-sent entries are excluded, and an empty result is successful with
+`thread_ts` and `date_scheduled` are included only when present. Deleted,
+already-sent and recipient-less entries are excluded, and an empty result is successful with
 `{"draft_count":0,"drafts":[]}`.
 
 ## `messages schedule`

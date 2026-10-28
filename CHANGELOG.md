@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-28
+
 ### Added
 - **`search files [query]`**: search files with Slack's `search.files`, with the same options as `search messages` (`--in`, `--from`, `--limit`, `--page`, `--sort`, `--sort-dir`, `--workspace`, `--json`, `--fields`). Each file prints on one line with its name, type, owner, date and permalink. `--json` prints `{ query, total, page, pages, files }`, and each file's `id` feeds `files info`, `files read` and `files download` (#468)
 - **`messages send --users`**: open (or resume) a multi-person DM (group DM / MPIM) and post one message everyone sees in a single shared thread. Takes user IDs, `@handle`s or emails (comma- or space-separated), the same form as `conversations members add <users...>`; 1–8 users, where more than one opens an MPIM and a single user is a 1:1 DM. Mutually exclusive with `--recipient-id` and `--permalink`; `--thread-ts`, `--file`, `--blocks` and `--json` all work with it. A `--dry-run` previews a `group_dm` target carrying the user set without opening the conversation (#457)

@@ -15,7 +15,7 @@ Fixes #
 
 ## Checklist
 
-- [ ] The linked issue is open and carries the `ready-for-pr` label (constitution §1–2)
+- [ ] The linked issue is open and carries the `ready-for-pr` label; a feature gets it only after its community review (constitution §1–2)
 - [ ] Change is focused on the linked issue — no unrelated edits
 - [ ] Tests added/updated, including edge cases (constitution §4)
 - [ ] `bun run type-check` and `bun test` pass locally

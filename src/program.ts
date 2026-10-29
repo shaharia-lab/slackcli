@@ -5,7 +5,6 @@ import { createMessagesCommand } from './commands/messages.ts';
 import { createCanvasCommand } from './commands/canvas.ts';
 import { createEmojiCommand } from './commands/emoji.ts';
 import { createFilesCommand } from './commands/files.ts';
-import { createListsCommand } from './commands/lists.ts';
 import { createLogsCommand } from './commands/logs.ts';
 import { createUpdateCommand } from './commands/update.ts';
 import { createSavedCommand } from './commands/saved.ts';
@@ -51,7 +50,6 @@ export function createProgram(): Command {
   program.addCommand(createConversationsCommand());
   program.addCommand(createEmojiCommand());
   program.addCommand(createFilesCommand());
-  program.addCommand(createListsCommand());
   program.addCommand(createLogsCommand());
   program.addCommand(createMessagesCommand());
   program.addCommand(createSavedCommand());

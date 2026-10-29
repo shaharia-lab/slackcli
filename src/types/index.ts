@@ -157,55 +157,6 @@ export interface SlackDraftListResponse {
   has_more?: boolean;
 }
 
-// Slack list records (lists.records.list, lists.records.info). Only the parts the
-// CLI reads are typed. A cell carries the value key that matches its column type.
-export interface SlackListCell {
-  column_id: string;
-  key?: string;
-  value?: string | number;
-  text?: string;
-  rich_text?: unknown[];
-  select?: string[];
-  user?: string[];
-  number?: number[];
-  date?: number[];
-  timestamp?: number[];
-}
-
-export interface SlackListRecord {
-  id: string;
-  list_id?: string;
-  fields?: SlackListCell[];
-  date_created?: number;
-  updated_timestamp?: number;
-}
-
-export interface SlackListColumn {
-  id: string;
-  name?: string;
-  type?: string;
-}
-
-export interface SlackListRecordsResponse {
-  ok: boolean;
-  records?: SlackListRecord[];
-  response_metadata?: { next_cursor?: string };
-}
-
-export interface SlackListRecordResponse {
-  ok: boolean;
-  record?: SlackListRecord;
-  list?: { list_metadata?: { schema?: SlackListColumn[] } };
-}
-
-// One entry of lists.cells.update's `cells`: the row, the column, and one typed
-// key (rich_text, checkbox, user, date or number) that matches the column type.
-export interface ListCellUpdate {
-  row_id: string;
-  column_id: string;
-  [typedKey: string]: unknown;
-}
-
 // Stable, explicit projection emitted by `messages list-drafts`. Do not expose
 // Slack's raw draft object: this endpoint is undocumented and may add or change
 // internal fields without notice.
@@ -657,7 +608,7 @@ export interface DryRunWorkspace {
 }
 
 export interface DryRunTarget {
-  // channel | user | group_dm | message | draft | usergroup | scheduled_message | emoji | canvas | list
+  // channel | user | group_dm | message | draft | usergroup | scheduled_message | emoji | canvas
   kind: string;
   // Absent only when the write creates the target (usergroups create), or when
   // the target is a set of users rather than one id (group_dm uses `ids`).

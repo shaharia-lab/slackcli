@@ -26,12 +26,12 @@ in one call (`conversations unread --messages`), adding and removing custom emoj
 (`emoji add`, `emoji remove`), and changing the Later list (`saved add`,
 `saved update`, `saved complete`, `saved reopen`, `saved remove`).
 
-Some features go the other way and need a standard token: the canvas sections,
-create and edit commands (`canvas sections`, `canvas create`, `canvas edit`).
-Slack answers its canvases API with `not_allowed_token_type` on a browser
-session, so those commands refuse a browser profile before calling Slack.
-Scheduling a message for later (`messages schedule`, `messages list-scheduled`,
-`messages delete-scheduled`) works with either token type.
+Some features go the other way and need a standard token: scheduling a message
+for later (`messages schedule`, `messages list-scheduled`,
+`messages delete-scheduled`) and the canvas sections, create and edit commands (`canvas sections`,
+`canvas create`, `canvas edit`).
+Slack answers its scheduling and canvases APIs with `not_allowed_token_type` on a
+browser session, so those commands refuse a browser profile before calling Slack.
 
 ## 1. Standard Slack app tokens
 

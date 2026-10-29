@@ -27,7 +27,7 @@ const BROWSER: WorkspaceConfig = {
   xoxc_token: 'xoxc-fake',
 };
 
-const WRITES = ['chat.scheduleMessage', 'chat.deleteScheduledMessage', 'drafts.create', 'drafts.update', 'drafts.delete'];
+const WRITES = ['chat.scheduleMessage', 'chat.deleteScheduledMessage'];
 
 type Call = { method: string; params: Record<string, any> };
 type Answer = Record<string, unknown> | Error | ((params: Record<string, any>) => unknown);
@@ -524,78 +524,33 @@ describe('scheduled messages (#379)', () => {
     });
   });
 
-  // Browser-session logins schedule through Slack's drafts.* methods (#474): a
-  // scheduled message is a draft with a send time, and its ID is the draft ID.
+  // Slack answers these methods with not_allowed_token_type on a browser
+  // session, so the commands refuse first: no lookup, no DM opened, no call.
   describe('with a browser-auth workspace', () => {
-    const textBlocks = (text: string) => [
-      { type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text }] }] },
-    ];
-    const draftPending = (id: string, channel: string, when: number, text: string) => ({
-      id, date_created: 1791000000, date_scheduled: when, file_ids: [], destinations: [{ channel_id: channel }], blocks: textBlocks(text),
+    it.each([
+      [['schedule', '--recipient-id', 'C0123456789', '--message', 'hi', '--in', '1h']],
+      [['schedule', '--recipient-id', '#deploys', '--message', 'hi', '--in', '1h']],
+      [['schedule', '--recipient-id', 'U0123456789', '--message', 'hi', '--in', '1h']],
+      [['schedule', '--recipient-id', 'C0123456789', '--message', 'hi', '--in', '1h', '--dry-run']],
+      [['list-scheduled']],
+      [['list-scheduled', '--recipient-id', '#deploys']],
+      [['list-scheduled', '--recipient-id', 'U0123456789']],
+      [['delete-scheduled', 'Q0000000001', '--yes']],
+      [['delete-scheduled', 'Q0000000001']],
+      [['delete-scheduled', 'Q0000000001', '--dry-run']],
+    ])('%j fails with unsupported_auth_type before any Slack call', async (argv) => {
+      const error = await failJson(argv, BROWSER);
+
+      expect(error).toMatchObject({ code: 'unsupported_auth_type', retryable: false });
+      expect(error.message).toContain('standard Slack app token (xoxb or xoxp)');
+      expect(calls).toEqual([]);
     });
 
-    it('schedules as a draft, sets the time with drafts.update, and prints the draft ID', async () => {
-      answers['drafts.create'] = { ok: true, draft: { id: 'Dr0123456789' } };
-      answers['drafts.update'] = { ok: true };
-      const postAt = nowSeconds() + 3600;
-
-      const out = await runJson(['schedule', '--recipient-id', 'C0123456789', '--message', 'hi', '--at', String(postAt)], BROWSER);
-
-      expect(out).toEqual({ channel_id: 'C0123456789', scheduled_message_id: 'Dr0123456789', post_at: postAt });
-      expect(methods()).toEqual(['drafts.create', 'drafts.update']);
-      expect(calls[1]?.params).toMatchObject({ draft_id: 'Dr0123456789', date_scheduled: postAt });
-    });
-
-    it('deletes the draft and fails when the schedule cannot be set', async () => {
-      answers['drafts.create'] = { ok: true, draft: { id: 'Dr0123456789' } };
-      answers['drafts.update'] = slackRefusal('invalid_arguments');
-      answers['drafts.delete'] = { ok: true };
-      const postAt = nowSeconds() + 3600;
-
-      await failJson(['schedule', '--recipient-id', 'C0123456789', '--message', 'hi', '--at', String(postAt)], BROWSER);
-
-      expect(methods()).toEqual(['drafts.create', 'drafts.update', 'drafts.delete']);
-    });
-
-    it('lists the pending drafts with drafts.list, in the list-scheduled shape', async () => {
-      const soon = nowSeconds() + 3600;
-      const later = nowSeconds() + 7200;
-      answers['drafts.list'] = {
-        ok: true,
-        drafts: [
-          draftPending('Dr0000000002', 'D0123456789', later, 'Second'),
-          draftPending('Dr0000000001', 'C0123456789', soon, 'Standup in 10 minutes'),
-        ],
-      };
-
-      const out = await runJson(['list-scheduled'], BROWSER);
-
-      expect(out).toEqual({
-        scheduled_count: 2,
-        scheduled_messages: [
-          { scheduled_message_id: 'Dr0000000001', channel_id: 'C0123456789', post_at: soon, date_created: 1791000000, text: 'Standup in 10 minutes' },
-          { scheduled_message_id: 'Dr0000000002', channel_id: 'D0123456789', post_at: later, date_created: 1791000000, text: 'Second' },
-        ],
-      });
-      expect(methods()).toEqual(['drafts.list']);
-    });
-
-    it('cancels a pending draft with drafts.delete, after finding it in drafts.list', async () => {
-      answers['drafts.list'] = { ok: true, drafts: [draftPending('Dr0000000001', 'C0123456789', nowSeconds() + 3600, 'Standup')] };
-      answers['drafts.delete'] = { ok: true };
-
-      const out = await runJson(['delete-scheduled', 'Dr0000000001', '--yes'], BROWSER);
-
-      expect(out).toEqual({ scheduled_message_id: 'Dr0000000001', channel_id: 'C0123456789', deleted: true });
-      expect(calls).toEqual([
-        { method: 'drafts.list', params: { is_active: true, limit: 1000 } },
-        { method: 'drafts.delete', params: { draft_id: 'Dr0000000001', client_last_updated_ts: expect.any(String) } },
-      ]);
-    });
-
-    it('previews a schedule without any draft write', async () => {
-      await runJson(['schedule', '--recipient-id', 'C0123456789', '--message', 'hi', '--in', '1h', '--dry-run'], BROWSER);
-      expect(madeWrite()).toBe(false);
+    it('says so in text mode', async () => {
+      await run(['list-scheduled'], BROWSER);
+      expect(process.exitCode).toBe(1);
+      expect(stderr).toContain('Scheduled messages require a standard Slack app token');
+      expect(calls).toEqual([]);
     });
   });
 });

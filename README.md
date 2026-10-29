@@ -165,8 +165,6 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Find a channel or a person | `slackcli search people "ada"` | [search](docs/user-guide/search.md) |
 | Work through "saved for later" | `slackcli saved list --state=to_do` | [saved items](docs/user-guide/saved.md) |
 | Read a Canvas as Markdown | `slackcli canvas read F123` | [canvas](docs/user-guide/canvas.md) |
-| Read a Slack list's records | `slackcli lists read F123 --json` | [lists](docs/user-guide/lists.md) |
-| Add a row or set a cell in a Slack list | `slackcli lists edit-cell F123 Rec1 Col1 --value "Done" --yes` | [lists](docs/user-guide/lists.md) |
 | Inspect or download a Slack file | `slackcli files info F123` | [files](docs/user-guide/files.md) |
 | Upload a file with a message | `slackcli messages send --file=./report.pdf …` | [messages](docs/user-guide/messages.md) |
 | Post rich Block Kit content | `slackcli messages send --blocks=@blocks.json …` | [messages](docs/user-guide/messages.md) |

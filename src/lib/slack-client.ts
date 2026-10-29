@@ -7,17 +7,13 @@ import type {
   DryRunWorkspace,
   SlackAuthTestResponse,
   ScheduledMessageSummary,
-  ListCellUpdate,
   SavedItemUpdate,
   SlackDraftListResponse,
-  SlackListRecordResponse,
-  SlackListRecordsResponse,
   SlackScheduledMessage,
   SlackScheduledMessageListResponse,
   WorkspaceConfig,
 } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
-import { listScheduledDrafts, scheduleDraft } from './drafts.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
 import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
@@ -297,13 +293,6 @@ export async function checkUploadFile(filePath: string): Promise<{ filename: str
 export const DRAFT_CREATE_AUTH_MESSAGE = 'Draft creation requires browser authentication';
 export const DRAFT_LIST_AUTH_MESSAGE = 'Draft listing requires browser authentication';
 export const DRAFT_DELETE_AUTH_MESSAGE = 'Draft deletion requires browser authentication';
-export const DRAFT_UPDATE_AUTH_MESSAGE = 'Draft update requires browser authentication';
-export const LIST_AUTH_MESSAGE = 'Reading lists requires browser authentication';
-// The list writes use Slack's web-client lists.records.create, lists.cells.update
-// and lists.records.delete endpoints, which need a browser session.
-export const LIST_WRITE_AUTH_MESSAGE =
-  'Changing lists (lists add-record, edit-cell, delete-record) requires browser authentication; ' +
-  'sign in with a browser session (slackcli auth login-auto or auth login-browser)';
 export const UNREAD_MESSAGES_AUTH_MESSAGE = 'Reading unread messages (--messages) requires browser authentication';
 
 // Custom-emoji writes use Slack's web-client emoji.add/emoji.remove endpoints,
@@ -320,6 +309,12 @@ export const EMOJI_WRITE_AUTH_MESSAGE =
 export const SAVED_WRITE_AUTH_MESSAGE =
   'Changing the Later list (saved add/update/complete/reopen/remove) requires browser authentication; ' +
   'sign in with a browser session (slackcli auth login-auto or auth login-browser)';
+
+// The refusal of the scheduled-message calls on browser session tokens: Slack
+// answers them with `not_allowed_token_type` (#379).
+export const SCHEDULED_MESSAGES_AUTH_MESSAGE =
+  'Scheduled messages require a standard Slack app token (xoxb or xoxp); ' +
+  'browser session tokens cannot use Slack\'s scheduling API';
 
 // The refusal of the canvases.* calls on browser session tokens: Slack answers
 // them with `not_allowed_token_type` (tested on #431 with an xoxc/xoxd session).
@@ -381,13 +376,6 @@ function summarizeScheduledPage(
     else skipped += 1;
   }
   return { summaries, skipped };
-}
-
-// The destination of a draft: its channel, and the thread when it is a reply.
-function draftDestinations(channelId: string, threadTs: string | undefined): Array<Record<string, unknown>> {
-  return threadTs
-    ? [{ channel_id: channelId, thread_ts: threadTs, broadcast: false }]
-    : [{ channel_id: channelId }];
 }
 
 export class SlackClient {
@@ -751,44 +739,27 @@ export class SlackClient {
     return this.request('files.completeUploadExternal', params);
   }
 
-  // Create draft message. `blocks` replaces the mrkdwn of `text`.
+  // Create draft message
   async createDraft(channelId: string, text: string, options: {
     thread_ts?: string;
-    blocks?: unknown[];
   } = {}): Promise<any> {
     this.requireBrowserAuth(DRAFT_CREATE_AUTH_MESSAGE);
 
+    const destinations: any = [{ channel_id: channelId }];
+    if (options.thread_ts) {
+      destinations[0].thread_ts = options.thread_ts;
+      destinations[0].broadcast = false;
+    }
+
     const params: Record<string, any> = {
       client_msg_id: crypto.randomUUID(),
-      blocks: JSON.stringify(options.blocks ?? parseMrkdwn(text)),
-      destinations: JSON.stringify(draftDestinations(channelId, options.thread_ts)),
+      blocks: JSON.stringify(parseMrkdwn(text)),
+      destinations: JSON.stringify(destinations),
       file_ids: '[]',
       is_from_composer: 'false',
     };
 
     return this.request('drafts.create', params);
-  }
-
-  // Set the destination, content and send time of an existing draft (#474). The
-  // Slack web client sends is_from_composer as true when it schedules.
-  async updateDraft(draftId: string, channelId: string, options: {
-    thread_ts?: string;
-    blocks: unknown[];
-    date_scheduled: number;
-  }): Promise<any> {
-    this.requireBrowserAuth(DRAFT_UPDATE_AUTH_MESSAGE);
-
-    // The timestamp is the current time, as in deleteDraft: a draft's own
-    // last_updated_ts is refused there with draft_has_conflict.
-    return this.request('drafts.update', {
-      draft_id: draftId,
-      client_last_updated_ts: (Date.now() / 1000).toFixed(7),
-      blocks: JSON.stringify(options.blocks),
-      destinations: JSON.stringify(draftDestinations(channelId, options.thread_ts)),
-      file_ids: '[]',
-      date_scheduled: options.date_scheduled,
-      is_from_composer: 'true',
-    });
   }
 
   // List active drafts (browser auth only; Slack has no public API for drafts).
@@ -810,45 +781,7 @@ export class SlackClient {
     });
   }
 
-  // List records (browser auth only). Pages come back with next_cursor, which is
-  // empty on the last page; lists.ts follows them.
-  async listRecords(listId: string, options: { cursor?: string } = {}): Promise<SlackListRecordsResponse> {
-    this.requireBrowserAuth(LIST_AUTH_MESSAGE);
-
-    const params: Record<string, any> = { list_id: listId };
-    if (options.cursor) params.cursor = options.cursor;
-    return this.request('lists.records.list', params);
-  }
-
-  // One record of a list (browser auth only). Slack takes the record ID as `id`.
-  async getListRecord(listId: string, recordId: string): Promise<SlackListRecordResponse> {
-    this.requireBrowserAuth(LIST_AUTH_MESSAGE);
-
-    return this.request('lists.records.info', { list_id: listId, id: recordId });
-  }
-
-  // Add an empty row to a list (browser auth only). A new row takes its cells
-  // from a later lists.cells.update.
-  async createListRecord(listId: string): Promise<SlackListRecordResponse> {
-    this.requireBrowserAuth(LIST_WRITE_AUTH_MESSAGE);
-    return this.request('lists.records.create', { list_id: listId });
-  }
-
-  // Set cells on a list (browser auth only). Slack takes `cells` as one JSON array.
-  async updateListCells(listId: string, cells: ListCellUpdate[]): Promise<any> {
-    this.requireBrowserAuth(LIST_WRITE_AUTH_MESSAGE);
-    return this.request('lists.cells.update', { list_id: listId, cells: JSON.stringify(cells) });
-  }
-
-  // Delete one row of a list (browser auth only). Slack takes the row ID as `id`.
-  async deleteListRecord(listId: string, recordId: string): Promise<any> {
-    this.requireBrowserAuth(LIST_WRITE_AUTH_MESSAGE);
-    if (!listId || !recordId) throw new InvalidInputError('A list delete needs both the list ID and the record ID.');
-    return this.request('lists.records.delete', { list_id: listId, id: recordId });
-  }
-
-  // Schedule a message for later. A browser session schedules a draft instead
-  // and gets the draft's ID back (#474). On an app token, like chat.postMessage,
+  // Schedule a message for later (standard auth only). Like chat.postMessage,
   // this is a write: `retry.ts` never repeats it after an ambiguous failure,
   // and on this path the only retries are the ones `@slack/web-api` makes by
   // itself for every call, exactly as for a post.
@@ -856,9 +789,7 @@ export class SlackClient {
     thread_ts?: string;
     blocks?: Array<Record<string, unknown>>;
   } = {}): Promise<any> {
-    if (this.config.auth_type === 'browser') {
-      return scheduleDraft(this, { channel, text, postAt, thread_ts: options.thread_ts, blocks: options.blocks });
-    }
+    this.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
 
     const params: Record<string, any> = { channel, text, post_at: postAt };
     if (options.thread_ts) params.thread_ts = options.thread_ts;
@@ -867,13 +798,12 @@ export class SlackClient {
     return this.request('chat.scheduleMessage', params);
   }
 
-  // The pending scheduled messages, soonest first. On an app token Slack
-  // returns only the ones scheduled with the calling token; on a browser session
-  // they are the scheduled drafts (#474). Every page is read before `limit` is
-  // applied: Slack documents no order for this list, so the soonest `limit`
-  // messages can only be picked from all of them.
+  // The pending scheduled messages (standard auth only), soonest first. Slack
+  // returns only the ones scheduled with the calling token. Every page is read
+  // before `limit` is applied: Slack documents no order for this list, so the
+  // soonest `limit` messages can only be picked from all of them.
   async listScheduledMessages(options: { channel?: string; limit?: number } = {}): Promise<ScheduledMessageSummary[]> {
-    if (this.config.auth_type === 'browser') return listScheduledDrafts(this, options);
+    this.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
 
     const found: ScheduledMessageSummary[] = [];
     let cursor: string | undefined;
@@ -896,10 +826,9 @@ export class SlackClient {
     return options.limit === undefined ? found : found.slice(0, options.limit);
   }
 
-  // Cancel a pending scheduled message. On a browser session the ID is the
-  // draft's, and the draft is deleted (#474).
+  // Cancel a pending scheduled message (standard auth only).
   async deleteScheduledMessage(channel: string, scheduledMessageId: string): Promise<void> {
-    if (this.config.auth_type === 'browser') return this.deleteDraft(scheduledMessageId);
+    this.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
     await this.request('chat.deleteScheduledMessage', { channel, scheduled_message_id: scheduledMessageId });
   }
 

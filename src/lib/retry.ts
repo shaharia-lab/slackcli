@@ -34,8 +34,6 @@ export const READ_METHODS: ReadonlySet<string> = new Set([
   'emoji.list',
   'files.info',
   'files.list',
-  'lists.records.info',
-  'lists.records.list',
   'messages.list',
   'saved.list',
   'search.messages',

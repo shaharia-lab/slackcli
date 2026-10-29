@@ -60,7 +60,6 @@ describe('classifyError', () => {
     ['invalid_scheduled_message_id', 'not_found'],
     ['canvas_not_found', 'not_found'],
     ['canvas_deleted', 'not_found'],
-    ['list_not_found', 'not_found'],
     ['missing_scope', 'permission_denied'],
     ['canvas_disabled_user_team', 'permission_denied'],
     ['free_teams_cannot_create_standalone_canvases', 'permission_denied'],

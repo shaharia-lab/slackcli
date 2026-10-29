@@ -3,11 +3,9 @@ import {
   extractDraftText,
   fetchDrafts,
   findActiveDraft,
-  listScheduledDrafts,
   loadActiveDraft,
   parseDraftLimit,
   projectDraft,
-  scheduleDraft,
   sendDraft,
   validateSendableDraft,
 } from './drafts.ts';
@@ -366,120 +364,5 @@ describe('draft lifecycle', () => {
     expect(await sendDraft(client, 'Dr123', sendableDraft)).toEqual({
       channel_id: 'C123', ts: '1700000001.000002', cleanup_error: 'draft_has_conflict',
     });
-  });
-});
-
-describe('scheduleDraft (#474)', () => {
-  const POST_AT = 1791791400;
-  const input = { channel: 'C123', text: 'Standup', postAt: POST_AT, thread_ts: '1712345678.000100' };
-
-  // A client whose draft calls answer as given and record what they were called with.
-  function draftClient(created: unknown, failures: { update?: Error; remove?: Error } = {}) {
-    const calls: Array<{ method: string; args: unknown[] }> = [];
-    const client = {
-      createDraft: async (...args: unknown[]) => { calls.push({ method: 'createDraft', args }); return created; },
-      updateDraft: async (...args: unknown[]) => {
-        calls.push({ method: 'updateDraft', args });
-        if (failures.update) throw failures.update;
-        return { ok: true };
-      },
-      deleteDraft: async (...args: unknown[]) => {
-        calls.push({ method: 'deleteDraft', args });
-        if (failures.remove) throw failures.remove;
-      },
-    };
-    return { client: client as unknown as Parameters<typeof scheduleDraft>[0], calls };
-  }
-
-  it('creates the draft without a time, since drafts.create refuses one', async () => {
-    const { client, calls } = draftClient({ ok: true, draft: { id: 'Dr1' } });
-
-    await scheduleDraft(client, input);
-    expect(calls[0].args[2]).toMatchObject({ thread_ts: '1712345678.000100' });
-    expect(calls[0].args[2]).not.toHaveProperty('date_scheduled');
-  });
-
-  it('sets the schedule with drafts.update', async () => {
-    const { client, calls } = draftClient({ ok: true, draft: { id: 'Dr2' } });
-
-    expect(await scheduleDraft(client, input)).toEqual({ scheduled_message_id: 'Dr2', post_at: POST_AT });
-    expect(calls.map((call) => call.method)).toEqual(['createDraft', 'updateDraft']);
-    expect(calls[1].args).toEqual(['Dr2', 'C123', expect.objectContaining({ thread_ts: '1712345678.000100', date_scheduled: POST_AT })]);
-  });
-
-  it('deletes the draft and throws the update error when the schedule cannot be set', async () => {
-    const { client, calls } = draftClient(
-      { ok: true, draft: { id: 'Dr3' } },
-      { update: new Error('Slack API error: invalid_arguments') },
-    );
-
-    await expect(scheduleDraft(client, input)).rejects.toThrow('Slack API error: invalid_arguments');
-    expect(calls.map((call) => call.method)).toEqual(['createDraft', 'updateDraft', 'deleteDraft']);
-    expect(calls[2].args).toEqual(['Dr3']);
-  });
-
-  it('still throws the update error when the cleanup delete fails too', async () => {
-    const { client } = draftClient(
-      { ok: true, draft: { id: 'Dr4' } },
-      { update: new Error('update failed'), remove: new Error('delete failed') },
-    );
-
-    await expect(scheduleDraft(client, input)).rejects.toThrow('update failed');
-  });
-
-  it('throws when drafts.create returns no draft ID, and deletes nothing', async () => {
-    const { client, calls } = draftClient({ ok: true });
-
-    await expect(scheduleDraft(client, input)).rejects.toThrow('without an id');
-    expect(calls.map((call) => call.method)).toEqual(['createDraft']);
-  });
-});
-
-describe('listScheduledDrafts (#474)', () => {
-  // Times are relative to now: a fixed one would fall into the past.
-  const NOW = Math.floor(Date.now() / 1000);
-  const draft = (id: string, dateScheduled: number, extra: Partial<SlackDraft> = {}): SlackDraft => ({
-    id,
-    date_created: NOW - 100,
-    date_scheduled: dateScheduled,
-    file_ids: [],
-    destinations: [{ channel_id: 'C123' }],
-    blocks: [{ type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: `text of ${id}` }] }] }],
-    ...extra,
-  });
-  const clientWith = (drafts: SlackDraft[], asked: unknown[] = []) => ({
-    listDrafts: async (options: unknown) => {
-      asked.push(options);
-      return { ok: true, drafts } as SlackDraftListResponse;
-    },
-  }) as unknown as Parameters<typeof listScheduledDrafts>[0];
-
-  it('keeps the drafts with a future send time, soonest first, as scheduled messages', async () => {
-    const found = await listScheduledDrafts(clientWith([
-      draft('Dr2', NOW + 7200),
-      draft('Dr1', NOW + 3600),
-      draft('DrPast', NOW - 60),
-      draft('DrNone', 0),
-      draft('DrDeleted', NOW + 60, { is_deleted: true }),
-      draft('DrSent', NOW + 60, { is_sent: true }),
-      draft('DrNoChannel', NOW + 60, { destinations: [] }),
-    ]));
-
-    expect(found).toEqual([
-      { scheduled_message_id: 'Dr1', channel_id: 'C123', post_at: NOW + 3600, date_created: NOW - 100, text: 'text of Dr1' },
-      { scheduled_message_id: 'Dr2', channel_id: 'C123', post_at: NOW + 7200, date_created: NOW - 100, text: 'text of Dr2' },
-    ]);
-  });
-
-  it('filters by channel, then applies the limit, and asks Slack for up to 1000 drafts', async () => {
-    const asked: unknown[] = [];
-    const found = await listScheduledDrafts(clientWith([
-      draft('Dr2', NOW + 20),
-      draft('DrOther', NOW + 5, { destinations: [{ channel_id: 'C999' }] }),
-      draft('Dr1', NOW + 10),
-    ], asked), { channel: 'C123', limit: 1 });
-
-    expect(asked).toEqual([{ limit: 1000 }]);
-    expect(found.map((message) => message.scheduled_message_id)).toEqual(['Dr1']);
   });
 });

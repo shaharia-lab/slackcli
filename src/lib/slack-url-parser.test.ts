@@ -98,14 +98,6 @@ describe('normalizeIdentifier', () => {
       expect(normalizeIdentifier(`${TEAM_URL}/docs/T012AB/F0123ABCD`, 'file', '<canvas-id>')).toBe('F0123ABCD');
     });
 
-    it('extracts a file ID from a list URL', () => {
-      expect(normalizeIdentifier(`${TEAM_URL}/lists/T012AB/F0BUT8BRDQC`, 'file', '<list>')).toBe('F0BUT8BRDQC');
-    });
-
-    it('rejects a list URL that names no file', () => {
-      expect(() => normalizeIdentifier(`${TEAM_URL}/lists/T012AB`, 'file', '<list>')).toThrow('could not read an ID');
-    });
-
     it('extracts a file ID from a file permalink', () => {
       expect(
         normalizeIdentifier(`${TEAM_URL}/files/U012ABCDEFG/F0123ABCD/report.txt`, 'file', '<file-id-or-url>')

@@ -1,10 +1,6 @@
-import { getLogger } from '@logtape/logtape';
-import type { DraftSummary, ScheduledMessageSummary, SlackDraft, SlackDraftListResponse } from '../types/index.ts';
+import type { DraftSummary, SlackDraft, SlackDraftListResponse } from '../types/index.ts';
 import type { SlackClient } from './slack-client.ts';
 import { InvalidInputError, NotFoundError } from './cli-errors.ts';
-import { parseMrkdwn } from './mrkdwn.ts';
-
-const logger = getLogger(['slackcli', 'drafts']);
 
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
@@ -202,71 +198,4 @@ export async function sendDraft(
     // A failed link lookup cannot undo a delivered message.
   }
   return result;
-}
-
-// How many active drafts one drafts.list call asks for. Scheduled drafts are
-// found among them, so a list that Slack cut short is logged.
-const ACTIVE_DRAFT_LIMIT = 1000;
-
-// Browser session tokens schedule a message as a draft with a send time (#474).
-// As in the Slack web client, drafts.create makes a plain draft and drafts.update
-// sets the time: drafts.create refuses a time with scheduled_draft_cannot_be_attached.
-// A draft whose time cannot be set is deleted before the error is thrown, so a
-// failed schedule leaves no draft behind.
-export async function scheduleDraft(
-  client: Pick<SlackClient, 'createDraft' | 'updateDraft' | 'deleteDraft'>,
-  input: { channel: string; text: string; postAt: number; thread_ts?: string; blocks?: unknown[] },
-): Promise<{ scheduled_message_id: string; post_at: number }> {
-  const blocks = input.blocks ?? parseMrkdwn(input.text);
-  const created = await client.createDraft(input.channel, input.text, { thread_ts: input.thread_ts, blocks });
-  const draftId: string | undefined = created.draft?.id;
-  if (!draftId) throw new Error('Slack created a draft without an id, so nothing was scheduled');
-
-  try {
-    await client.updateDraft(draftId, input.channel, { thread_ts: input.thread_ts, blocks, date_scheduled: input.postAt });
-  } catch (error) {
-    try {
-      await client.deleteDraft(draftId);
-    } catch (cleanupError) {
-      logger.warn('Could not delete draft {draft_id} after its schedule failed: {reason}', {
-        draft_id: draftId,
-        reason: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-      });
-    }
-    throw error;
-  }
-  return { scheduled_message_id: draftId, post_at: input.postAt };
-}
-
-// The scheduled drafts still ahead, soonest first, as list-scheduled prints them.
-// Slack's drafts.list also returns drafts that are not scheduled, and drafts
-// whose time has passed, so only the drafts with a future date_scheduled are kept.
-export async function listScheduledDrafts(
-  client: Pick<SlackClient, 'listDrafts'>,
-  options: { channel?: string; limit?: number } = {},
-): Promise<ScheduledMessageSummary[]> {
-  const response = await client.listDrafts({ limit: ACTIVE_DRAFT_LIMIT });
-  if (response.has_more) {
-    logger.warn('drafts.list returned more than {limit} active drafts; scheduled drafts past them are not listed', {
-      limit: ACTIVE_DRAFT_LIMIT,
-    });
-  }
-
-  const now = Date.now() / 1000;
-  const found = (response.drafts ?? [])
-    .filter((draft) => !draft.is_deleted && !draft.is_sent && hasChannelDestination(draft))
-    .filter((draft) => (draft.date_scheduled ?? 0) > now)
-    .map((draft) => {
-      const summary = projectDraft(draft);
-      return {
-        scheduled_message_id: summary.draft_id,
-        channel_id: summary.channel_id,
-        post_at: draft.date_scheduled ?? 0,
-        date_created: summary.date_created,
-        text: summary.text,
-      };
-    })
-    .filter((message) => !options.channel || message.channel_id === options.channel)
-    .sort((a, b) => a.post_at - b.post_at || a.scheduled_message_id.localeCompare(b.scheduled_message_id));
-  return options.limit === undefined ? found : found.slice(0, options.limit);
 }

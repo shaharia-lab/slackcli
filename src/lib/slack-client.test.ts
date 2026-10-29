@@ -7,8 +7,8 @@ import { resetSync } from '@logtape/logtape';
 import {
   checkUploadFile,
   DRAFT_CREATE_AUTH_MESSAGE,
-  LIST_WRITE_AUTH_MESSAGE,
   SAVED_WRITE_AUTH_MESSAGE,
+  SCHEDULED_MESSAGES_AUTH_MESSAGE,
   SlackClient,
   SlackTransportError,
   toScheduledMessageSummary,
@@ -94,14 +94,6 @@ class TestSlackClient extends SlackClient {
       return { ok: true };
     }
 
-    if (method === 'lists.records.create') {
-      return { ok: true, record: { id: 'Rec0123456789', list_id: params.list_id } };
-    }
-
-    if (method === 'lists.cells.update' || method === 'lists.records.delete') {
-      return { ok: true };
-    }
-
     if (method === 'conversations.members') {
       return {
         ok: true,
@@ -116,14 +108,6 @@ class TestSlackClient extends SlackClient {
         channel: params.channel,
         permalink: 'https://example.slack.com/archives/C123/p1234567890123456',
       };
-    }
-
-    if (method === 'lists.records.list') {
-      return { ok: true, records: [], response_metadata: { next_cursor: '' } };
-    }
-
-    if (method === 'lists.records.info') {
-      return { ok: true, record: { id: params.id, list_id: params.list_id, fields: [] } };
     }
 
     throw new Error(`Unexpected method: ${method}`);
@@ -736,51 +720,6 @@ describe('SlackClient.getPermalink', () => {
     expect(response.permalink).toBe(
       'https://example.slack.com/archives/C123/p1234567890123456',
     );
-  });
-});
-
-describe('SlackClient list reads', () => {
-  it('calls lists.records.list with the list ID, and a cursor only when one is given', async () => {
-    const client = new TestSlackClient();
-
-    await client.listRecords('F0123456789');
-    await client.listRecords('F0123456789', { cursor: 'next-page' });
-
-    expect(client.calls).toEqual([
-      { method: 'lists.records.list', params: { list_id: 'F0123456789' } },
-      { method: 'lists.records.list', params: { list_id: 'F0123456789', cursor: 'next-page' } },
-    ]);
-  });
-
-  it('calls lists.records.info with the list ID and the record ID as id', async () => {
-    const client = new TestSlackClient();
-
-    await client.getListRecord('F0123456789', 'Rec0123456789');
-
-    expect(client.calls).toEqual([{
-      method: 'lists.records.info',
-      params: { list_id: 'F0123456789', id: 'Rec0123456789' },
-    }]);
-  });
-
-  it('fails before making a request when the workspace uses standard authentication', async () => {
-    const client = new SlackClient({
-      workspace_id: 'T123',
-      workspace_name: 'Test Workspace',
-      auth_type: 'standard',
-      token: 'xoxb-test',
-      token_type: 'bot',
-    });
-
-    await expect(client.listRecords('F0123456789'))
-      .rejects.toThrow('Reading lists requires browser authentication');
-    await expect(client.getListRecord('F0123456789', 'Rec0123456789'))
-      .rejects.toThrow('Reading lists requires browser authentication');
-  });
-
-  it('treats both list reads as read methods, so a transport error is retried', () => {
-    expect(isReadMethod('lists.records.list')).toBe(true);
-    expect(isReadMethod('lists.records.info')).toBe(true);
   });
 });
 
@@ -2342,90 +2281,20 @@ describe('SlackClient scheduled messages (#379)', () => {
     expect(isReadMethod('chat.deleteScheduledMessage')).toBe(false);
   });
 
-  // Browser session tokens schedule through Slack's drafts.* methods; the
-  // scheduled message's ID is then the draft's ID (#474).
-  describe('on browser session tokens (#474)', () => {
-    function browserClient(answers: unknown[]): { client: SlackClient; calls: Call[] } {
-      const client = new SlackClient({
-        workspace_id: 'T123',
-        workspace_name: 'Test Workspace',
-        workspace_url: 'https://example.slack.com',
-        auth_type: 'browser',
-        xoxd_token: 'xoxd-test',
-        xoxc_token: 'xoxc-test',
-      });
-      const calls: Call[] = [];
-      let next = 0;
-      spyOn(client, 'request').mockImplementation(async (method: string, params: Record<string, unknown> = {}) => {
-        calls.push({ method, params });
-        const answer = answers[Math.min(next, answers.length - 1)];
-        next += 1;
-        return answer;
-      });
-      return { client, calls };
-    }
+  it('refuses all three on browser session tokens before making a request', async () => {
+    const browser = new TestSlackClient();
 
-    // drafts.create refuses date_scheduled with scheduled_draft_cannot_be_attached,
-    // so the time goes on with drafts.update, as in the Slack web client.
-    it('creates a plain draft, sets its time with drafts.update, and returns the draft ID', async () => {
-      const { client, calls } = browserClient([{ ok: true, draft: { id: 'Dr1' } }, { ok: true }]);
+    expect(() => browser.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE)).toThrow(UnsupportedAuthTypeError);
+    await expect(browser.scheduleMessage('C123', 'hi', 1791791400)).rejects.toThrow(UnsupportedAuthTypeError);
+    await expect(browser.listScheduledMessages()).rejects.toThrow(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+    await expect(browser.deleteScheduledMessage('C123', 'Q1')).rejects.toThrow(SCHEDULED_MESSAGES_AUTH_MESSAGE);
+    expect(browser.calls).toEqual([]);
+    // The refusal names the token type that does work.
+    expect(SCHEDULED_MESSAGES_AUTH_MESSAGE).toContain('standard Slack app token (xoxb or xoxp)');
+  });
 
-      const response = await client.scheduleMessage('C123', 'Standup', 1791791400, { thread_ts: '1712345678.000100' });
-
-      expect(response).toEqual({ scheduled_message_id: 'Dr1', post_at: 1791791400 });
-      expect(calls.map((call) => call.method)).toEqual(['drafts.create', 'drafts.update']);
-      expect(calls[0]?.params).toMatchObject({ file_ids: '[]', is_from_composer: 'false' });
-      expect(calls[0]?.params).not.toHaveProperty('date_scheduled');
-      expect(calls[1]?.params).toMatchObject({ draft_id: 'Dr1', date_scheduled: 1791791400 });
-      for (const call of calls) {
-        expect(JSON.parse(String(call.params.destinations))).toEqual([
-          { channel_id: 'C123', thread_ts: '1712345678.000100', broadcast: false },
-        ]);
-      }
-    });
-
-    it('sends the schedule, draft, channel and content to drafts.update', async () => {
-      const { client, calls } = browserClient([{ ok: true }]);
-      const before = Date.now() / 1000;
-
-      await client.updateDraft('Dr2', 'C123', { blocks: [{ type: 'divider' }], date_scheduled: 1791791400 });
-
-      const after = Date.now() / 1000;
-      expect(calls).toHaveLength(1);
-      expect(calls[0]?.method).toBe('drafts.update');
-      expect(calls[0]?.params).toMatchObject({
-        draft_id: 'Dr2',
-        blocks: '[{"type":"divider"}]',
-        destinations: '[{"channel_id":"C123"}]',
-        date_scheduled: 1791791400,
-        file_ids: '[]',
-        is_from_composer: 'true',
-      });
-      const timestamp = Number(calls[0]?.params.client_last_updated_ts);
-      expect(timestamp).toBeGreaterThanOrEqual(before);
-      expect(timestamp).toBeLessThanOrEqual(after);
-    });
-
-    it('lists the scheduled drafts with drafts.list, in the same shape as on app tokens', async () => {
-      const soon = Math.floor(Date.now() / 1000) + 3600;
-      const { client, calls } = browserClient([{
-        ok: true,
-        drafts: [{ id: 'Dr1', date_created: 1791000000, date_scheduled: soon, destinations: [{ channel_id: 'C123' }], blocks: [] }],
-      }]);
-
-      const found = await client.listScheduledMessages({ limit: 5 });
-
-      expect(calls).toEqual([{ method: 'drafts.list', params: { is_active: true, limit: 1000 } }]);
-      expect(found).toEqual([{ scheduled_message_id: 'Dr1', channel_id: 'C123', post_at: soon, date_created: 1791000000, text: '' }]);
-    });
-
-    it('cancels by draft ID with drafts.delete', async () => {
-      const { client, calls } = browserClient([{ ok: true }]);
-
-      await client.deleteScheduledMessage('C123', 'Dr1');
-
-      expect(calls).toEqual([{ method: 'drafts.delete', params: { draft_id: 'Dr1', client_last_updated_ts: expect.any(String) } }]);
-    });
+  it('lets a standard token through the guard', () => {
+    expect(() => standardClient().client.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE)).not.toThrow();
   });
 });
 
@@ -2517,50 +2386,6 @@ describe('SlackClient Later-list writes (#436)', () => {
       method: 'saved.update',
       params: { item_type: 'message', item_id: 'C123', ts: TS, ...update },
     }]);
-  });
-
-  it('creates a list row with lists.records.create, sending the list ID only', async () => {
-    const client = new TestSlackClient();
-
-    await client.createListRecord('F0123456789');
-
-    expect(client.calls).toEqual([{ method: 'lists.records.create', params: { list_id: 'F0123456789' } }]);
-  });
-
-  it('sends the cells of lists.cells.update as one JSON string', async () => {
-    const client = new TestSlackClient();
-    const cells = [{ row_id: 'Rec0123456789', column_id: 'Col0123456789', checkbox: true }];
-
-    await client.updateListCells('F0123456789', cells);
-
-    expect(client.calls).toEqual([{
-      method: 'lists.cells.update',
-      params: { list_id: 'F0123456789', cells: JSON.stringify(cells) },
-    }]);
-  });
-
-  it('deletes one row with lists.records.delete, naming it as id', async () => {
-    const client = new TestSlackClient();
-
-    await client.deleteListRecord('F0123456789', 'Rec0123456789');
-
-    expect(client.calls).toEqual([{
-      method: 'lists.records.delete',
-      params: { list_id: 'F0123456789', id: 'Rec0123456789' },
-    }]);
-  });
-
-  it('refuses the three list writes on a standard app token before making a request', async () => {
-    const client = new SlackClient({
-      workspace_id: 'T123', workspace_name: 'Test Workspace',
-      auth_type: 'standard', token: 'xoxb-test', token_type: 'bot',
-    });
-    const request = spyOn(client, 'request');
-
-    await expect(client.createListRecord('F0123456789')).rejects.toThrow(LIST_WRITE_AUTH_MESSAGE);
-    await expect(client.updateListCells('F0123456789', [])).rejects.toThrow(LIST_WRITE_AUTH_MESSAGE);
-    await expect(client.deleteListRecord('F0123456789', 'Rec0123456789')).rejects.toThrow(UnsupportedAuthTypeError);
-    expect(request).not.toHaveBeenCalled();
   });
 
   it('removes one item with saved.delete', async () => {

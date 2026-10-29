@@ -4,7 +4,7 @@ import type {
   SavedItem, SearchMatch, SearchFileMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThread, UnreadThreads,
   SlackTeam, SlackUsergroup, UsergroupMember,
   CustomEmoji, DraftSummary, IdentityResult, ProfileCheck, ScheduledMessageSummary,
-  DryRunPreview, DryRunTarget, SlackListCell, SlackListRecord,
+  DryRunPreview, DryRunTarget,
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
 import { extractTables, formatTableRows } from './table-blocks.ts';
@@ -54,29 +54,6 @@ function formatDraftAge(createdAt: number, nowMs: number): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-/**
- * One line per list record: its ID, then `column: value` for each cell. A column
- * prints its name when `columnNames` has one, and its ID otherwise.
- */
-export function formatListRecords(
-  records: SlackListRecord[],
-  columnNames: ReadonlyMap<string, string> = new Map(),
-): string {
-  return records.map((record) => {
-    const cells = (record.fields ?? []).map((cell) =>
-      `${columnNames.get(cell.column_id) ?? cell.column_id}: ${listCellText(cell)}`);
-    return cells.length > 0 ? `${record.id}  ${cells.join(' | ')}` : record.id;
-  }).join('\n');
-}
-
-// A text cell carries its plain text. Other cells carry an array under the key
-// that matches their column type; select and user values print as Slack sent them.
-function listCellText(cell: SlackListCell): string {
-  if (typeof cell.text === 'string') return cell.text;
-  const values: Array<string | number> = cell.select ?? cell.user ?? cell.number ?? cell.date ?? cell.timestamp ?? [];
-  return values.map(String).join(', ');
 }
 
 export function formatDraftList(drafts: DraftSummary[], nowMs: number = Date.now()): string {

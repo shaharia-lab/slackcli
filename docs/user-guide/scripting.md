@@ -8,15 +8,14 @@ hand.
 Every read command supports `--json`: `conversations list`, `conversations read`,
 `conversations get`, `conversations unread`, `conversations members list`,
 `search messages`, `search files`, `search channels`,
-`search people`, `saved list`, `canvas list`, `canvas read`, `canvas sections`, `lists read`, `lists record`, `team info`,
+`search people`, `saved list`, `canvas list`, `canvas read`, `canvas sections`, `team info`,
 `usergroups list`, `usergroups read`, `emoji list`, `emoji get`, `files info`,
 `files read`, `users info`, `users list`, `messages list-drafts`,
 `messages list-scheduled`, `auth whoami`, `auth list`.
 
 The writing commands support it too — `messages send`, `messages edit`, `messages delete`,
 `messages react`, `messages unreact`, `messages draft`, `messages send-draft`, `messages delete-draft`, `messages schedule`,
-`messages delete-scheduled`, `emoji add`, `emoji remove`, `canvas create`, `canvas edit`, the `lists` write verbs
-(`add-record`, `edit-cell`, `delete-record`), the `saved` write verbs
+`messages delete-scheduled`, `emoji add`, `emoji remove`, `canvas create`, `canvas edit`, the `saved` write verbs
 (`add`, `update`, `complete`, `reopen`, `remove`), the `usergroups` write verbs (`create`, `update`, `add`,
 `remove`, `enable`, `disable`), the `conversations` write and self
 verbs (`create`, `members add`, `members remove`, `join`, `leave`), and
@@ -123,8 +122,6 @@ Useful field sets, and what each command projects:
 | `canvas list` | each of `canvases` | `id,title,permalink` |
 | `canvas read` | the canvas record | `id,title,markdown` |
 | `canvas sections` | each of `sections` | `id` |
-| `lists read` | each of `records` | `id,fields` |
-| `lists record` | the record | `id,fields` |
 | `files info` | the file record | `id,name,mimetype,size,permalink` |
 | `files read` | the file record | `id,name,content` |
 | `emoji list` | each of `emoji` | `name,url` |
@@ -144,8 +141,7 @@ Every command that changes something in Slack takes `--dry-run`:
 `conversations create`, `members add`, `members remove`, `join`, `leave`, `mark-read`;
 `emoji add`, `remove`;
 `saved add`, `update`, `complete`, `reopen`, `remove`;
-`canvas create`, `edit`;
-`lists add-record`, `edit-cell`, `delete-record`; and
+`canvas create`, `edit`; and
 `usergroups create`, `update`, `add`, `remove`, `enable`, `disable`.
 
 A dry run does everything except the write: it picks the workspace, resolves
@@ -181,8 +177,7 @@ With `--json` the preview is one object on stdout:
   `mark conversation read`, `add emoji`, `add emoji alias`, `remove emoji`,
   `add saved item`, `update saved item`, `complete saved item`, `reopen saved item`, `remove saved item`,
   `create user group`, `update user group`, `add user group members`,
-  `remove user group members`, `enable user group`, `disable user group`,
-  `add list row`, `edit list cell`, `delete list row`.
+  `remove user group members`, `enable user group`, `disable user group`.
 - `workspace.profile` is the profile key the workspace is stored under. With a
   [token from the environment](authentication.md#5-a-token-from-the-environment-nothing-stored)
   nothing is stored, and it is the variable's name (`SLACKCLI_TOKEN` or
@@ -190,7 +185,7 @@ With `--json` the preview is one object on stdout:
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
   `group_dm` (a multi-person DM from `messages send --users`, carrying the user
   set as `ids` instead of a single `id`, with no name lookup),
-  `message` (with `ts`), `draft`, `scheduled_message`, `emoji`, `usergroup` or `list` (the list's file ID as `id`). `thread_ts` is set for a
+  `message` (with `ts`), `draft`, `scheduled_message`, `emoji` or `usergroup`. `thread_ts` is set for a
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
   for display and left out when the lookup fails. For `conversations create`
   the `channel` target has no `id` yet, only the `name` to be created.
@@ -209,7 +204,8 @@ With `--json` the preview is one object on stdout:
 A dry run may make read calls (resolving a user group, reading its members,
 loading a draft, finding a scheduled message, naming the target) but no write call. A failure is the real
 command's failure: invalid input, a missing file, bad Block Kit JSON, an
-unknown group, or a draft or `saved` write command on an app token, exits `1` with the same error. **Slack checks permissions only on the real write**, so a dry run can
+unknown group, a draft or `saved` write command on an app token or a scheduled-message command
+on a browser session exits `1` with the same error. **Slack checks permissions only on the real write**, so a dry run can
 pass where the write is then refused (`missing_scope`, `not_in_channel`, …).
 
 ## Exit codes
@@ -251,7 +247,7 @@ failure line is left out, so that last line parses on its own:
 | `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, a channel name or handle that matches more than one ID, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a `--at` or `--in` that is unreadable, in the past or more than 120 days ahead (also Slack's `time_in_past`, `time_too_far`), a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
 | `network` | Slack could not be reached, or answered with a 5xx | Retry |
 | `confirmation_required` | A write needs `--yes` when stdin is not a terminal, or the prompt was declined | Pass `--yes` once the write is confirmed |
-| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, the canvas sections, create and edit commands need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
+| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages and the canvas sections, create and edit commands need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
 | `unknown` | Anything else | Read `message` |
 
 ```bash

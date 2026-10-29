@@ -153,7 +153,6 @@ function identifierFromUrl(url: string): string | null {
 
   // /docs/<team>/<file> — canvas documents
   if (area === 'docs' && second) return second;
-  if (area === 'lists' && second) return second;
 
   // /files/<user>/<file>[/name] — file permalinks
   if (area === 'files' && second) return second;
@@ -186,7 +185,7 @@ export function normalizeIdentifier(input: string, expected: ExpectedKind, flag:
   if (!id) {
     throw new SlackUrlParseError(
       `${flag} could not read an ID out of this Slack URL: ${value}. ` +
-        `Supported forms are /archives/<channel>, /team/<user>, /docs/<team>/<file>, /lists/<team>/<file>, ` +
+        `Supported forms are /archives/<channel>, /team/<user>, /docs/<team>/<file>, ` +
         `/files/<user>/<file>, and /files-pri/<team>-<file>.`
     );
   }

@@ -1,6 +1,6 @@
 # Slack links and timestamps
 
-Anywhere the CLI takes a channel, user, canvas, list, or file ID, you can paste the
+Anywhere the CLI takes a channel, user, canvas, or file ID, you can paste the
 Slack URL instead — the form "Copy link" actually gives you. Bare IDs keep
 working exactly as before.
 
@@ -16,7 +16,6 @@ slackcli conversations read https://myteam.slack.com/archives/C1234567890
 | `https://myteam.slack.com/archives/D0987654321` | DM `D0987654321` |
 | `https://myteam.slack.com/team/U9876543210` | user `U9876543210` |
 | `https://myteam.slack.com/docs/T012AB/F1234567890` | canvas `F1234567890` |
-| `https://myteam.slack.com/lists/T012AB/F1234567890` | list `F1234567890` |
 | `https://myteam.slack.com/files/U9876543210/F1234567890/report.txt` | file `F1234567890` |
 | `https://files.slack.com/files-pri/T012AB-F1234567890/download/report.txt` | file `F1234567890` |
 
@@ -43,7 +42,7 @@ Where it works: `messages send` and `messages draft` (`--recipient-id`),
 `messages edit`, `messages delete`, `messages react`, `messages unreact` and the `saved` write verbs (`--channel-id`), `conversations read`,
 `get`, `mark-read`, `members list`, `members add`, `members remove`, `join` and `leave`
 (`<channel>`, and `<users...>` for add/remove), `canvas list` and `canvas read`
-(`--channel`), `lists read` and `lists record` (`<list>`), `users info`, and the `<users...>` of `usergroups add` and
+(`--channel`), `users info`, and the `<users...>` of `usergroups add` and
 `usergroups remove`. (`<group>` in `usergroups` already took a handle or name.)
 
 Rules worth knowing:

@@ -45,7 +45,6 @@ where the terminal is not known to show Unicode.
 | `users` | Look up a user by ID and list users by account status |
 | `saved` | Read your "saved for later" list; add, update, complete, reopen and remove items |
 | `canvas` | List canvases, read them as Markdown, look up section IDs, create and edit them |
-| `lists` | Read a Slack list's records, or one record, with `--json` and `--fields` (browser login) |
 | `files` | Inspect, read, and download Slack-hosted files |
 | `emoji` | List a workspace's custom emoji and inspect one |
 | `update` | Check for and install new versions |
@@ -65,12 +64,11 @@ where the terminal is not known to show Unicode.
 10. [Users](users.md)
 11. [Saved items](saved.md)
 12. [Canvas](canvas.md)
-13. [Lists](lists.md)
-14. [Files](files.md)
-15. [Emoji](emoji.md)
-16. [Scripting and JSON output](scripting.md)
-17. [Claude Code plugin](claude-code-plugin.md)
-18. [Troubleshooting](troubleshooting.md)
+13. [Files](files.md)
+14. [Emoji](emoji.md)
+15. [Scripting and JSON output](scripting.md)
+16. [Claude Code plugin](claude-code-plugin.md)
+17. [Troubleshooting](troubleshooting.md)
 
 ## Two things that apply everywhere
 
@@ -80,6 +78,6 @@ Without it, a command uses `SLACKCLI_WORKSPACE` if that is set, then a token in
 workspace. See [workspaces and profiles](workspaces.md) and
 [pin a workspace for one shell](workspaces.md#pin-a-workspace-for-one-shell).
 
-**Paste Slack URLs instead of IDs** — anywhere a channel, user, message, canvas, list,
+**Paste Slack URLs instead of IDs** — anywhere a channel, user, message, canvas,
 or file ID is expected. See
 [Slack links and timestamps](links-and-timestamps.md).

@@ -55,7 +55,6 @@ export const PAGES = [
   { file: 'user-guide/users.md', slug: 'user-guide/users', label: 'Users', group: 'users' },
   { file: 'user-guide/saved.md', slug: 'user-guide/saved', label: 'Saved items', group: 'users' },
   { file: 'user-guide/canvas.md', slug: 'user-guide/canvas', label: 'Canvas', group: 'users' },
-  { file: 'user-guide/lists.md', slug: 'user-guide/lists', label: 'Lists', group: 'users' },
   { file: 'user-guide/files.md', slug: 'user-guide/files', label: 'Files', group: 'users' },
   { file: 'user-guide/emoji.md', slug: 'user-guide/emoji', label: 'Emoji', group: 'users' },
   { file: 'user-guide/scripting.md', slug: 'user-guide/scripting', label: 'Scripting and JSON', group: 'users' },

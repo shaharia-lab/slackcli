@@ -18,6 +18,7 @@ import {
   checkUploadFile,
   DRAFT_CREATE_AUTH_MESSAGE,
   DRAFT_DELETE_AUTH_MESSAGE,
+  SCHEDULED_MESSAGES_AUTH_MESSAGE,
   type SlackClient,
 } from '../lib/slack-client.ts';
 import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
@@ -284,6 +285,7 @@ const HELP = {
     json:
       '{ channel_id, scheduled_message_id, post_at, thread_ts? }. post_at is Unix seconds; ' +
       'thread_ts is there only for a reply in a thread. channel_id is always the resolved ID.',
+    standardOnly: true,
     notes: [
       'Exactly one of --at or --in is required. --at takes Unix seconds, ISO 8601 with an offset or Z ' +
         '(2026-10-12T09:50:00+02:00), or a local date and time ("2026-10-12 09:50", seconds optional) ' +
@@ -304,8 +306,6 @@ const HELP = {
       STDIN_NOTE,
       'With --blocks the message text is the notification fallback.',
       'Schedules immediately, with no confirmation prompt.',
-      'On a browser session the message is saved as a draft with a send time, and scheduled_message_id is ' +
-        'that draft\'s ID. Use the same ID with "messages delete-scheduled".',
       'A dry run to a user ID does not open the DM; it previews the user as the target.',
     ],
     dryRun: true,
@@ -323,10 +323,10 @@ const HELP = {
     json:
       '{ scheduled_count, scheduled_messages: [{ scheduled_message_id, channel_id, post_at, date_created, text }] }. ' +
       'post_at and date_created are Unix seconds. None pending gives { scheduled_count: 0, scheduled_messages: [] }.',
+    standardOnly: true,
     notes: [
-      'On an app token, Slack returns only the messages scheduled with the token in use; ones scheduled in the ' +
-        'Slack app or by another app are not listed. On a browser session, the list is the scheduled drafts of ' +
-        'that account whose send time is still ahead, and scheduled_message_id is the draft ID.',
+      'Slack returns only the messages scheduled with the token in use; ones scheduled in the Slack app ' +
+        'or by another app are not listed.',
       '--recipient-id keeps one conversation; it takes what "messages send" takes (ID, Slack URL, ' +
         '#channel, @handle or email). A user is looked up as your DM with them, which opens that DM ' +
         'if it does not exist yet.',
@@ -345,12 +345,12 @@ const HELP = {
       'slackcli messages delete-scheduled Q0123ABCDEF --dry-run',
     ],
     json: '{ scheduled_message_id, channel_id, deleted: true }.',
+    standardOnly: true,
     confirms: true,
     dryRun: true,
     notes: [
-      'Exception to the rule above: the pending list is read (chat.scheduledMessages.list on an app token, ' +
-        'drafts.list on a browser session) before the prompt, to find the message\'s channel, so a refusal ' +
-        'still makes that read, but cancels nothing.',
+      'Exception to the rule above: the pending list is read (chat.scheduledMessages.list) before the prompt, ' +
+        'to find the message\'s channel, so a refusal still makes that read, but cancels nothing.',
       'An ID that is not in the pending list (already posted, already cancelled, or scheduled with another ' +
         'token) exits 1 with the error code not_found.',
       'Slack refuses to cancel a message in the last 60 seconds before it posts.',
@@ -453,9 +453,12 @@ function resolveTargetArg(
 // --permalink, resolved to a channel or user ID. A user's DM is not opened
 // yet, so a dry run can stop here without opening it.
 //
+// `check` runs on the client before anything is asked of Slack, for a command
+// that must refuse an auth type before its first call.
 async function resolveRecipient(
   options: { permalink?: string; recipientId?: string; threadTs?: string; workspace?: string },
   spinner: ReturnType<typeof ora>,
+  check?: (client: SlackClient) => void,
 ): Promise<{ client: SlackClient; recipientId: string; target: ResolvedThreadTarget }> {
   const target = resolveThreadTarget(
     { permalink: options.permalink, channelId: options.recipientId, threadTs: options.threadTs },
@@ -464,6 +467,7 @@ async function resolveRecipient(
   );
 
   const client = await getAuthenticatedClient(options.workspace);
+  check?.(client);
   warnOnWorkspaceMismatch(client, target.workspace);
 
   const recipientId = await resolveTargetArg(client, options.recipientId, target.channelId, '--recipient-id', spinner);
@@ -652,6 +656,12 @@ async function postText(
   } else {
     success(`Message timestamp: ${response.ts}`);
   }
+}
+
+// The scheduled-message commands refuse browser session tokens before any
+// Slack call: name resolution would otherwise run first and then fail anyway.
+function requireSchedulingAuth(client: SlackClient): void {
+  client.requireStandardAuth(SCHEDULED_MESSAGES_AUTH_MESSAGE);
 }
 
 // The pending scheduled message with this ID. Slack's cancel call needs the
@@ -1153,7 +1163,7 @@ export function createMessagesCommand(): Command {
         const blocks = options.blocks ? await parseBlocksInput(options.blocks) : undefined;
         // After the text is read, so a slow pipe on stdin does not eat into --in.
         const postAt = parseScheduleTime({ at: options.at, in: options.in });
-        const { client, recipientId, target } = await resolveRecipient(options, spinner);
+        const { client, recipientId, target } = await resolveRecipient(options, spinner, requireSchedulingAuth);
 
         if (options.dryRun) {
           spinner.stop();
@@ -1213,10 +1223,12 @@ export function createMessagesCommand(): Command {
         let channel: string | undefined;
         if (options.recipientId === undefined) {
           client = await getAuthenticatedClient(options.workspace);
+          requireSchedulingAuth(client);
         } else {
           const recipient = await resolveRecipient(
             { recipientId: options.recipientId, workspace: options.workspace },
             spinner,
+            requireSchedulingAuth,
           );
           client = recipient.client;
           channel = await openRecipient(client, recipient.recipientId, spinner);
@@ -1257,6 +1269,7 @@ export function createMessagesCommand(): Command {
         const id = rawId.trim();
         if (!id) throw new InvalidInputError('Scheduled message ID cannot be empty');
         const client = await getAuthenticatedClient(options.workspace);
+        requireSchedulingAuth(client);
         const pending = await loadScheduledMessage(client, id);
         spinner.stop();
         if (options.dryRun) {

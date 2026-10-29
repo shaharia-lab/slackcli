@@ -26,7 +26,6 @@ Start here if you want to *use* SlackCLI.
 | [Users](user-guide/users.md) | Look up a user by ID, list users by account status |
 | [Saved items](user-guide/saved.md) | Read your "saved for later" list |
 | [Canvas](user-guide/canvas.md) | List canvases and read them as Markdown |
-| [Lists](user-guide/lists.md) | Read a Slack list's records, or one record (browser login) |
 | [Files](user-guide/files.md) | Inspect, read, and download Slack-hosted files |
 | [Emoji](user-guide/emoji.md) | List a workspace's custom emoji and inspect one |
 | [Scripting and JSON output](user-guide/scripting.md) | Piping into `jq`, exit codes, automation patterns |

@@ -9,7 +9,6 @@ import { createCanvasCommand } from './canvas.ts';
 import { createConversationsCommand } from './conversations.ts';
 import { createEmojiCommand } from './emoji.ts';
 import { createFilesCommand } from './files.ts';
-import { createListsCommand } from './lists.ts';
 import { createMessagesCommand } from './messages.ts';
 import { createSavedCommand } from './saved.ts';
 import { createSearchCommand } from './search.ts';
@@ -19,7 +18,6 @@ import { createUsersCommand } from './users.ts';
 
 const factories: Record<string, () => Command> = {
   canvas: createCanvasCommand,
-  lists: createListsCommand,
   conversations: createConversationsCommand,
   emoji: createEmojiCommand,
   files: createFilesCommand,
@@ -62,16 +60,6 @@ const ANSWERS: Record<string, unknown> = {
     response_metadata: { next_cursor: 'dXNlcjpVMDYxTkZUVDI=' },
   },
   listUsers: { ok: true, members: [USER], response_metadata: { next_cursor: '' } },
-  listRecords: {
-    ok: true,
-    records: [{ id: 'Rec0123456789', list_id: 'F0123456789', fields: [{ column_id: 'Col1', text: 'x' }] }],
-    response_metadata: { next_cursor: '' },
-  },
-  getListRecord: {
-    ok: true,
-    record: { id: 'Rec0123456789', list_id: 'F0123456789', fields: [] },
-    list: { list_metadata: { schema: [] } },
-  },
   getTeamInfo: { ok: true, team: { id: 'T0123456789', name: 'Acme', domain: 'acme', icon: { image_34: 'x' } } },
   listUsergroups: {
     ok: true,
@@ -275,8 +263,6 @@ describe('--fields, in process', () => {
     'emoji get': ['party'],
     'files info': ['F0123456789'],
     'files read': ['F0123456789'],
-    'lists read': ['F0123456789'],
-    'lists record': ['F0123456789', 'Rec0123456789'],
     'search channels': ['deploy'],
     'search files': ['report'],
     'search messages': ['deploy'],
@@ -301,8 +287,6 @@ describe('--fields, in process', () => {
     'emoji list': 'name',
     'files info': 'id',
     'files read': 'content',
-    'lists read': 'id',
-    'lists record': 'id',
     'messages list-drafts': 'draft_id',
     'messages list-scheduled': 'scheduled_message_id',
     'saved list': 'type',

@@ -496,12 +496,11 @@ It takes the target and content options of [`messages send`](#messages-send)
 Like `send`, it does not ask for confirmation; use `--dry-run` to check the
 target and the resolved time first.
 
-**Both token types.** On an app token (`xoxb` or `xoxp`, from `auth login`),
-scheduling uses Slack's `chat.scheduleMessage`, `chat.scheduledMessages.list`
-and `chat.deleteScheduledMessage`. On a browser session (`xoxc` and `xoxd`), it
-uses Slack's `drafts.*` methods: `schedule` saves the message as a draft with a
-send time, and the ID it prints is that draft's ID, which `delete-scheduled`
-takes.
+**Standard app tokens only** (`xoxb` or `xoxp`, from `auth login`). Slack
+refuses its scheduling API to browser session tokens, so with a browser profile
+`schedule`, `list-scheduled` and `delete-scheduled` fail with
+`unsupported_auth_type` before making any Slack call. Pick an app-token profile
+with `--workspace`.
 
 ### When to post (`--at`, `--in`)
 
@@ -561,9 +560,7 @@ exist yet. The default `--limit` is `100`; it must be a positive integer, and
 it keeps the soonest that many of everything pending.
 
 Slack returns only the messages scheduled **with the token in use**. A message
-scheduled in the Slack app, or by another app, is not listed. On a browser
-session the list is the account's scheduled drafts whose send time is still
-ahead.
+scheduled in the Slack app, or by another app, is not listed.
 
 ```json
 {

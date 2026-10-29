@@ -38,7 +38,6 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   thread_not_found: 'not_found',
   file_not_found: 'not_found',
   file_deleted: 'not_found',
-  list_not_found: 'not_found',
   no_such_subteam: 'not_found',
   team_not_found: 'not_found',
   invalid_scheduled_message_id: 'not_found',

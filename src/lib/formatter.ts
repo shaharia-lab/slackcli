@@ -534,7 +534,8 @@ export function formatSearchFiles(
     const owner = chalk.bold(`@${file.username || file.user || 'unknown'}`);
     const when = chalk.dim(`[${file.created ? formatTimestamp(String(file.created)) : 'unknown date'}]`);
     const permalink = chalk.dim(file.permalink || '');
-    output += `  ${chalk.dim(`${idx + 1}.`)} ${name} ${type} ${owner} ${when} ${permalink}\n`;
+    const index = chalk.dim(`${idx + 1}.`);
+    output += `  ${index} ${name} ${type} ${owner} ${when} ${permalink}\n`;
   });
 
   return output;

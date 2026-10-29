@@ -17,6 +17,7 @@ This section is the supreme, non-negotiable contributing policy for this reposit
 - A pull request is only welcome **after** the linked issue has been triaged and carries the **`ready-for-pr`** label.
 - Do not open a PR for an issue that has not yet received this label.
 - This lets the maintainer decide which features belong in the CLI, and it "locks" the feature to the PR. PRs that skip this step are likely to be rejected, even if the code is good.
+- **New features get a community review first.** An outside contributor's feature request is labelled `needs-community-review` and stays open for at least 14 days. After that it gets `ready-for-pr` only if at least 3 people other than the author back it (a 👍/❤️/🚀/🎉 reaction, or a comment describing their own use case). The maintainer may apply `ready-for-pr` at any time. A PR for a feature whose issue has no `ready-for-pr` is not reviewed: it gets a short "on hold" comment and stays open. Bugs, docs, dependency and security fixes are not features and follow the rules above.
 
 ### 3. Issues and PRs must follow the templates
 

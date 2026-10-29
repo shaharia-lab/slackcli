@@ -10,6 +10,10 @@ body:
         every feature starts as an issue and waits for triage. **Please do not open a pull
         request until this issue carries the `ready-for-pr` label** — PRs that skip triage are
         likely to be rejected, even if the code is good.
+
+        New features wait about 2 weeks for community feedback before they can get `ready-for-pr`:
+        the issue needs a 👍 (or a comment with their own use case) from at least 3 people other
+        than you. Please don't open a PR yet; a PR for a feature without `ready-for-pr` stays on hold.
   - type: textarea
     id: what
     attributes:

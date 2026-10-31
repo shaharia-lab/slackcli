@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-10-31
+
 ### Fixed
 - **A link to a thread reply reads and replies in the whole thread, even without `?thread_ts=`**: `conversations read --permalink <reply link>` and `conversations read --thread-ts <reply ts>` returned only the reply. They now read the thread from the reply's parent, at the cost of one extra Slack call for a reply. `messages send`, `draft` and `schedule --permalink` with such a link now post under the parent, and `--dry-run` previews the parent's `thread_ts` (#482)
   - A link that carries `?thread_ts=` still costs no extra call; one without it costs one `conversations.replies` lookup on a send. If that lookup fails, the send uses the link's own timestamp, as before

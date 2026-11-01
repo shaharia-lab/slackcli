@@ -554,6 +554,20 @@ describe('performUpdate integrity check', () => {
   });
 
   it('installs bytes that match, and leaves no temp directory behind', async () => {
+    const { dir, installed } = await fakeInstall();
+    const payload = new TextEncoder().encode('THE NEW BINARY');
+    stubRelease(payload, `sha256:${createHash('sha256').update(payload).digest('hex')}`);
+
+    await performUpdate();
+
+    expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
+    // Staging happens in the install folder, next to the binary. That keeps the
+    // final rename on one filesystem (EXDEV otherwise), and the folder must be
+    // clean afterwards: no staging dirs, no .backup left over.
+    expect(await readdir(dir)).toEqual(['slackcli']);
+  });
+
+  it('does not stage the download in the system temp directory', async () => {
     const { installed } = await fakeInstall();
     const payload = new TextEncoder().encode('THE NEW BINARY');
     stubRelease(payload, `sha256:${createHash('sha256').update(payload).digest('hex')}`);

@@ -166,7 +166,7 @@ jobs:
         id: sums
         run: |
           # Exact-name match: slackcli-macos must not also match slackcli-macos-arm64.
-          sha_for() { awk -v f="$1" '$2 == f { print $1 }' release/checksums.txt; }
+          sha_for() { local file="$1"; awk -v f="$file" '$2 == f { print $1 }' release/checksums.txt; }
           {
             echo "sha_macos_x86=$(sha_for slackcli-macos)"
             echo "sha_macos_arm=$(sha_for slackcli-macos-arm64)"

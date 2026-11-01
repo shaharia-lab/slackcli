@@ -32,7 +32,6 @@ export const FIELDS_LIST_KEYS = {
   'messages list-scheduled': 'scheduled_messages',
   'saved list': 'items',
   'search channels': 'channels',
-  'search files': 'files',
   'search messages': 'matches',
   'search people': 'people',
   'team info': null,

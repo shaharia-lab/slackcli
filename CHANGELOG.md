@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **`conversations create` and `search files`**: both commands are removed. Use the Slack client to create channels and to search files. `search messages`, `search channels` and `search people` are unchanged (#495)
+
 ## [0.18.1] - 2026-10-31
 
 ### Fixed

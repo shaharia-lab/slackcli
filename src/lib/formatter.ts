@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import type {
   SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
-  SavedItem, SearchMatch, SearchFileMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThread, UnreadThreads,
+  SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThread, UnreadThreads,
   SlackTeam, SlackUsergroup, UsergroupMember,
   CustomEmoji, DraftSummary, IdentityResult, ProfileCheck, ScheduledMessageSummary,
   DryRunPreview, DryRunTarget,
@@ -492,27 +492,6 @@ export function formatSearchMessages(
       output += `     ${chalk.dim(permalink)}\n`;
     }
     output += '\n';
-  });
-
-  return output;
-}
-
-// Format file search results: one line per file
-export function formatSearchFiles(
-  query: string,
-  files: SearchFileMatch[],
-  total: number,
-): string {
-  let output = chalk.bold(`📎 Files matching "${query}" (${total} total)\n\n`);
-
-  files.forEach((file, idx) => {
-    const name = chalk.yellow(file.name || file.title || '(unnamed file)');
-    const type = chalk.cyan(file.filetype || 'file');
-    const owner = chalk.bold(`@${file.username || file.user || 'unknown'}`);
-    const when = chalk.dim(`[${file.created ? formatTimestamp(String(file.created)) : 'unknown date'}]`);
-    const permalink = chalk.dim(file.permalink || '');
-    const index = chalk.dim(`${idx + 1}.`);
-    output += `  ${index} ${name} ${type} ${owner} ${when} ${permalink}\n`;
   });
 
   return output;

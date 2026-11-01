@@ -114,14 +114,6 @@ const ANSWERS: Record<string, unknown> = {
       matches: [{ ts: '1712345678.000100', user: 'U0123456789', text: 'deploy', channel: { id: 'C0123456789', name: 'general' }, permalink: 'p' }],
     },
   },
-  searchFiles: {
-    ok: true,
-    files: {
-      total: 1,
-      pagination: { page: 1, page_count: 1 },
-      matches: [{ id: 'F0123456789', name: 'report.pdf', filetype: 'pdf', username: 'alice', permalink: 'p' }],
-    },
-  },
 };
 
 function stubClient(): unknown {
@@ -231,7 +223,6 @@ describe('--fields, in process', () => {
     [['users', 'list'], 'id,email', ['total', 'status', 'users']],
     [['usergroups', 'list'], 'id,handle', ['usergroup_count', 'usergroups']],
     [['search', 'messages', 'deploy'], 'ts,channel.name', ['query', 'total', 'page', 'pages', 'matches']],
-    [['search', 'files', 'report'], 'id,name', ['query', 'total', 'page', 'pages', 'files']],
   ])('%j keeps the envelope and projects its list', async (argv, fields, keys) => {
     const out = await run([...argv, '--json', '--fields', fields]);
     expect(Object.keys(out)).toEqual(keys);
@@ -264,7 +255,6 @@ describe('--fields, in process', () => {
     'files info': ['F0123456789'],
     'files read': ['F0123456789'],
     'search channels': ['deploy'],
-    'search files': ['report'],
     'search messages': ['deploy'],
     'search people': ['alice'],
     'usergroups read': ['S0123456789'],
@@ -291,7 +281,6 @@ describe('--fields, in process', () => {
     'messages list-scheduled': 'scheduled_message_id',
     'saved list': 'type',
     'search channels': 'id',
-    'search files': 'id',
     'search messages': 'ts',
     'search people': 'id',
     'team info': 'id',

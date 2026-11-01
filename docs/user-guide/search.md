@@ -1,6 +1,6 @@
-# Search Slack messages, files, channels and people
+# Search Slack messages, channels and people
 
-`slackcli search` covers messages, files, channels, and people. Every subcommand
+`slackcli search` covers messages, channels, and people. Every subcommand
 accepts `--workspace <id|name>` and `--json`; with `--json`, [`--fields`](scripting.md#keeping-output-small---fields-and---limit)
 trims each result to the fields you name (`--fields ts,user,text,channel.name,permalink`).
 
@@ -42,27 +42,6 @@ even with `--json`, and exits 0.
 
 Standard bot tokens (`xoxb-*`) cannot call `search.messages` at all — Slack
 restricts it to user tokens. Use a `xoxp-*` token or browser auth.
-
-## `search files`
-
-```bash
-slackcli search files "quarterly report"
-slackcli search files "budget" --in=finance --from=rafael --sort=score
-slackcli search files report --json --fields id,name,permalink
-```
-
-Takes the same options as `search messages` (`--in`, `--from`, `--limit`, `--page`,
-`--sort`, `--sort-dir`), and the same query rules: the positional query is optional
-when `--in` or `--from` is given, and a call with neither fails with `invalid_input`.
-The query goes to Slack's `search.files`, so the operators work as they do for messages.
-
-Each file prints on one line with its name, type, owner, date and permalink. With
-`--json`, the output is `{ query, total, page, pages, files: [...] }`, where `files`
-holds Slack's raw search matches. Use the `id` of a match with `files info`,
-`files read` or `files download`.
-
-A bot token (`xoxb-*`) is refused, as with `search messages`. Use a `xoxp-*` token or
-browser auth.
 
 ## `search channels`
 

@@ -3,7 +3,6 @@ import ora from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import {
   formatSearchMessages,
-  formatSearchFiles,
   formatChannelSearchResults,
   formatPeopleSearchResults,
   formatPaginationHint,
@@ -16,7 +15,6 @@ import type { ChannelSearchResult, PeopleSearchResult } from '../types/index.ts'
 import { buildFieldLabelMap, resolveProfileFields } from '../lib/profile-fields.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError } from '../lib/cli-errors.ts';
-import { buildSearchQuery } from '../lib/search-query.ts';
 
 // Help text shared by several commands below.
 const EMPTY_RESULT_NOTE =
@@ -25,9 +23,9 @@ const EMPTY_RESULT_NOTE =
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
   group: {
-    summary: 'Search messages, files, channels and people',
+    summary: 'Search messages, channels and people',
     description:
-      'Search messages and files (Slack search operators supported), or find channels and people by name. ' +
+      'Search messages (Slack search operators supported), or find channels and people by name. ' +
       'Message search needs a user token (xoxp) or browser auth; channels and people work with ' +
       'any token but search differently by auth type.',
   },
@@ -53,33 +51,6 @@ const HELP = {
         'search.messages for user tokens only.',
       'The query takes Slack operators (in:, from:, before:, after:, on:, during:, has:, is:, with:). ' +
         '--in and --from just append in:<channel> and from:<user> to it.',
-      'Paged: when page < pages, rerun with --page <page + 1>. No match prints nothing on stdout, ' +
-        'even with --json (exit 0).',
-    ],
-  },
-  files: {
-    summary: 'Search files with Slack search operators',
-    fields: 'each item of files',
-    description:
-      'Search files shared in the conversations you can see, one page at a time (Slack ' +
-      'search.files). Results feed "files info", "files read" and "files download", which take ' +
-      'a file ID from the id field.',
-    examples: [
-      'slackcli search files "quarterly report"',
-      'slackcli search files "budget" --in finance --from alice --sort score',
-      'slackcli search files "report" --limit 50 --page 2 --json',
-      'slackcli search files report --json --fields id,name,permalink',
-      'slackcli search files --from alice --sort timestamp --sort-dir desc --limit 1',
-    ],
-    json:
-      '{ query, total, page, pages, files: [...] } — files are Slack\'s raw search matches ' +
-      '(id, name, title, filetype, user, username, created, permalink, ...); query is the full ' +
-      'query sent to Slack, including any in:/from: operators appended from --in/--from.',
-    notes: [
-      'Needs a user token (xoxp) or browser auth. A bot token (xoxb) is refused, as with ' +
-        'search messages.',
-      'The query takes the same Slack operators as search messages. --in and --from just append ' +
-        'in:<channel> and from:<user> to it.',
       'Paged: when page < pages, rerun with --page <page + 1>. No match prints nothing on stdout, ' +
         'even with --json (exit 0).',
     ],
@@ -147,8 +118,17 @@ export function createSearchCommand(): Command {
     .option('--json', 'Output in JSON format', false)
     .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
     .action(async (query, options) => {
-      // --in / --from become in:/from: operators; see buildSearchQuery().
-      const fullQuery = buildSearchQuery(query, options);
+      // Build the Slack query from the positional term and the filter flags.
+      // --in / --from are first-class query inputs (they become in:/from:
+      // operators), so a search specified entirely by filters is a complete
+      // query; the positional is optional when at least one filter is present.
+      // A whitespace-only positional counts as empty.
+      const parts: string[] = [];
+      const term = query?.trim();
+      if (term) parts.push(term);
+      if (options.in) parts.push(`in:${options.in}`);
+      if (options.from) parts.push(`from:${options.from}`);
+      const fullQuery = parts.join(' ');
 
       if (!fullQuery) {
         failCommand(
@@ -201,73 +181,6 @@ export function createSearchCommand(): Command {
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to search messages' });
-      }
-    });
-
-  // Search files
-  describeCommand(search.command('files'), HELP.files)
-    .argument('[query]', 'File search query (supports Slack search operators). Optional when --in or --from is given.')
-    .option('--in <channel>', 'Filter by channel name (appends in:<channel> to the query)')
-    .option('--from <user>', 'Filter by username (appends from:<user> to the query)')
-    .option('--limit <number>', 'Number of results per page', '20')
-    .option('--page <number>', 'Page number (1-based)', '1')
-    .option('--sort <field>', 'Sort by: score or timestamp', 'timestamp')
-    .option('--sort-dir <dir>', 'Sort direction: asc or desc', 'desc')
-    .option('--workspace <id|name>', 'Workspace to use')
-    .option('--json', 'Output in JSON format', false)
-    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
-    .action(async (query, options) => {
-      const fullQuery = buildSearchQuery(query, options);
-      if (!fullQuery) {
-        failCommand(
-          new InvalidInputError('provide a search query, or at least one of --in / --from'),
-          { json: options.json, context: 'Invalid input' },
-        );
-        return;
-      }
-
-      const spinner = ora(`Searching files for "${fullQuery}"...`).start();
-
-      try {
-        const fields = fieldsOption(options);
-        const client = await getAuthenticatedClient(options.workspace);
-
-        const response = await client.searchFiles(fullQuery, {
-          count: Number.parseInt(options.limit),
-          page: Number.parseInt(options.page),
-          sort: options.sort,
-          sort_dir: options.sortDir,
-        });
-
-        const files = response.files?.matches || [];
-        const total = response.files?.total || 0;
-
-        if (files.length === 0) {
-          spinner.succeed('No files found');
-          return;
-        }
-
-        spinner.succeed(`Found ${total} files (showing ${files.length})`);
-
-        const pagination = response.files?.pagination;
-        if (options.json) {
-          writeJson(applyFields('search files', {
-            query: fullQuery,
-            total,
-            page: pagination?.page || 1,
-            pages: pagination?.page_count || 1,
-            files,
-          }, fields));
-          return;
-        }
-
-        writeText('\n' + formatSearchFiles(fullQuery, files, total));
-
-        if (pagination) {
-          writeText(formatPaginationHint(pagination.page, pagination.page_count));
-        }
-      } catch (err: any) {
-        failCommand(err, { json: options.json, spinner, context: 'Failed to search files' });
       }
     });
 

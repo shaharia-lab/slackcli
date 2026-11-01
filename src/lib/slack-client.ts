@@ -946,21 +946,6 @@ export class SlackClient {
     return this.request('search.messages', params);
   }
 
-  // Search files (same paging and sort params as searchMessages)
-  async searchFiles(query: string, options: {
-    count?: number;
-    page?: number;
-    sort?: string;
-    sort_dir?: string;
-  } = {}): Promise<any> {
-    const params: Record<string, any> = { query };
-    if (options.count) params.count = options.count;
-    if (options.page) params.page = options.page;
-    if (options.sort) params.sort = options.sort;
-    if (options.sort_dir) params.sort_dir = options.sort_dir;
-    return this.request('search.files', params);
-  }
-
   // Search by module (browser: search.modules, standard: falls back to search.all)
   async searchModules(query: string, module: 'channels' | 'people', options: {
     count?: number;
@@ -1046,13 +1031,6 @@ export class SlackClient {
   // self-op (no target user) and returns the joined channel object.
   async joinConversation(channel: string): Promise<any> {
     return this.request('conversations.join', { channel });
-  }
-
-  // Create a channel (conversations.create). Public unless isPrivate is set.
-  // Slack returns the new channel object; a taken or invalid name fails with
-  // name_taken or invalid_name_*, mapped in SLACK_CODE_MAP.
-  async createConversation(name: string, isPrivate: boolean): Promise<any> {
-    return this.request('conversations.create', { name, is_private: isPrivate });
   }
 
   // Leave a conversation as the authenticated user. conversations.leave is a

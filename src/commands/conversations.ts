@@ -279,19 +279,6 @@ const HELP = {
       TEAM_NOTE,
     ],
   },
-  create: {
-    summary: 'Create a public or private channel',
-    description:
-      'Create a channel as the authenticated user. Public by default; pass --private for a private channel. ' +
-      'Slack rejects a name that is taken or not valid. Add members afterwards with "conversations members add".',
-    examples: [
-      'slackcli conversations create project-updates',
-      'slackcli conversations create incident-room --private --json',
-    ],
-    json: '{ channel_id, name, is_private }.',
-    notes: ['Acts immediately, with no confirmation prompt.'],
-    dryRun: true,
-  },
   join: {
     summary: 'Join a public channel as yourself',
     description:
@@ -1024,39 +1011,6 @@ export function createConversationsCommand(): Command {
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to remove members', hint: 'Run "slackcli auth list" to check your authentication.' });
-      }
-    });
-
-  // Create a channel as the authenticated user (conversations.create). Public
-  // unless --private. No confirmation gate: it creates one channel and changes
-  // no existing one, the same as join.
-  describeCommand(conversations.command('create'), HELP.create)
-    .argument('<name>', 'Name for the new channel')
-    .option('--private', 'Create a private channel instead of a public one', false)
-    .option('--workspace <id|name>', 'Workspace to use (overrides default)')
-    .option('--json', 'Output in JSON format', false)
-    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
-    .action(async (name, options) => {
-      const spinner = ora('Creating channel...').start();
-      try {
-        const client = await getAuthenticatedClient(options.workspace);
-
-        if (options.dryRun) {
-          spinner.stop();
-          emitDryRun(await buildPreview(client, 'create channel', { kind: 'channel', name }, { name, is_private: options.private }), options.json);
-          return;
-        }
-
-        const response = await client.createConversation(name, options.private);
-        const channel = response.channel;
-
-        spinner.succeed(`Created #${channel.name} (${channel.id})`);
-
-        if (options.json) {
-          writeJson({ channel_id: channel.id, name: channel.name, is_private: channel.is_private === true });
-        }
-      } catch (err: any) {
-        failCommand(err, { json: options.json, spinner, context: 'Failed to create channel', hint: 'Run "slackcli auth list" to check your authentication.' });
       }
     });
 

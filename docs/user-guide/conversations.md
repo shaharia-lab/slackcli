@@ -320,7 +320,7 @@ documented below; this command is read-only.
 
 ## Previewing a change (`--dry-run`)
 
-`members add`, `members remove`, `create`, `join`, `leave` and `mark-read` take
+`members add`, `members remove`, `join`, `leave` and `mark-read` take
 `--dry-run`: the channel and user IDs are resolved and checked, and the command
 prints what it would do without doing it and without prompting. The preview
 lists the users that would be added or removed; for `mark-read` it shows the
@@ -364,20 +364,6 @@ reports which came out and which failed, rather than stopping at the first
 error. It exits non-zero if **any** removal failed, and `--json` gives
 `{ channel_id, removed: [...], failed: [{ user, error }] }`. Confirmation
 works exactly as for `add` (prompt, or `--yes` when non-interactive).
-
-## `conversations create`
-
-```bash
-slackcli conversations create project-updates
-slackcli conversations create incident-room --private --json
-```
-
-Creates a channel as yourself. It is public unless you pass `--private`. Like
-`join` it has no confirmation prompt, and `--dry-run` previews the create without
-making it. Slack rejects a name that is taken or not valid (`name_taken`,
-`invalid_name_punctuation` and the other `invalid_name_*` codes); the command
-exits 1, and `--json` reports the error as `invalid_input`. `--json` gives
-`{ channel_id, name, is_private }`.
 
 ## `conversations join`
 

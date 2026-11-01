@@ -161,7 +161,6 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Read a channel or a thread | `slackcli conversations read C123 --limit=50` | [conversations](docs/user-guide/conversations.md) |
 | Send, reply, edit, delete, react, or unreact | `slackcli messages send --permalink="$LINK" --message="…"` | [messages](docs/user-guide/messages.md) |
 | Search the workspace | `slackcli search messages "release notes"` | [search](docs/user-guide/search.md) |
-| Find a file | `slackcli search files "quarterly report"` | [search](docs/user-guide/search.md) |
 | Find a channel or a person | `slackcli search people "ada"` | [search](docs/user-guide/search.md) |
 | Work through "saved for later" | `slackcli saved list --state=to_do` | [saved items](docs/user-guide/saved.md) |
 | Read a Canvas as Markdown | `slackcli canvas read F123` | [canvas](docs/user-guide/canvas.md) |
@@ -346,13 +345,12 @@ slackcli messages delete-scheduled Q123 --yes                 # cancel before it
 </details>
 
 <details>
-<summary><code>search</code> — messages, files, channels, people</summary>
+<summary><code>search</code> — messages, channels, people</summary>
 
 <br>
 
 ```bash
 slackcli search messages "deploy failed" --in=engineering --from=ada --limit=50
-slackcli search files "quarterly report" --in=finance
 slackcli search channels "incident"
 slackcli search people "ada@example.com"
 ```

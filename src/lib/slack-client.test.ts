@@ -1049,31 +1049,6 @@ describe('SlackClient.markConversation', () => {
   });
 });
 
-describe('SlackClient.createConversation', () => {
-  it('calls conversations.create with name and is_private through request()', async () => {
-    const calls: Array<[string, Record<string, unknown>]> = [];
-    class CreateClient extends SlackClient {
-      override async request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-        calls.push([method, params]);
-        return { ok: true, channel: { id: 'C123', name: 'test-channel', is_private: params.is_private } };
-      }
-    }
-    const client = new CreateClient({
-      workspace_id: 'T123',
-      workspace_name: 'Test Workspace',
-      auth_type: 'standard',
-      token: 'xoxp-test',
-      token_type: 'user',
-    });
-    await client.createConversation('test-channel', false);
-    await client.createConversation('test-private', true);
-    expect(calls).toEqual([
-      ['conversations.create', { name: 'test-channel', is_private: false }],
-      ['conversations.create', { name: 'test-private', is_private: true }],
-    ]);
-  });
-});
-
 describe('SlackClient.leaveConversation', () => {
   // Slack's conversations.leave returns { ok: false, not_in_channel: true } with
   // NO `error` field when you were already out. request() throws on ok:false, so

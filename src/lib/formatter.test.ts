@@ -6,7 +6,6 @@ import {
   warning,
   formatSearchMessages,
   formatChannelSearchResults,
-  formatSearchFiles,
   formatPeopleSearchResults,
   formatUnreadChannels,
   formatUnreadMessages,
@@ -35,7 +34,6 @@ import type {
   SavedItem,
   SearchMatch,
   ChannelSearchResult,
-  SearchFileMatch,
   PeopleSearchResult,
   UnreadChannel,
   SlackUser,
@@ -945,36 +943,6 @@ describe('formatter output with colour enabled', () => {
         + '\n'
         + '  ' + dim('2.') + ' #' + bold('quiet') + ' ' + dim('(C2)') + ' \n'
         + '\n',
-      );
-    });
-  });
-
-  describe('formatSearchFiles', () => {
-    it('renders every field, and the fallbacks when each optional field is missing', () => {
-      const files: SearchFileMatch[] = [
-        {
-          id: 'F1',
-          name: 'report.pdf',
-          title: 'Report',
-          filetype: 'pdf',
-          username: 'alice',
-          user: 'U1',
-          created: 1700000000,
-          permalink: 'https://acme.slack.com/files/U1/F1/report.pdf',
-        },
-        { id: 'F2', title: 'Notes', user: 'U2' },
-        { id: 'F3' },
-      ];
-      const created = formatTimestamp('1700000000');
-
-      expect(formatSearchFiles('rep', files, 3)).toBe(
-        bold('📎 Files matching "rep" (3 total)\n\n')
-        + '  ' + dim('1.') + ' ' + yellow('report.pdf') + ' ' + cyan('pdf') + ' ' + bold('@alice') + ' '
-        + dim('[' + created + ']') + ' ' + dim('https://acme.slack.com/files/U1/F1/report.pdf') + '\n'
-        + '  ' + dim('2.') + ' ' + yellow('Notes') + ' ' + cyan('file') + ' ' + bold('@U2') + ' '
-        + dim('[unknown date]') + ' \n'
-        + '  ' + dim('3.') + ' ' + yellow('(unnamed file)') + ' ' + cyan('file') + ' ' + bold('@unknown') + ' '
-        + dim('[unknown date]') + ' \n',
       );
     });
   });

@@ -46,7 +46,7 @@ They hold no Slack API knowledge.
 | `logs.ts` | `path`, `show`, `clear` |
 | `messages.ts` | `send`, `react`, `unreact`, `edit`, `delete`, `draft`, `list-drafts`, `send-draft`, `delete-draft`, `schedule`, `list-scheduled`, `delete-scheduled` |
 | `saved.ts` | `list`, `add`, `update`, `complete`, `reopen`, `remove` |
-| `search.ts` | `messages`, `files`, `channels`, `people` |
+| `search.ts` | `messages`, `channels`, `people` |
 | `update.ts` | (default action), `check` |
 
 ## `src/lib/`
@@ -95,7 +95,6 @@ They hold no Slack API knowledge.
 | `help.ts` | The `--help` layout: `describeCommand()` (summary, description, `Examples`, `Notes`, standard notes for `--json`, browser-only, confirmation and `--dry-run`), the root command tree and footer, and the `--help` pointer after usage errors. |
 | `clipboard.ts` | Cross-platform clipboard read (`pbpaste` / PowerShell / `xclip` / `xsel`). |
 | `interactive-input.ts` | Multi-line terminal input (double-Enter or Ctrl-D). |
-| `search-query.ts` | The Slack query for `search messages` and `search files`: `buildSearchQuery()` joins the positional term and the `--in` / `--from` operators, and returns `''` when neither is given |
 | `json-fields.ts` | `--fields` on the read commands: `parseFields()` / `fieldsOption()` (validation, `--json` required), `projectFields()` (dot-path projection of each list item or of a single record, envelope kept) and `FIELDS_LIST_KEYS`, the one table naming each command's main list. `applyFields()` is what a command calls just before `writeJson()` |
 | `updater.ts` | Self-update via GitHub releases, with SHA-256 verification. |
 | `banner.ts` | The welcome screen bare `slackcli` prints in a terminal: the pure `renderBanner()` (logo, version, star call-to-action, issue link; narrow-terminal, no-colour and no-Unicode fallbacks), `shouldShowBanner()` (no arguments and stdout a TTY), `supportsUnicode()`, `shouldUseColor()` (chalk's level plus `NO_COLOR`) and the repository URL constants. Called from `src/index.ts` before `program.parse()`. |

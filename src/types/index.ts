@@ -364,18 +364,6 @@ export interface SearchMatch {
   };
 }
 
-// One match from search.files (only the fields the CLI reads; Slack sends more).
-export interface SearchFileMatch {
-  id: string;
-  name?: string;
-  title?: string;
-  filetype?: string;
-  user?: string;
-  username?: string;
-  created?: number;
-  permalink?: string;
-}
-
 export interface ChannelSearchResult {
   id: string;
   name: string;

@@ -176,7 +176,13 @@ the command's `--help` text and in the [user guide](../user-guide/README.md).
 ## Workspace storage
 
 `src/lib/workspaces.ts` owns `~/.config/slackcli/workspaces.json` (file `0600`
-inside a `0700` directory).
+inside a `0700` directory). The modes hold for existing objects too, not just new
+ones: `ensurePrivateDir()` refuses a config directory that is not a directory or
+not the current user's and tightens a wider one to `0700`, and
+`writePrivateFile()` saves through a `0600` temp file renamed over the target, so
+every save is atomic, resets the file's mode and replaces a symlink rather than
+following it. Both skip the POSIX steps on Windows. Both take a path, so tests
+run them against temp directories, never the real config.
 
 The map key is a **profile key**. Resolution and key derivation are pure
 functions with no I/O — `resolveWorkspace()` and `deriveStorageKey()` — which is

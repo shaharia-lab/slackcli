@@ -378,6 +378,9 @@ slackcli auth logout --keep-browser-session
 
 Workspace metadata (workspace ID/name, auth type, profile) always lives in
 `~/.config/slackcli/workspaces.json` (mode `0600`, inside a `0700` directory).
+On macOS and Linux both modes are enforced on every save, so a copied or
+restored file that came back `0644` is made private again; a config directory
+owned by another user is refused.
 Where the *credentials* themselves live depends on the storage backend — see
 below. Nothing is sent anywhere except Slack.
 

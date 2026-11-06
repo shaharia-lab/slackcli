@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { MAX_STDIN_BYTES } from '../lib/message-input.ts';
+import { FAKE_SLACK_ORIGIN, FAKE_SLACK_PRELOAD, FAKE_SLACK_SERVER_ENV } from '../test-support/fake-slack.ts';
 
 const root = resolve(import.meta.dir, '../..');
 const entry = join(root, 'src/index.ts');
@@ -15,10 +16,11 @@ const entry = join(root, 'src/index.ts');
 // would mangle in --message "...".
 const TEXT = 'Build `main` failed:\n  "tests" step, see $LOG\n\nit\'s \\ $(not) run';
 
-function childEnv(home: string) {
+function childEnv(home: string, server: string) {
   return {
     ...process.env,
     HOME: home,
+    [FAKE_SLACK_SERVER_ENV]: server,
     SLACKCLI_LOG_LEVEL: 'off',
     SLACKCLI_NO_UPDATE_NOTIFIER: '1',
     SLACKCLI_WORKSPACE: '',
@@ -66,7 +68,7 @@ describe.skipIf(process.platform === 'win32')('--message-file - through the CLI'
           T1: {
             workspace_id: 'T1',
             workspace_name: 'acme',
-            workspace_url: `http://127.0.0.1:${server.port}`,
+            workspace_url: FAKE_SLACK_ORIGIN,
             auth_type: 'browser',
             xoxd_token: 'xoxd-fake',
             xoxc_token: 'xoxc-fake',
@@ -85,12 +87,12 @@ describe.skipIf(process.platform === 'win32')('--message-file - through the CLI'
   // Asynchronous spawn: the stand-in server runs on this process's event loop.
   // The text is written to a real pipe (a Blob as stdin reaches the child empty).
   async function run(args: string[], stdin: string | Uint8Array) {
-    const child = Bun.spawn([process.execPath, 'run', entry, 'messages', ...args], {
+    const child = Bun.spawn([process.execPath, 'run', '--preload', FAKE_SLACK_PRELOAD, entry, 'messages', ...args], {
       cwd: root,
       stdin: 'pipe',
       stdout: 'pipe',
       stderr: 'pipe',
-      env: childEnv(home),
+      env: childEnv(home, `http://127.0.0.1:${server.port}`),
     });
     // The child may stop reading early (the size limit); a broken pipe is expected then.
     try {
@@ -185,8 +187,8 @@ describe.skipIf(process.platform === 'win32')('--message-file - through the CLI'
   it('still reads a file literally named - when written as ./-', async () => {
     await writeFile(join(home, '-'), 'from the dash file\n');
     const child = Bun.spawn(
-      [process.execPath, 'run', entry, 'messages', 'send', '--recipient-id', 'C0123456789', '--message-file', './-'],
-      { cwd: home, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', env: childEnv(home) },
+      [process.execPath, 'run', '--preload', FAKE_SLACK_PRELOAD, entry, 'messages', 'send', '--recipient-id', 'C0123456789', '--message-file', './-'],
+      { cwd: home, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', env: childEnv(home, `http://127.0.0.1:${server.port}`) },
     );
     expect(await child.exited).toBe(0);
     expect(sent('chat.postMessage').get('text')).toBe('from the dash file\n');
@@ -214,7 +216,7 @@ describe.skipIf(!hasPty)('--message-file - with a terminal on stdin', () => {
         'messages send --recipient-id C0123456789 --message-file -; echo "EXIT=$?"';
       const result = Bun.spawnSync(
         ['sh', '-c', `timeout -s KILL 25 script -qec ${quote(inPty)} /dev/null | head -c 65536`],
-        { cwd: root, stdin: 'ignore', env: childEnv(home) },
+        { cwd: root, stdin: 'ignore', env: childEnv(home, '') },
       );
       const output = result.stdout.toString().replaceAll('\r\n', '\n');
       expect(output).toContain('stdin is a terminal; pipe the text in');

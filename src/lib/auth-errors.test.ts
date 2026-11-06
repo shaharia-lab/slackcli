@@ -157,12 +157,19 @@ describe('describeAuthError', () => {
     );
   });
 
-  it('keeps only the origin of the stored URL', () => {
+  it('names the canonical origin of the stored URL', () => {
+    const fix = describeAuthError('token_expired', { ...browserProfile, workspaceUrl: 'https://ACME.slack.com/' }).fix;
+    expect(fix).toBe('slackcli auth login-auto --workspace-url https://acme.slack.com');
+  });
+
+  // Not a workspace origin, so the transport would refuse it too (#513): the
+  // damaged URL is dropped rather than trimmed into something runnable.
+  it('falls back to the bare command for a URL that is not a workspace origin', () => {
     const fix = describeAuthError('token_expired', {
       ...browserProfile,
       workspaceUrl: 'https://user:pw@ACME.slack.com/client/T1?x=1; rm -rf ~#$(id)',
     }).fix;
-    expect(fix).toBe('slackcli auth login-auto --workspace-url https://acme.slack.com');
+    expect(fix).toBe('slackcli auth login-auto');
   });
 
   it('accepts an Enterprise Grid host', () => {

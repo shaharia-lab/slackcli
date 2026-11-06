@@ -1,5 +1,5 @@
 import type { AuthType, WorkspaceConfig } from '../types/index.ts';
-import { isSlackWorkspaceUrl } from './browser-auth.ts';
+import { slackWorkspaceOrigin } from './browser-auth.ts';
 
 // The Slack error codes that mean "these credentials were refused". Permission
 // errors (`missing_scope`, `not_in_channel`, …) are deliberately not here: the
@@ -57,11 +57,9 @@ const PLAIN_HOSTNAME = /^[a-z0-9.-]+$/;
 // no port and no character a shell would interpret; anything else from a
 // damaged record is dropped and the command falls back to its bare form.
 function workspaceOrigin(url: string | undefined): string | undefined {
-  if (!url || !isSlackWorkspaceUrl(url)) return undefined;
-  const parsed = new URL(url);
-  const host = parsed.hostname.toLowerCase();
-  if (parsed.port !== '' || !PLAIN_HOSTNAME.test(host)) return undefined;
-  return `https://${host}`;
+  const origin = url ? slackWorkspaceOrigin(url) : null;
+  if (!origin || !PLAIN_HOSTNAME.test(new URL(origin).hostname)) return undefined;
+  return origin;
 }
 
 /** The profile metadata of a stored workspace config, without its secrets. */

@@ -23,6 +23,7 @@ import { findActiveDraft, parseDraftLimit, validateSendableDraft } from './draft
 import { filterNewerThan } from './poll.ts';
 import { SlackUrlParseError } from './slack-url-parser.ts';
 import type { WorkspaceConfig } from '../types/index.ts';
+import { FAKE_SLACK_ORIGIN, FAKE_SLACK_PRELOAD, FAKE_SLACK_SERVER_ENV, fakeSlackFetch } from '../test-support/fake-slack.ts';
 
 // Short fake tokens only: realistic ones are rejected by push protection.
 const token = (prefix: string, ...parts: string[]) => [prefix, ...parts].join('-');
@@ -321,20 +322,27 @@ describe('JSON error mode', () => {
 describe('classifyError on real browser-transport failures', () => {
   let server: ReturnType<typeof Bun.serve>;
   let reply: () => Response;
+  // Where FAKE_SLACK_ORIGIN is rerouted to; read per call so a test can stop the server.
+  let port: number;
+  const realFetch = globalThis.fetch;
 
   beforeEach(() => {
     server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => reply() });
+    port = server.port as number;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
+      fakeSlackFetch(`http://127.0.0.1:${port}`, realFetch)(input, init)) as typeof fetch;
   });
 
   afterEach(async () => {
+    globalThis.fetch = realFetch;
     await server.stop(true);
   });
 
-  function client(url = `http://127.0.0.1:${server.port}`): SlackClient {
+  function client(): SlackClient {
     const config: WorkspaceConfig = {
       workspace_id: 'T1',
       workspace_name: 'Acme Corp',
-      workspace_url: url,
+      workspace_url: FAKE_SLACK_ORIGIN,
       auth_type: 'browser',
       xoxd_token: token('xoxd', 'fake'),
       xoxc_token: token('xoxc', 'fake'),
@@ -370,9 +378,8 @@ describe('classifyError on real browser-transport failures', () => {
   });
 
   it('reports a connection that never answered as network and retryable', async () => {
-    const port = server.port;
     await server.stop(true);
-    const err = await failure(client(`http://127.0.0.1:${port}`).testAuth());
+    const err = await failure(client().testAuth());
     expect(classifyError(err)).toMatchObject({ code: 'network', retryable: true });
     // Restart so afterEach has a server to stop.
     server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => reply() });
@@ -405,7 +412,7 @@ describe.skipIf(process.platform === 'win32')('a failing command through the CLI
           T1: {
             workspace_id: 'T1',
             workspace_name: 'example',
-            workspace_url: `http://127.0.0.1:${server.port}`,
+            workspace_url: FAKE_SLACK_ORIGIN,
             auth_type: 'browser',
             xoxd_token: token('xoxd', 'fakecookie'),
             xoxc_token: token('xoxc', 'faketoken'),
@@ -423,12 +430,12 @@ describe.skipIf(process.platform === 'win32')('a failing command through the CLI
 
   // Asynchronous spawn: the stand-in server runs on this process's event loop.
   async function run(args: string[]) {
-    const child = Bun.spawn([process.execPath, 'run', join(root, 'src/index.ts'), ...args], {
+    const child = Bun.spawn([process.execPath, 'run', '--preload', FAKE_SLACK_PRELOAD, join(root, 'src/index.ts'), ...args], {
       cwd: root,
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
-      env: { ...process.env, HOME: home, SLACKCLI_LOG_LEVEL: 'off', SLACKCLI_NO_UPDATE_NOTIFIER: '1', SLACKCLI_WORKSPACE: '', SLACKCLI_TOKEN: '', SLACK_BOT_TOKEN: '' },
+      env: { ...process.env, [FAKE_SLACK_SERVER_ENV]: `http://127.0.0.1:${server.port}`, HOME: home, SLACKCLI_LOG_LEVEL: 'off', SLACKCLI_NO_UPDATE_NOTIFIER: '1', SLACKCLI_WORKSPACE: '', SLACKCLI_TOKEN: '', SLACK_BOT_TOKEN: '' },
     });
     const [stdout, stderr, code] = await Promise.all([
       new Response(child.stdout).text(),

@@ -4,6 +4,7 @@ import { getLogger } from '@logtape/logtape';
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import type {
+  BrowserAuthConfig,
   DryRunWorkspace,
   SlackAuthTestResponse,
   ScheduledMessageSummary,
@@ -20,6 +21,7 @@ import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
 import type { RetryOptions } from './retry.ts';
 import { InvalidInputError, UnsupportedAuthTypeError } from './cli-errors.ts';
 import { SlackAuthError, authErrorProfile, isAuthErrorCode } from './auth-errors.ts';
+import { slackWorkspaceOrigin } from './browser-auth.ts';
 import type { CanvasSectionCriteria } from './canvas-sections.ts';
 import type { CanvasChange } from './canvas-write.ts';
 
@@ -114,10 +116,18 @@ function buildBrowserBody(
 // The error for a non-2xx browser-auth response. Best effort on the body: one
 // that already errored rejects its cancel(), and that must not replace the
 // transport error the retry policy acts on.
+//
+// A 3xx lands here too: the request is sent with `redirect: 'manual'`, because
+// following it would replay the body, token included, to wherever the
+// Location points (#513). Slack's API does not redirect a POST, and the retry
+// policy only acts on 429 and 5xx, so a redirect is a plain failure.
 async function transportErrorFor(response: Response): Promise<SlackTransportError> {
   await response.body?.cancel().catch(() => {});
+  const redirected = response.status >= 300 && response.status < 400;
   return new SlackTransportError(
-    `Slack API error: HTTP error! status: ${response.status}`,
+    redirected
+      ? `Slack API error: refused to follow a redirect (HTTP ${response.status}) with session credentials`
+      : `Slack API error: HTTP error! status: ${response.status}`,
     response.status,
     parseRetryAfter(response.headers.get('retry-after')),
     false,
@@ -378,15 +388,35 @@ function summarizeScheduledPage(
   return { summaries, skipped };
 }
 
+// The canonical workspace origin of a browser config, or an InvalidInputError
+// naming the profile when its URL is not an https slack.com workspace origin.
+// The URL itself is not echoed: it may be whatever a tampered file holds.
+function browserOriginOf(config: BrowserAuthConfig): string {
+  const origin = slackWorkspaceOrigin(config.workspace_url);
+  if (origin) return origin;
+  const name = config.profile ?? config.workspace_name;
+  throw new InvalidInputError(
+    `Workspace "${name}" has an unsafe workspace URL: it must be an https slack.com workspace origin such as https://acme.slack.com. No request was sent.`,
+    'Sign in again with: slackcli auth login-auto, or slackcli auth login-browser --workspace-url https://<team>.slack.com',
+  );
+}
+
 export class SlackClient {
   private readonly config: WorkspaceConfig;
   private readonly webClient?: WebClient;
   private readonly rateLimiter: RateLimiter;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly retryOptions: RetryOptions;
+  // The only host the browser transport sends the session cookie and token to.
+  private readonly browserOrigin?: string;
 
   constructor(config: WorkspaceConfig, options: SlackClientOptions = {}) {
     this.config = config;
+    // Checked here, before any request can be built, so manual login, auto
+    // capture and a stored profile all pass the same gate (#513).
+    if (config.auth_type === 'browser') {
+      this.browserOrigin = browserOriginOf(config);
+    }
     this.rateLimiter = options.rateLimiter ?? slackRateLimiter;
     this.sleep = options.sleep ?? defaultSleep;
     this.retryOptions = resolveRetryOptions(options.retry);
@@ -535,7 +565,7 @@ export class SlackClient {
       throw new Error('Invalid auth type');
     }
 
-    const url = `${this.config.workspace_url}/api/${method}`;
+    const url = `${this.browserOrigin}/api/${method}`;
 
     // URL-encode the xoxd token for the cookie
     const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
@@ -554,7 +584,7 @@ export class SlackClient {
 
     let response: Response;
     try {
-      response = await fetch(url, { method: 'POST', headers, body });
+      response = await fetch(url, { method: 'POST', headers, body, redirect: 'manual' });
     } catch (error: any) {
       // No response at all: the request may or may not have reached Slack.
       throw new SlackTransportError(`Slack API error: ${error?.message}`, undefined, undefined, true);

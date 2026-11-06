@@ -76,7 +76,7 @@ export async function writePrivateFile(path: string, content: string): Promise<v
     await rename(tmpPath, path);
   } catch (err) {
     await handle.close().catch(() => {});
-    await rm(tmpPath, { force: true });
+    await rm(tmpPath, { force: true }).catch(() => {});
     throw err;
   }
 }

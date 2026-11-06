@@ -116,23 +116,18 @@ function buildBrowserBody(
 // The error for a non-2xx browser-auth response. Best effort on the body: one
 // that already errored rejects its cancel(), and that must not replace the
 // transport error the retry policy acts on.
-// A redirect from a browser-auth call is never followed: fetch would replay the
-// body, token included, to wherever the Location points (#513). Slack's API
-// does not redirect a POST, so one is treated as a failure, not retried.
-async function redirectErrorFor(response: Response): Promise<SlackTransportError> {
-  await response.body?.cancel().catch(() => {});
-  return new SlackTransportError(
-    `Slack API error: refused to follow a redirect (HTTP ${response.status}) with session credentials`,
-    response.status,
-    undefined,
-    false,
-  );
-}
-
+//
+// A 3xx lands here too: the request is sent with `redirect: 'manual'`, because
+// following it would replay the body, token included, to wherever the
+// Location points (#513). Slack's API does not redirect a POST, and the retry
+// policy only acts on 429 and 5xx, so a redirect is a plain failure.
 async function transportErrorFor(response: Response): Promise<SlackTransportError> {
   await response.body?.cancel().catch(() => {});
+  const redirected = response.status >= 300 && response.status < 400;
   return new SlackTransportError(
-    `Slack API error: HTTP error! status: ${response.status}`,
+    redirected
+      ? `Slack API error: refused to follow a redirect (HTTP ${response.status}) with session credentials`
+      : `Slack API error: HTTP error! status: ${response.status}`,
     response.status,
     parseRetryAfter(response.headers.get('retry-after')),
     false,
@@ -596,9 +591,6 @@ export class SlackClient {
     }
     meta.httpStatus = response.status;
 
-    if (response.status >= 300 && response.status < 400) {
-      throw await redirectErrorFor(response);
-    }
     if (!response.ok) {
       throw await transportErrorFor(response);
     }

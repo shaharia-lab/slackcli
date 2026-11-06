@@ -98,7 +98,7 @@ in-process with `globalThis.fetch = fakeSlackFetch(serverUrl, realFetch)`, and
 for a CLI subprocess with
 `[process.execPath, 'run', '--preload', FAKE_SLACK_PRELOAD, entry, ...]` plus
 `[FAKE_SLACK_SERVER_ENV]: serverUrl` in its env (`--preload` goes after `run`).
-Nothing in `src/` imports these, so the binary has no bypass.
+Nothing outside `*.test.ts` imports these, so the binary has no bypass.
 
 **No network, no real Slack, no live credentials.** Tests must pass offline on a
 machine that has never authenticated.

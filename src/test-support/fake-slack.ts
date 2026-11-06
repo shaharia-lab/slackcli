@@ -1,8 +1,8 @@
 // Test-only: lets a test stand a local server in for Slack now that the browser
 // transport refuses every workspace URL that is not an https slack.com origin
 // (#513). Profiles keep the real-looking FAKE_SLACK_ORIGIN, and fetch is
-// rerouted from that origin to the local server. Nothing in src/ imports this,
-// so it never reaches the compiled binary, and the production check has no
+// rerouted from that origin to the local server. Nothing outside *.test.ts
+// imports this, so it never reaches the compiled binary, and the production check has no
 // bypass to leave open.
 
 /** The workspace URL test profiles store. */

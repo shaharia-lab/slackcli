@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Browser session tokens only go to an https slack.com workspace**: `auth login-browser --workspace-url` and every command on a browser profile now refuse a workspace URL that is not an `https://<team>.slack.com` origin before any request, so the `d` cookie and the `xoxc` token can no longer be sent to plain HTTP, a foreign host, or a look-alike such as `team.slack.com.example`. A redirect from the Slack API is refused instead of followed, since following it would replay the token and message text to the new host (#513)
   - The URL must be the origin only: userinfo, a port other than 443, a path, a query or a fragment are refused. A trailing `/` is fine, and Enterprise Grid hosts (`*.enterprise.slack.com`) keep working
   - A stored profile whose URL fails the check exits with `invalid_input` and asks for a fresh `auth login-auto` or `auth login-browser`; `auth list` and `auth remove` still work on it. `login-auto --workspace-url` follows the same rule
+- **`auth parse-curl` no longer prints token values**: without `--login` it printed a ready-to-run `login-browser` command with both full browser tokens, and with or without `--login` it printed the first 20 characters of each, so terminal recordings, CI logs and agents reading stdout could capture a working session. It now reports each token as found with its length, and the manual `login-browser` hint uses `<xoxd-token>` / `<xoxc-token>` placeholders (#514)
 
 ## [0.19.0] - 2026-11-01
 

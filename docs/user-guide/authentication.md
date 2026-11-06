@@ -141,7 +141,12 @@ cat curl-command.txt | slackcli auth parse-curl --login
 
 This extracts the workspace URL and name, the `xoxd` token from the cookie
 header, and the `xoxc` token from the request body. Drop `--login` to print what
-was found without saving it.
+was found without saving it: the workspace, and whether each token was found and
+how long it is. Token values are never printed, not even in part.
+
+A copied cURL carries your full session credentials. Pipe it or read it from the
+clipboard rather than pasting it at the prompt, where it stays in your terminal's
+scrollback, and never paste one into an issue, a chat or a log.
 
 Clipboard reading uses `pbpaste` on macOS, PowerShell on Windows, and
 `xclip`/`xsel` on Linux — install one of those if the clipboard path fails.

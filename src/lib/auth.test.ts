@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { FAKE_SLACK_ORIGIN, FAKE_SLACK_PRELOAD, FAKE_SLACK_SERVER_ENV } from '../test-support/fake-slack.ts';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import {
   authenticateAuto,
@@ -24,7 +25,7 @@ import {
 } from './auth';
 import { AmbiguousWorkspaceError, resolveWorkspace, type ResolvedWorkspace } from './workspaces';
 import { MissingCredentialError } from './secret-store';
-import { CliError } from './cli-errors';
+import { CliError, InvalidInputError } from './cli-errors';
 import type { SlackAuthTestResponse, WorkspaceConfig, WorkspacesData } from '../types/index';
 import { configureLogging } from './logger';
 import { tildify } from './tildify';
@@ -107,6 +108,98 @@ describe.skipIf(process.platform === 'win32')('authenticateAuto logging', () => 
     const failure = records.find((r) => r.category.join('.') === 'slackcli.auth' && r.level === 'error');
     expect(failure?.properties.reason).toBe('browser_not_found');
   });
+});
+
+// #513: a manual login refuses a destination that is not an https slack.com
+// workspace origin before the tokens are sent anywhere, including to the
+// reporter's local receiver.
+describe('browser login destination', () => {
+  const root = resolve(import.meta.dir, '../..');
+  const originalFetch = globalThis.fetch;
+  let received: Array<{ path: string; cookie: string | null; body: string }>;
+  let server: ReturnType<typeof Bun.serve>;
+
+  beforeEach(() => {
+    received = [];
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: async (request) => {
+        received.push({ path: new URL(request.url).pathname, cookie: request.headers.get('cookie'), body: await request.text() });
+        return Response.json({ ok: false, error: 'invalid_auth' });
+      },
+    });
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    await server.stop(true);
+  });
+
+  it('sends nothing to a plaintext local receiver', async () => {
+    const error = await authenticateBrowser('xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', `http://127.0.0.1:${server.port}`)
+      .catch((err) => err);
+
+    expect(error).toBeInstanceOf(InvalidInputError);
+    expect(error.message).toBe(
+      'Workspace URL must be an https slack.com workspace origin, such as https://acme.slack.com. No request was sent.',
+    );
+    expect(received).toEqual([]);
+  });
+
+  it.each(['https://acme.slack.com.collector.invalid', 'https://collector.example', 'https://acme.slack.com:8443'])(
+    'makes no request for %s',
+    async (url) => {
+      const calls: string[] = [];
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return Response.json({ ok: true });
+      }) as unknown as typeof fetch;
+
+      const error = await authenticateBrowser('xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', url).catch((err) => err);
+
+      expect(error).toBeInstanceOf(InvalidInputError);
+      expect(calls).toEqual([]);
+    },
+  );
+
+  it('checks the tokens against the canonical origin', async () => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      calls.push(String(input));
+      return Response.json({ ok: false, error: 'invalid_auth' });
+    }) as unknown as typeof fetch;
+
+    await authenticateBrowser('xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://ACME.slack.com/').catch(() => {});
+
+    expect(calls).toEqual(['https://acme.slack.com/api/auth.test']);
+  });
+
+  it.skipIf(process.platform === 'win32')('auth login-browser exits 1 before contacting the URL', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'slackcli-login-url-'));
+    try {
+      const child = Bun.spawn(
+        [
+          process.execPath, 'run', join(root, 'src/index.ts'), 'auth', 'login-browser',
+          '--xoxd', 'xoxd-DUMMYAUDIT', '--xoxc', 'xoxc-DUMMYAUDIT', '--workspace-url', `http://127.0.0.1:${server.port}`,
+        ],
+        {
+          cwd: root,
+          stdin: 'ignore',
+          stdout: 'pipe',
+          stderr: 'pipe',
+          env: { ...process.env, HOME: home, SLACKCLI_LOG_LEVEL: 'off', SLACKCLI_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1' },
+        },
+      );
+      const [stderr, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+
+      expect(code).toBe(1);
+      expect(stderr).toContain('--workspace-url must be an https slack.com workspace URL');
+      expect(received).toEqual([]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 // A token Slack refuses at login was never stored, so the "log in again" advice
@@ -1454,7 +1547,7 @@ describe.skipIf(process.platform === 'win32')('auth whoami through the CLI', () 
     const record = (name: string) => ({
       workspace_id: 'T1',
       workspace_name: name,
-      workspace_url: `http://127.0.0.1:${server.port}`,
+      workspace_url: FAKE_SLACK_ORIGIN,
       auth_type: 'browser',
       xoxd_token: 'xoxd-secretcookie',
       xoxc_token: 'xoxc-secrettoken',
@@ -1477,13 +1570,14 @@ describe.skipIf(process.platform === 'win32')('auth whoami through the CLI', () 
 
   // Asynchronous spawn: the stand-in server runs on this process's event loop.
   async function run(args: string[], workspaceEnv = '') {
-    const child = Bun.spawn([process.execPath, 'run', join(root, 'src/index.ts'), 'auth', 'whoami', ...args], {
+    const child = Bun.spawn([process.execPath, 'run', '--preload', FAKE_SLACK_PRELOAD, join(root, 'src/index.ts'), 'auth', 'whoami', ...args], {
       cwd: root,
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
       env: {
         ...process.env,
+        [FAKE_SLACK_SERVER_ENV]: `http://127.0.0.1:${server.port}`,
         HOME: home,
         SLACKCLI_LOG_LEVEL: 'off',
         SLACKCLI_NO_UPDATE_NOTIFIER: '1',
@@ -1644,7 +1738,7 @@ describe.skipIf(process.platform === 'win32')('auth list through the CLI', () =>
     const record = (xoxc: string) => ({
       workspace_id: 'T1',
       workspace_name: 'example',
-      workspace_url: `http://127.0.0.1:${server.port}`,
+      workspace_url: FAKE_SLACK_ORIGIN,
       auth_type: 'browser',
       xoxd_token: 'xoxd-secretcookie',
       xoxc_token: xoxc,
@@ -1662,13 +1756,14 @@ describe.skipIf(process.platform === 'win32')('auth list through the CLI', () =>
 
   // Asynchronous spawn: the stand-in server runs on this process's event loop.
   async function run(args: string[]) {
-    const child = Bun.spawn([process.execPath, 'run', join(root, 'src/index.ts'), 'auth', 'list', ...args], {
+    const child = Bun.spawn([process.execPath, 'run', '--preload', FAKE_SLACK_PRELOAD, join(root, 'src/index.ts'), 'auth', 'list', ...args], {
       cwd: root,
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
       env: {
         ...process.env,
+        [FAKE_SLACK_SERVER_ENV]: `http://127.0.0.1:${server.port}`,
         HOME: home,
         SLACKCLI_LOG_LEVEL: 'off',
         SLACKCLI_NO_UPDATE_NOTIFIER: '1',
@@ -1738,7 +1833,7 @@ describe.skipIf(process.platform === 'win32')('auth list through the CLI', () =>
   }, 30_000);
 
   it('reports a profile whose credentials are missing as auth_failed without aborting', async () => {
-    const complete = { workspace_id: 'T1', workspace_name: 'example', workspace_url: `http://127.0.0.1:${server.port}`, auth_type: 'browser' };
+    const complete = { workspace_id: 'T1', workspace_name: 'example', workspace_url: FAKE_SLACK_ORIGIN, auth_type: 'browser' };
     await writeConfig({
       default_workspace: 'T1',
       workspaces: {

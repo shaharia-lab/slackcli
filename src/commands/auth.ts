@@ -359,6 +359,13 @@ export function createAuthCommand(): Command {
     .option('--secret-backend <backend>', 'Where to store credentials for a NEW profile: file (default) or keychain (macOS only)', 'file')
     .action(async (options) => {
       const secretBackend = resolveSecretBackend(options.secretBackend);
+      // The host the session cookie and token are sent to: refuse it before
+      // anything is (#513). authenticateBrowser() checks it again.
+      if (!isSlackWorkspaceUrl(options.workspaceUrl)) {
+        error('--workspace-url must be an https slack.com workspace URL');
+        console.error(chalk.dim('   e.g. https://myteam.slack.com'));
+        process.exit(1);
+      }
       const spinner = ora('Authenticating...').start();
 
       try {

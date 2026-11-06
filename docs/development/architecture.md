@@ -70,6 +70,14 @@ async request(method: string, params = {}) {
 }
 ```
 
+**Where browser credentials may go.** The constructor resolves a browser
+config's `workspace_url` through `slackWorkspaceOrigin()` (`browser-auth.ts`):
+an `https` `slack.com` workspace origin with no userinfo, port, path, query or
+fragment, else an `InvalidInputError`. `browserRequest()` only ever builds URLs
+from that canonical origin and calls `fetch` with `redirect: 'manual'`, refusing
+any 3xx, so neither a bad profile nor a redirect can carry the cookie or token
+elsewhere (#513). Do not add a browser `fetch` that skips either.
+
 Everything above it — every `listConversations`, `postMessage`, `searchMessages`
 — is auth-agnostic and goes through `request()`. **New API calls belong there,
 not in a command file.**

@@ -89,6 +89,17 @@ different results from CI.
 back')` — the name states the rule, so a failure tells you what broke without
 opening the file.
 
+**A local stand-in for Slack goes behind `FAKE_SLACK_ORIGIN`.** The browser
+transport refuses any workspace URL that is not an `https` `slack.com` origin
+(#513), so a test profile cannot point at `http://127.0.0.1:<port>`. Store
+`FAKE_SLACK_ORIGIN` (`https://acme.slack.com`) from
+`src/test-support/fake-slack.ts` instead and reroute fetch to the local server:
+in-process with `globalThis.fetch = fakeSlackFetch(serverUrl, realFetch)`, and
+for a CLI subprocess with
+`[process.execPath, 'run', '--preload', FAKE_SLACK_PRELOAD, entry, ...]` plus
+`[FAKE_SLACK_SERVER_ENV]: serverUrl` in its env (`--preload` goes after `run`).
+Nothing in `src/` imports these, so the binary has no bypass.
+
 **No network, no real Slack, no live credentials.** Tests must pass offline on a
 machine that has never authenticated.
 

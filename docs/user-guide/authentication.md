@@ -162,6 +162,14 @@ Where the values come from: open your workspace in a browser, open DevTools
 read `d=xoxd-…` from the `Cookie` header and `"token":"xoxc-…"` from the request
 payload.
 
+`--workspace-url` must be the workspace's own origin, `https://<team>.slack.com`
+(a trailing `/` is fine; Enterprise Grid hosts end in `.enterprise.slack.com`).
+Anything else — `http://`, another host, a port, a path, a query — is refused
+before the tokens are sent anywhere, because this URL is where the CLI sends
+your session cookie. The same check runs on every command for a stored browser
+profile: one whose URL fails it exits with `invalid_input` until you sign in
+again.
+
 ## 5. A token from the environment (nothing stored)
 
 Set `SLACKCLI_TOKEN` (or `SLACK_BOT_TOKEN`) to a standard app token and every

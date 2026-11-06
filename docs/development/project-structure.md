@@ -16,6 +16,7 @@ slackcli/
 │   │   ├── search.ts
 │   │   └── update.ts
 │   ├── lib/                      All logic; tests live beside each file
+│   ├── test-support/             Test-only helpers (never imported by src/)
 │   └── types/index.ts            Shared interfaces
 ├── scripts/build.ts              Compile wrapper: checks Bun >= 1.4.1, injects __APP_VERSION__
 ├── scripts/release-announcement.ts  Builds the Discord release announcement payload for release.yml
@@ -57,7 +58,7 @@ They hold no Slack API knowledge.
 | `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, token variable, stored default) is resolved, including the env-token path (`SLACKCLI_TOKEN` / `SLACK_BOT_TOKEN` → `workspaceFromEnvToken()`, an in-memory standard workspace built from `auth.test`, nothing stored). `checkIdentity()` is the `auth whoami` lookup: one `auth.test` for the selected profile, returned as a typed `ok` / `auth_failed` / `unreachable` result that keeps the profile key. `checkAllProfiles()` runs it over every stored profile for `auth list --check`, turning any per-profile failure into a result, and `buildProfileList()` shapes the `auth list --json` object. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
-| `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. |
+| `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. Owns `slackWorkspaceOrigin()` / `isSlackWorkspaceUrl()`, the one check on where browser credentials may be sent. |
 | `browser-launcher.ts` | Finds and launches a local Chromium-family browser; owns the profile directory. |
 | `cdp-client.ts` | Minimal Chrome DevTools Protocol client over Bun's WebSocket. |
 | `curl-parser.ts` | Extracts tokens from a DevTools cURL command. |

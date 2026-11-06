@@ -1,7 +1,7 @@
 import { getLogger } from '@logtape/logtape';
 import { SlackClient, SlackTransportError } from './slack-client.ts';
 import { SlackAuthError, describeRejectedLogin, isAuthErrorCode } from './auth-errors.ts';
-import { CliError, NotFoundError } from './cli-errors.ts';
+import { CliError, InvalidInputError, NotFoundError } from './cli-errors.ts';
 import { errorMessageForLog } from './tildify.ts';
 import {
   addWorkspace,
@@ -28,6 +28,7 @@ import {
   DEFAULT_CAPTURE_TIMEOUT_MS,
   SLACK_CLIENT_URL,
   isSlackWorkspaceUrl,
+  slackWorkspaceOrigin,
   type CaptureFailure,
   type CapturedWorkspace,
   type BrowserSessionFailure,
@@ -117,14 +118,23 @@ export async function authenticateBrowser(
   profile?: string,
   secretBackend: SecretBackend = 'file'
 ): Promise<AuthResult> {
+  // Refused before the tokens go anywhere (#513); the canonical origin is what
+  // gets stored, so a trailing slash never reaches the API base.
+  const origin = slackWorkspaceOrigin(workspaceUrl);
+  if (!origin) {
+    throw new InvalidInputError(
+      'Workspace URL must be an https slack.com workspace origin, such as https://acme.slack.com. No request was sent.',
+    );
+  }
+
   // Extract workspace name from URL if not provided
-  const defaultName = extractSlackWorkspaceName(workspaceUrl);
+  const defaultName = extractSlackWorkspaceName(origin);
 
   // Create a temporary config to test the tokens
   const tempConfig: BrowserAuthConfig = {
     workspace_id: 'temp',
     workspace_name: workspaceName || defaultName,
-    workspace_url: workspaceUrl,
+    workspace_url: origin,
     auth_type: 'browser',
     xoxd_token: xoxdToken,
     xoxc_token: xoxcToken,

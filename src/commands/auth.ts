@@ -292,14 +292,17 @@ async function loginWithParsedTokens(parsed: ParsedCurlResult, secretBackend: Se
   }
 }
 
-function printLoginHint(parsed: ParsedCurlResult): void {
+// Placeholders only: the extracted tokens are full session credentials and
+// must never reach stdout, where recordings, CI logs and agents capture them
+// (#514).
+function printLoginHint(workspaceUrl: string): void {
   writeText(chalk.bold('To login with these tokens, run:\n'));
   writeText(chalk.cyan('  slackcli auth parse-curl --login'));
-  writeText(chalk.gray('\nOr manually:\n'));
+  writeText(chalk.gray('\nOr manually, with the values from your browser:\n'));
   writeText(`  slackcli auth login-browser \\`);
-  writeText(`    --xoxd="${parsed.xoxd}" \\`);
-  writeText(`    --xoxc="${parsed.xoxc}" \\`);
-  writeText(`    --workspace-url="${parsed.workspaceUrl}"\n`);
+  writeText(`    --xoxd="<xoxd-token>" \\`);
+  writeText(`    --xoxc="<xoxc-token>" \\`);
+  writeText(`    --workspace-url="${workspaceUrl}"\n`);
 }
 
 // `auth list` keeps its own text failure (the error as the hint line); under
@@ -676,16 +679,17 @@ export function createAuthCommand(): Command {
         writeText(`  Name: ${chalk.cyan(parsed.workspaceName)}`);
         writeText(`  URL:  ${chalk.cyan(parsed.workspaceUrl)}\n`);
 
-        const tokenLength = (token: string) => chalk.gray(`(${token.length} chars)`);
+        // Presence and length only, never a value or a prefix (#514).
+        const tokenFound = (token: string) => `${chalk.green('found')} ${chalk.gray(`(${token.length} chars)`)}`;
         writeText(chalk.bold('Tokens:'));
-        writeText(`  xoxd: ${chalk.green(parsed.xoxd.substring(0, 20))}...${tokenLength(parsed.xoxd)}`);
-        writeText(`  xoxc: ${chalk.green(parsed.xoxc.substring(0, 20))}...${tokenLength(parsed.xoxc)}\n`);
+        writeText(`  xoxd: ${tokenFound(parsed.xoxd)}`);
+        writeText(`  xoxc: ${tokenFound(parsed.xoxc)}\n`);
 
         // If --login flag is set, authenticate directly
         if (options.login) {
           await loginWithParsedTokens(parsed, secretBackend);
         } else {
-          printLoginHint(parsed);
+          printLoginHint(parsed.workspaceUrl);
         }
       } catch (err: any) {
         error('Failed to parse cURL command', err.message);

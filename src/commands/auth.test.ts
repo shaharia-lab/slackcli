@@ -411,3 +411,87 @@ describe('auth list', () => {
     }
   });
 });
+
+describe('auth parse-curl never prints a token (#514)', () => {
+  // Synthetic, deliberately unusable values. SECRET is the part after the
+  // token-type tag: neither it nor any prefix of it may reach the output.
+  const SECRET = 'Q9leakMARKER514';
+  const xoxd = `xoxd-${SECRET}cookie`;
+  const xoxc = `xoxc-${SECRET}token`;
+  const curl = `curl 'https://acme.slack.com/api/auth.test' -b 'd=${xoxd}' --data-raw '{"token":"${xoxc}"}'`;
+
+  let stdout: string;
+  let stderr: string;
+
+  beforeEach(() => {
+    stdout = '';
+    stderr = '';
+    spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stdout += chunk.toString();
+      return true;
+    }) as typeof process.stdout.write);
+    spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderr += chunk.toString();
+      return true;
+    }) as typeof process.stderr.write);
+    spyOn(console, 'log').mockImplementation((...args: unknown[]) => { stdout += `${args.join(' ')}\n`; });
+    spyOn(console, 'error').mockImplementation((...args: unknown[]) => { stderr += `${args.join(' ')}\n`; });
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  function expectNoTokenMaterial(): void {
+    const output = stdout + stderr;
+    // The shortest prefix the old preview leaked beyond the type tag.
+    expect(output).not.toContain(SECRET.slice(0, 2));
+    expect(output).not.toContain('MARKER514');
+  }
+
+  it('reports presence and length, and a placeholder-only hint, without --login', async () => {
+    const authenticate = spyOn(authLib, 'authenticateBrowser');
+    await createAuthCommand().parseAsync(['parse-curl', curl], { from: 'user' });
+
+    expectNoTokenMaterial();
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(stdout).toContain(`xoxd: found (${xoxd.length} chars)`);
+    expect(stdout).toContain(`xoxc: found (${xoxc.length} chars)`);
+    expect(stdout).toContain('slackcli auth parse-curl --login');
+    expect(stdout).toContain('--xoxd="<xoxd-token>"');
+    expect(stdout).toContain('--xoxc="<xoxc-token>"');
+    expect(stdout).toContain('--workspace-url="https://acme.slack.com"');
+  });
+
+  it('prints no token when --login succeeds', async () => {
+    const authenticate = spyOn(authLib, 'authenticateBrowser').mockResolvedValue({
+      config: { workspace_id: 'T01234567', workspace_name: 'acme' },
+      profileKey: 'acme',
+    } as Awaited<ReturnType<typeof authLib.authenticateBrowser>>);
+    await createAuthCommand().parseAsync(['parse-curl', curl, '--login'], { from: 'user' });
+
+    expect(authenticate).toHaveBeenCalledTimes(1);
+    expect(authenticate.mock.calls[0].slice(0, 3)).toEqual([xoxd, xoxc, 'https://acme.slack.com']);
+    expect(stdout).toContain('Authenticated as workspace: acme');
+    expect(stdout).not.toContain('<xoxd-token>');
+    expectNoTokenMaterial();
+  });
+
+  it('prints no token when --login fails', async () => {
+    spyOn(authLib, 'authenticateBrowser').mockRejectedValue(new Error('invalid_auth'));
+    const original = process.exit;
+    const exitSpy = mock(() => { throw new Error('exit'); });
+    process.exit = exitSpy as never;
+    try {
+      await expect(
+        createAuthCommand().parseAsync(['parse-curl', curl, '--login'], { from: 'user' }),
+      ).rejects.toThrow('exit');
+    } finally {
+      process.exit = original;
+    }
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(stdout + stderr).toContain('invalid_auth');
+    expectNoTokenMaterial();
+  });
+});

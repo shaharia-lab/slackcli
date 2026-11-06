@@ -195,8 +195,8 @@ const HELP = {
       'The cURL command is read from the argument, --from-clipboard, piped stdin, or pasted interactively ' +
         '(end with an empty line), in that order.',
       'Prefer --from-clipboard or stdin over the argument: an argument lands in shell history.',
-      'Without --login it stores nothing, but prints the full xoxd/xoxc tokens on stdout as a ready-to-run ' +
-        '"auth login-browser" command: do not capture or log that output. With --login only a 20-character prefix is shown.',
+      'Without --login it stores nothing: it prints the workspace and whether each token was found, with its length. ' +
+        'No token value or prefix is ever printed.',
     ],
   },
   migrateSecrets: {

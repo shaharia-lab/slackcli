@@ -79,6 +79,10 @@ binary data to text or hold the complete download in memory.
 The output path is required. The command refuses to overwrite an existing file.
 Choose another path or remove the existing file before you retry.
 
+On macOS and Linux the downloaded file is created with mode `0600` (readable
+by you only), whatever your umask, because Slack files are workspace content.
+`chmod` it afterwards if you mean to share it. Windows uses the folder's ACLs.
+
 ### Output paths outside the current directory
 
 `--output` writes wherever you point it, and SlackCLI is built to be driven by

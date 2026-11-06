@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
@@ -17,8 +17,11 @@ import {
   migrateWorkspaceCredentials,
   migrateOneWorkspace,
   secretBackendsFor,
+  ensurePrivateDir,
+  writePrivateFile,
   type SecretBackends,
 } from './workspaces.ts';
+import { CliError } from './cli-errors.ts';
 import {
   FileSecretStore,
   MissingCredentialError,
@@ -857,5 +860,161 @@ describe('describeLoadError', () => {
     expect(describeLoadError(new Error('EACCES: permission denied, open "/x"'), '/home/u'))
       .toBe('EACCES: permission denied, open "/x"');
     expect(describeLoadError('plain', '/home/u')).toBe('plain');
+  });
+});
+
+// File modes (#516). Temp paths only: never the real ~/.config/slackcli.
+describe.skipIf(process.platform === 'win32')('private config modes', () => {
+  let dir: string;
+  let previousUmask: number;
+
+  const modeOf = async (path: string) => (await stat(path)).mode & 0o777;
+
+  beforeEach(async () => {
+    previousUmask = process.umask(0o022);
+    dir = await mkdtemp(join(tmpdir(), 'slackcli-modes-'));
+  });
+
+  afterEach(async () => {
+    process.umask(previousUmask);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  describe('ensurePrivateDir', () => {
+    it('creates a missing directory 0700 under umask 022', async () => {
+      const target = join(dir, 'nested', 'slackcli');
+      await ensurePrivateDir(target);
+      expect(await modeOf(target)).toBe(0o700);
+    });
+
+    it('tightens an existing 0755 directory to 0700', async () => {
+      const target = join(dir, 'slackcli');
+      await mkdir(target, { mode: 0o755 });
+      await chmod(target, 0o755);
+      await ensurePrivateDir(target);
+      expect(await modeOf(target)).toBe(0o700);
+    });
+
+    it('leaves a directory narrower than 0700 alone', async () => {
+      const target = join(dir, 'slackcli');
+      await mkdir(target);
+      await chmod(target, 0o500);
+      try {
+        await ensurePrivateDir(target);
+        expect(await modeOf(target)).toBe(0o500);
+      } finally {
+        await chmod(target, 0o700);
+      }
+    });
+
+    it('follows a symlinked directory and tightens its target', async () => {
+      const real = join(dir, 'real');
+      await mkdir(real);
+      await chmod(real, 0o777);
+      const link = join(dir, 'slackcli');
+      await symlink(real, link);
+      await ensurePrivateDir(link);
+      expect(await modeOf(real)).toBe(0o700);
+    });
+
+    it('refuses a path that is not a directory', async () => {
+      const target = join(dir, 'slackcli');
+      await writeFile(target, 'not a dir');
+      await expect(ensurePrivateDir(target)).rejects.toThrow();
+      expect(await readFile(target, 'utf8')).toBe('not a dir');
+    });
+
+    it('refuses a directory owned by another user, without chmodding it', async () => {
+      const target = join(dir, 'slackcli');
+      await mkdir(target);
+      await chmod(target, 0o755);
+      const uid = spyOn(process, 'getuid').mockReturnValue(((process.getuid?.() ?? 0) + 1));
+      try {
+        const err = await ensurePrivateDir(target).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(CliError);
+        expect((err as CliError).code).toBe('permission_denied');
+        expect((err as CliError).message).toContain('not owned by the current user');
+        expect(await modeOf(target)).toBe(0o755);
+      } finally {
+        uid.mockRestore();
+      }
+    });
+
+    it('surfaces a chmod failure instead of skipping it', async () => {
+      const target = join(dir, 'slackcli');
+      await mkdir(target);
+      await chmod(target, 0o755);
+      const fsPromises = await import('node:fs/promises');
+      const chmodSpy = spyOn(fsPromises, 'chmod').mockRejectedValue(
+        Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' }),
+      );
+      try {
+        await expect(ensurePrivateDir(target)).rejects.toMatchObject({ code: 'EPERM' });
+      } finally {
+        chmodSpy.mockRestore();
+      }
+    });
+  });
+
+  describe('writePrivateFile', () => {
+    it('creates a new file 0600 under umask 022', async () => {
+      const target = join(dir, 'workspaces.json');
+      await writePrivateFile(target, '{"a":1}');
+      expect(await modeOf(target)).toBe(0o600);
+      expect(await readFile(target, 'utf8')).toBe('{"a":1}');
+    });
+
+    it('rewrites a pre-existing 0644 file as 0600', async () => {
+      const target = join(dir, 'workspaces.json');
+      await writeFile(target, '{}');
+      await chmod(target, 0o644);
+      await writePrivateFile(target, '{"b":2}');
+      expect(await modeOf(target)).toBe(0o600);
+      expect(await readFile(target, 'utf8')).toBe('{"b":2}');
+      expect(await readdir(dir)).toEqual(['workspaces.json']);
+    });
+
+    it('replaces a symlink instead of writing through it', async () => {
+      const elsewhere = join(dir, 'elsewhere.json');
+      await writeFile(elsewhere, 'untouched');
+      await chmod(elsewhere, 0o644);
+      const target = join(dir, 'workspaces.json');
+      await symlink(elsewhere, target);
+
+      await writePrivateFile(target, '{"c":3}');
+
+      expect((await lstat(target)).isSymbolicLink()).toBe(false);
+      expect(await modeOf(target)).toBe(0o600);
+      expect(await readFile(target, 'utf8')).toBe('{"c":3}');
+      expect(await readFile(elsewhere, 'utf8')).toBe('untouched');
+      expect(await modeOf(elsewhere)).toBe(0o644);
+    });
+
+    it('keeps the old file and leaves no temp file when the swap fails', async () => {
+      const target = join(dir, 'workspaces.json');
+      await writeFile(target, 'old');
+      const fsPromises = await import('node:fs/promises');
+      const renameSpy = spyOn(fsPromises, 'rename').mockRejectedValue(new Error('disk gone'));
+      try {
+        await expect(writePrivateFile(target, 'new')).rejects.toThrow('disk gone');
+      } finally {
+        renameSpy.mockRestore();
+      }
+      expect(await readFile(target, 'utf8')).toBe('old');
+      expect(await readdir(dir)).toEqual(['workspaces.json']);
+    });
+
+    // Root ignores directory modes, so the refusal cannot be provoked there.
+    it.skipIf(process.getuid?.() === 0)('fails when the directory cannot be written, leaving the old file', async () => {
+      const target = join(dir, 'workspaces.json');
+      await writeFile(target, 'old');
+      await chmod(dir, 0o500);
+      try {
+        await expect(writePrivateFile(target, 'new')).rejects.toMatchObject({ code: 'EACCES' });
+      } finally {
+        await chmod(dir, 0o700);
+      }
+      expect(await readFile(target, 'utf8')).toBe('old');
+    });
   });
 });

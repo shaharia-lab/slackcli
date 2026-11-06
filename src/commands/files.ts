@@ -176,7 +176,8 @@ export function formatFileInfo(file: SlackFile): string {
 }
 
 export async function writeResponseToFile(response: Response, outputPath: string): Promise<number> {
-  const handle = await open(outputPath, 'wx');
+  // Owner-only regardless of the caller's umask: downloads are workspace content (#516).
+  const handle = await open(outputPath, 'wx', 0o600);
   let bytesWritten = 0;
 
   try {

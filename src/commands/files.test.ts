@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import * as authLib from '../lib/auth.ts';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -190,16 +190,32 @@ describe('writeResponseToFile', () => {
     }
   });
 
+  it.skipIf(process.platform === 'win32')('creates the file owner-only under umask 022 (#516)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-download-'));
+    const output = join(dir, 'private.txt');
+    const previous = process.umask(0o022);
+
+    try {
+      await writeResponseToFile(new Response('content'), output);
+      expect((await stat(output)).mode & 0o777).toBe(0o600);
+    } finally {
+      process.umask(previous);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not overwrite an existing file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'slackcli-download-'));
     const output = join(dir, 'existing.txt');
     await writeFile(output, 'keep me');
+    await chmod(output, 0o644);
 
     try {
       await expect(writeResponseToFile(new Response('replacement'), output)).rejects.toMatchObject({
         code: 'EEXIST',
       });
       expect(await readFile(output, 'utf8')).toBe('keep me');
+      if (process.platform !== 'win32') expect((await stat(output)).mode & 0o777).toBe(0o644);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -680,7 +680,10 @@ export function createAuthCommand(): Command {
         writeText(`  URL:  ${chalk.cyan(parsed.workspaceUrl)}\n`);
 
         // Presence and length only, never a value or a prefix (#514).
-        const tokenFound = (token: string) => `${chalk.green('found')} ${chalk.gray(`(${token.length} chars)`)}`;
+        const tokenFound = (token: string) => {
+          const length = `(${token.length} chars)`;
+          return `${chalk.green('found')} ${chalk.gray(length)}`;
+        };
         writeText(chalk.bold('Tokens:'));
         writeText(`  xoxd: ${tokenFound(parsed.xoxd)}`);
         writeText(`  xoxc: ${tokenFound(parsed.xoxc)}\n`);

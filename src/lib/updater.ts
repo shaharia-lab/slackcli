@@ -11,7 +11,7 @@ import {
   closeSync,
   unlinkSync,
 } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import chalk from 'chalk';
 import { getLogger } from '@logtape/logtape';
@@ -276,14 +276,18 @@ export async function performUpdate(): Promise<void> {
   }
   logger.info('Digest verification passed ({digest})', { digest: asset.digest });
 
-  // mkdtemp creates a fresh 0700 directory and fails rather than reusing an
-  // existing path, so a same-host user cannot pre-create the file we are about
-  // to chmod 0755 and rename over the CLI itself.
-  const tmpDir = await mkdtemp(join(tmpdir(), 'slackcli-update-'));
-  const tmpPath = join(tmpDir, binaryName);
-
   // Get current binary path
   const currentBinary = process.execPath;
+
+  // Stage the download in the install folder: rename() cannot cross
+  // filesystems, and os.tmpdir() is often a separate tmpfs (or another
+  // volume), which made the final move fail with EXDEV and aborted every
+  // self-update on such systems.
+  // mkdtemp still creates a fresh 0700 directory and fails rather than reusing
+  // an existing path, so a same-host user cannot pre-create the file we are
+  // about to chmod 0755 and rename over the CLI itself.
+  const tmpDir = await mkdtemp(join(dirname(currentBinary), '.slackcli-update-'));
+  const tmpPath = join(tmpDir, binaryName);
 
   try {
     // Write to temp file
@@ -296,8 +300,20 @@ export async function performUpdate(): Promise<void> {
     const backupPath = `${currentBinary}.backup`;
     await rename(currentBinary, backupPath);
 
-    // Move new binary to current location
-    await rename(tmpPath, currentBinary);
+    // Move new binary to current location. If this fails, put the previous
+    // binary back before reporting the error: an update that goes wrong must
+    // not leave the user without a working CLI.
+    try {
+      await rename(tmpPath, currentBinary);
+    } catch (moveError) {
+      await rename(backupPath, currentBinary).catch((restoreError) => {
+        logger.error('Self-update restore failed, binary left at {backup}: {error}', {
+          backup: backupPath,
+          error: errorMessageForLog(restoreError),
+        });
+      });
+      throw moveError;
+    }
 
     // Remove backup
     await unlink(backupPath);

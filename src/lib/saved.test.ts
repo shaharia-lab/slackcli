@@ -5,6 +5,7 @@ import {
   addSavedItem,
   enrichSavedItems,
   removeSavedItem,
+  removeSavedReminder,
   reopenUpdate,
   savedUpdateFromOptions,
   updateSavedItem,
@@ -146,6 +147,48 @@ describe('enrichSavedItems', () => {
     expect(result.items).toHaveLength(2);
     expect(result.items[0].type).toBe('file');
     expect(result.items[1].type).toBe('channel');
+  });
+
+  it('preserves reminder IDs, rich-text descriptions, due dates and state without message lookups', async () => {
+    const client = createMockClient({
+      listSavedItems: async () => ({ saved_items: [{
+        item_type: 'reminder', item_id: 'Sa0ABC123', date_created: 1700000000,
+        date_due: 1700000060, todo_state: 'to_do',
+        description: [{ type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [
+          { type: 'text', text: 'Read ' }, { type: 'link', text: 'the report', url: 'https://example.com' },
+          { type: 'emoji', name: 'memo' },
+        ] }] }],
+      }] }),
+      listMessages: async () => { throw new Error('A reminder has no backing message'); },
+      getConversationInfo: async () => { throw new Error('A saved-item ID is not a channel'); },
+      getUsersInfo: async () => { throw new Error('A reminder needs no author lookup'); },
+    });
+
+    const result = await enrichSavedItems(client);
+
+    expect(result.items).toEqual([{
+      type: 'reminder', item_id: 'Sa0ABC123', text: 'Read the report:memo:',
+      date_saved: 1700000000, date_due: 1700000060, todo_state: 'to_do',
+    }]);
+    expect(result.items[0]).not.toHaveProperty('channel_id');
+    expect(result.users.size).toBe(0);
+  });
+
+  it.each([
+    ['Plain reminder', 'Plain reminder'],
+    [undefined, ''],
+    [null, ''],
+    [{ unexpected: true }, ''],
+  ])('handles reminder description %j without losing completion or a zero due date', async (description, text) => {
+    const client = createMockClient({
+      listSavedItems: async () => ({ saved_items: [{
+        item_type: 'reminder', item_id: 'Sa0ABC123', description, todo_state: 'completed', date_due: 0,
+      }] }),
+    });
+
+    const result = await enrichSavedItems(client);
+
+    expect(result.items[0]).toMatchObject({ item_id: 'Sa0ABC123', text, todo_state: 'completed', date_due: 0 });
   });
 
   it('falls back to [message unavailable] when message not found', async () => {
@@ -533,5 +576,16 @@ describe('Later-list write actions', () => {
       deleteSavedItem: async () => { throw Object.assign(new Error('x'), { slackData: { error: 'message_not_found' } }); },
     };
     await expect(removeSavedItem(failing, 'C123', TS)).rejects.toThrow('x');
+  });
+
+  it('removes a standalone reminder by its saved-item ID and preserves failures', async () => {
+    const ids: string[] = [];
+    const client = { deleteSavedReminder: async (id: string) => { ids.push(id); return { ok: true }; } };
+
+    expect(await removeSavedReminder(client, 'Sa0ABC123'))
+      .toEqual({ item_id: 'Sa0ABC123', item_type: 'reminder', removed: true });
+    expect(ids).toEqual(['Sa0ABC123']);
+    await expect(removeSavedReminder({ deleteSavedReminder: async () => { throw new Error('refused'); } }, 'Sa0ABC123'))
+      .rejects.toThrow('refused');
   });
 });

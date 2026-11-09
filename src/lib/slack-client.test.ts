@@ -2374,6 +2374,25 @@ describe('SlackClient Later-list writes (#436)', () => {
     }]);
   });
 
+  it('clears one reminder using its saved-item ID without a message timestamp', async () => {
+    const client = new TestSlackClient();
+
+    await client.deleteSavedReminder(' Sa0ABC123 ');
+
+    expect(client.calls).toEqual([{
+      method: 'saved.delete', params: { item_type: 'reminder', item_id: 'Sa0ABC123' },
+    }]);
+  });
+
+  it.each(['', ' ', 'Rm0ABC123', 'C123', 'Sa', 'Sa0ABC123,Sa0DEF456', 'https://acme.slack.com/archives/C123'])
+    ('refuses unsafe reminder target %j before any request', async (id) => {
+      const client = new TestSlackClient();
+
+      await expect(client.deleteSavedReminder(id)).rejects.toThrow(InvalidInputError);
+
+      expect(client.calls).toEqual([]);
+    });
+
   // Some saved.* methods act on the whole list when no item is named, so every
   // write must name one.
   it('refuses to send a write without item_id or ts', async () => {
@@ -2402,6 +2421,7 @@ describe('SlackClient Later-list writes (#436)', () => {
     await expect(client.addSavedItem('C123', TS, 1791791400)).rejects.toThrow(UnsupportedAuthTypeError);
     await expect(client.updateSavedItem('C123', TS, { date_due: 0 })).rejects.toThrow(SAVED_WRITE_AUTH_MESSAGE);
     await expect(client.deleteSavedItem('C123', TS)).rejects.toThrow(SAVED_WRITE_AUTH_MESSAGE);
+    await expect(client.deleteSavedReminder('Sa0ABC123')).rejects.toThrow(SAVED_WRITE_AUTH_MESSAGE);
     expect(request).not.toHaveBeenCalled();
   });
 });

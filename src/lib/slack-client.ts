@@ -341,6 +341,18 @@ function savedItemParams(channel: string, ts: string): Record<string, string> {
   return { item_type: 'message', item_id: channel, ts };
 }
 
+// Never let a missing or legacy reminder ID become an untargeted saved.*
+// write. These are saved.list IDs, not reminders.add IDs or message links.
+export function normalizeSavedReminderId(value: string): string {
+  const id = value.trim();
+  if (!/^Sa[A-Z0-9]+$/.test(id)) {
+    throw new InvalidInputError(
+      '--item-id must be a saved reminder ID (Sa…) from "saved list --json", not a reminders.add ID (Rm…).',
+    );
+  }
+  return id;
+}
+
 // chat.scheduledMessages.list page size, and a bound on the pages followed so a
 // cursor that never ends cannot loop forever.
 const SCHEDULED_PAGE_SIZE = 100;
@@ -950,6 +962,16 @@ export class SlackClient {
   async deleteSavedItem(channel: string, ts: string): Promise<any> {
     this.requireBrowserAuth(SAVED_WRITE_AUTH_MESSAGE);
     return this.request('saved.delete', savedItemParams(channel, ts));
+  }
+
+  // Clear one standalone reminder To-do using its saved.list ID. Browser
+  // auth only, through the same saved.delete endpoint as message removal.
+  async deleteSavedReminder(itemId: string): Promise<any> {
+    this.requireBrowserAuth(SAVED_WRITE_AUTH_MESSAGE);
+    return this.request('saved.delete', {
+      item_type: 'reminder',
+      item_id: normalizeSavedReminderId(itemId),
+    });
   }
 
   // Batch-fetch messages by channel + timestamp (browser auth only).

@@ -30,6 +30,7 @@ export interface CommandErrorObject {
 // authentication codes are not here: the client already turns them into a
 // `SlackAuthError`, which is classified first.
 const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
+  not_found: 'not_found',
   channel_not_found: 'not_found',
   user_not_found: 'not_found',
   users_not_found: 'not_found',

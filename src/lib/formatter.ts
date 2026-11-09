@@ -456,6 +456,12 @@ export function formatSavedItems(items: SavedItem[], users: Map<string, SlackUse
       output += `  ${position} ${author} in ${channelTag} ${when}${state}\n`;
       output += `     ${text}\n`;
       output += `     ${location}\n\n`;
+    } else if (item.type === 'reminder') {
+      const state = item.todo_state ? chalk.dim(` [${item.todo_state}]`) : '';
+      const due = item.date_due && item.date_due > 0 ? `  due: ${formatScheduleTime(item.date_due)}` : '';
+      output += `  ${position} ${chalk.bold('Reminder')}${state}\n`;
+      output += `     ${truncateText(item.text ?? '', 120)}\n`;
+      output += `     ${chalk.dim(`item: ${item.item_id ?? 'unknown'}${due}`)}\n\n`;
     } else if (item.type === 'file' && item.file) {
       output += `  ${position} ${chalk.yellow('File:')} ${chalk.bold(item.file.name || item.file.title || 'Untitled')}\n\n`;
     } else {

@@ -2332,6 +2332,46 @@ describe('SlackClient emoji writes go through request() (maintainer feedback)', 
 });
 
 describe('SlackClient Later-list writes (#436)', () => {
+  it('sends self-reminder and modern To-do API calls with the exact parameters', async () => {
+    const client = new TestSlackClient();
+    const request = spyOn(client, 'request').mockResolvedValue({ ok: true });
+    try {
+      await client.addReminder({ text: 'Take a break', time: 'in 5 minutes', recurrence: { frequency: 'daily' } });
+      await client.listReminders();
+      await client.getReminder('Rm0ABC123');
+      await client.completeReminder('Rm0ABC123');
+      await client.deleteReminder('Rm0ABC123');
+      await client.listReminderItems('page2');
+      await client.updateSavedReminder('Sa0ABC123', { date_due: 1893492000 });
+      expect(request.mock.calls).toEqual([
+        ['reminders.add', { text: 'Take a break', time: 'in 5 minutes', recurrence: { frequency: 'daily' } }],
+        ['reminders.list'],
+        ['reminders.info', { reminder: 'Rm0ABC123' }],
+        ['reminders.complete', { reminder: 'Rm0ABC123' }],
+        ['reminders.delete', { reminder: 'Rm0ABC123' }],
+        ['saved.list', { filter: 'todo_with_completed', limit: 15, cursor: 'page2' }],
+        ['saved.update', { item_type: 'reminder', item_id: 'Sa0ABC123', date_due: 1893492000 }],
+      ]);
+    } finally { request.mockRestore(); }
+  });
+
+  it('refuses bot-token reminders and malformed write IDs before a request', async () => {
+    const bot = new SlackClient({ workspace_id: 'T123', workspace_name: 'Acme', auth_type: 'standard', token: 'xoxb-test', token_type: 'bot' });
+    const request = spyOn(bot, 'request').mockResolvedValue({ ok: true });
+    try {
+      await expect(bot.addReminder({ text: 'Task', time: 'in 5 minutes' })).rejects.toThrow(UnsupportedAuthTypeError);
+      await expect(bot.listReminders()).rejects.toThrow(UnsupportedAuthTypeError);
+      await expect(bot.getReminder('Rm0ABC123')).rejects.toThrow(UnsupportedAuthTypeError);
+      await expect(bot.completeReminder('Rm0ABC123')).rejects.toThrow(UnsupportedAuthTypeError);
+      await expect(bot.deleteReminder('Rm0ABC123')).rejects.toThrow(UnsupportedAuthTypeError);
+      expect(request).not.toHaveBeenCalled();
+    } finally { request.mockRestore(); }
+    const client = new TestSlackClient();
+    await expect(client.updateSavedReminder('', { date_due: 123 })).rejects.toThrow(InvalidInputError);
+    await expect(client.deleteReminder('')).rejects.toThrow(InvalidInputError);
+    expect(client.calls).toEqual([]);
+  });
+
   const TS = '1712345678.000100';
 
   it('adds a message as a to-do with saved.add', async () => {

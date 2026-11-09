@@ -11,6 +11,7 @@ import { createProgram } from './program.ts';
 // Commands that only work with browser session tokens (Slack has no app API
 // for drafts). Their help must say so.
 const BROWSER_ONLY = new Set([
+  'slackcli reminders update',
   'slackcli messages list-drafts',
   'slackcli messages draft',
   'slackcli messages send-draft',
@@ -39,6 +40,10 @@ const STANDARD_ONLY = new Set([
 // Every command that writes to Slack takes --dry-run (#328). A new write
 // command belongs here; commands that only change local state do not.
 const SLACK_WRITES = new Set([
+  'slackcli reminders add',
+  'slackcli reminders update',
+  'slackcli reminders complete',
+  'slackcli reminders delete',
   'slackcli canvas create',
   'slackcli canvas edit',
   'slackcli messages send',

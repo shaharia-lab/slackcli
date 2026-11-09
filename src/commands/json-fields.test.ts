@@ -10,6 +10,7 @@ import { createConversationsCommand } from './conversations.ts';
 import { createEmojiCommand } from './emoji.ts';
 import { createFilesCommand } from './files.ts';
 import { createMessagesCommand } from './messages.ts';
+import { createRemindersCommand } from './reminders.ts';
 import { createSavedCommand } from './saved.ts';
 import { createSearchCommand } from './search.ts';
 import { createTeamCommand } from './team.ts';
@@ -22,6 +23,7 @@ const factories: Record<string, () => Command> = {
   emoji: createEmojiCommand,
   files: createFilesCommand,
   messages: createMessagesCommand,
+  reminders: createRemindersCommand,
   saved: createSavedCommand,
   search: createSearchCommand,
   team: createTeamCommand,
@@ -46,6 +48,9 @@ const MESSAGES = [
 
 // Canned answers per client method; anything else answers `{ ok: true }`.
 const ANSWERS: Record<string, unknown> = {
+  listReminders: { reminders: [{ id: 'Rm0ABC123', text: 'Weekly report', recurring: true }] },
+  getReminder: { reminder: { id: 'Rm0ABC123', text: 'Weekly report', recurring: true } },
+  listReminderItems: { saved_items: [] },
   getConversationHistory: { ok: true, messages: MESSAGES, has_more: false },
   getConversationReplies: { ok: true, messages: MESSAGES, has_more: false },
   listMessages: { ok: true, messages: { C0123456789: [MESSAGES[1]] } },
@@ -247,6 +252,7 @@ describe('--fields, in process', () => {
 
   // Every --fields command, with the argument it needs.
   const COMMAND_ARGS: Record<string, string[]> = {
+    'reminders info': ['Rm0ABC123'],
     'canvas read': ['F0123456789'],
     'canvas sections': ['F0123456789', '--type', 'h2'],
     'conversations get': ['C0123456789', '1712345678.000100'],
@@ -266,6 +272,8 @@ describe('--fields, in process', () => {
   // FIELDS_LIST_KEYS that does not match what the command prints would leave
   // the payload unprojected, and fail here.
   const PROBE: Record<keyof typeof FIELDS_LIST_KEYS, string> = {
+    'reminders list': 'id',
+    'reminders info': 'id',
     'canvas list': 'id',
     'canvas read': 'markdown',
     'canvas sections': 'id',

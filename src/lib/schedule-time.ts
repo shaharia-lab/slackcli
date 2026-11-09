@@ -94,10 +94,10 @@ export function parseScheduleTime(input: ScheduleTimeInput, nowMs: number = Date
  * chat.scheduleMessage rules, so neither applies. A due date at or before the
  * epoch is refused: `date_due: 0` is a to-do with no due date.
  */
-export function parseDueTime(raw: string): number {
-  const due = parseAt(raw, '--due');
+export function parseDueTime(raw: string, flag = '--due'): number {
+  const due = parseAt(raw, flag);
   if (due <= 0) {
-    throw new InvalidInputError(`--due must be after 1970-01-01T00:00:00Z; got "${raw}".`);
+    throw new InvalidInputError(`${flag} must be after 1970-01-01T00:00:00Z; got "${raw}".`);
   }
   return due;
 }

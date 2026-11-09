@@ -30,6 +30,8 @@ export const FIELDS_LIST_KEYS = {
   'files read': null,
   'messages list-drafts': 'drafts',
   'messages list-scheduled': 'scheduled_messages',
+  'reminders list': 'reminders',
+  'reminders info': null,
   'saved list': 'items',
   'search channels': 'channels',
   'search messages': 'matches',

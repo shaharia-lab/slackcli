@@ -325,6 +325,36 @@ export interface AuthLoginBrowserOptions {
   profile?: string;
 }
 
+export interface ReminderRecurrence {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  weekdays?: string[];
+}
+
+export interface ReminderAddInput {
+  text: string;
+  time: string;
+  recurrence?: ReminderRecurrence;
+}
+
+export interface ReminderRecord {
+  id: string;
+  source: 'saved' | 'legacy';
+  text: string;
+  recurring: boolean;
+  time?: number;
+  complete_ts?: number;
+  todo_state?: string;
+  // For a newly created To-do, id is Sa… and reminder_id is Slack's Rm… ID.
+  reminder_id?: string;
+}
+
+export interface SavedReminderUpdate {
+  description?: Array<Record<string, unknown>>;
+  date_due?: number;
+  mark?: 'completed';
+  todo_state?: 'completed';
+}
+
 // Saved items
 export interface SavedItem {
   // Slack's item_type: usually 'message' or 'file', but kept open because the API

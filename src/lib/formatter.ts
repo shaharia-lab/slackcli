@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import type {
+  ReminderRecord,
   SlackCanvas, SlackChannel, SlackMessage, SlackUser, WorkspaceConfig,
   SavedItem, SearchMatch, ChannelSearchResult, PeopleSearchResult, UnreadChannel, UnreadThread, UnreadThreads,
   SlackTeam, SlackUsergroup, UsergroupMember,
@@ -435,6 +436,16 @@ export function warning(message: string): void {
 }
 
 // Format saved items list
+export function formatReminders(reminders: ReminderRecord[]): string {
+  if (reminders.length === 0) return 'No reminders found.';
+  return reminders.map((reminder) => {
+    const when = reminder.recurring ? 'recurring'
+      : reminder.time && reminder.time > 0 ? formatScheduleTime(reminder.time) : 'no due date';
+    const state = reminder.todo_state ?? (reminder.complete_ts ? 'completed' : 'pending');
+    return `${reminder.id}  ${reminder.text}\n  ${when} [${state}]`;
+  }).join('\n\n');
+}
+
 export function formatSavedItems(items: SavedItem[], users: Map<string, SlackUser>): string {
   let output = chalk.bold(`📌 Saved Items (${items.length})\n\n`);
 

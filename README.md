@@ -345,6 +345,28 @@ slackcli messages delete-scheduled Q123 --yes                 # cancel before it
 </details>
 
 <details>
+<summary><code>reminders</code> — create, read, update, complete and delete</summary>
+
+<br>
+
+```bash
+slackcli reminders add --text "Take a break" --time "in 2 minutes" --json
+slackcli reminders list --json
+slackcli reminders info Sa0ABC123 --json
+slackcli reminders update Sa0ABC123 --text "Take a longer break" --yes --json
+slackcli reminders complete Sa0ABC123 --yes --json
+slackcli reminders delete Sa0ABC123 --yes --json
+```
+
+Use the `id` returned by `add` or `list`. Browser login supports the full
+modern To-do lifecycle through `reminders.add` and the undocumented `saved.*`
+web-client methods. Legacy `Rm…` reminders use the documented reminder APIs.
+
+📄 [reminders](docs/user-guide/reminders.md)
+
+</details>
+
+<details>
 <summary><code>search</code> — messages, channels, people</summary>
 
 <br>

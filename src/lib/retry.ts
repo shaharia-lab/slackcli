@@ -35,6 +35,8 @@ export const READ_METHODS: ReadonlySet<string> = new Set([
   'files.info',
   'files.list',
   'messages.list',
+  'reminders.list',
+  'reminders.info',
   'saved.list',
   'search.messages',
   'search.modules',

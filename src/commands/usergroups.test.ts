@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import * as readline from 'node:readline';
-import { confirmWrite, createUsergroupsCommand, splitUserRefs } from './usergroups.ts';
+import { confirmWrite, createUsergroupsCommand } from './usergroups.ts';
 
 function subcommand(name: string) {
   return createUsergroupsCommand().commands.find((command) => command.name() === name);
@@ -27,18 +27,6 @@ describe('usergroups command', () => {
   it('does not add --yes to the read-only subcommands', () => {
     expect(longOptions('list')).not.toContain('--yes');
     expect(longOptions('read')).not.toContain('--yes');
-  });
-});
-
-describe('splitUserRefs', () => {
-  it('splits on commas and whitespace', () => {
-    expect(splitUserRefs(['U1,U2 U3', 'U4'])).toEqual(['U1', 'U2', 'U3', 'U4']);
-  });
-  it('keeps a leading @ (a handle is resolved later) and drops empties and a bare @', () => {
-    expect(splitUserRefs(['@U1', '', ' , ', '@', 'U2', '@alice'])).toEqual(['@U1', 'U2', '@alice']);
-  });
-  it('returns an empty array for no ids', () => {
-    expect(splitUserRefs([''])).toEqual([]);
   });
 });
 

@@ -16,6 +16,7 @@ slackcli/
 │   │   ├── search.ts
 │   │   └── update.ts
 │   ├── lib/                      All logic; tests live beside each file
+│   ├── test-support/             Test-only helpers (never imported by src/)
 │   └── types/index.ts            Shared interfaces
 ├── scripts/build.ts              Compile wrapper: checks Bun >= 1.4.1, injects __APP_VERSION__
 ├── scripts/release-announcement.ts  Builds the Discord release announcement payload for release.yml
@@ -54,10 +55,10 @@ They hold no Slack API knowledge.
 | Module | Responsibility |
 |---|---|
 | `slack-client.ts` | The Slack API abstraction. Dispatches every call to `standardRequest()` or `browserRequest()` by auth type, through the shared rate limiter, retries browser-auth calls per `retry.ts`, logs each attempt's method, auth type, duration and outcome, and rethrows an authentication failure as a `SlackAuthError` (`auth-errors.ts`). A call that got no usable HTTP response throws `SlackTransportError` on both auth types. |
-| `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, stored default) is resolved. `checkIdentity()` is the `auth whoami` lookup: one `auth.test` for the selected profile, returned as a typed `ok` / `auth_failed` / `unreachable` result that keeps the profile key. `checkAllProfiles()` runs it over every stored profile for `auth list --check`, turning any per-profile failure into a result, and `buildProfileList()` shapes the `auth list --json` object. |
+| `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, token variable, stored default) is resolved, including the env-token path (`SLACKCLI_TOKEN` / `SLACK_BOT_TOKEN` → `workspaceFromEnvToken()`, an in-memory standard workspace built from `auth.test`, nothing stored). `checkIdentity()` is the `auth whoami` lookup: one `auth.test` for the selected profile, returned as a typed `ok` / `auth_failed` / `unreachable` result that keeps the profile key. `checkAllProfiles()` runs it over every stored profile for `auth list --check`, turning any per-profile failure into a result, and `buildProfileList()` shapes the `auth list --json` object. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
-| `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. |
+| `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. Owns `slackWorkspaceOrigin()` / `isSlackWorkspaceUrl()`, the one check on where browser credentials may be sent. |
 | `browser-launcher.ts` | Finds and launches a local Chromium-family browser; owns the profile directory. |
 | `cdp-client.ts` | Minimal Chrome DevTools Protocol client over Bun's WebSocket. |
 | `curl-parser.ts` | Extracts tokens from a DevTools cURL command. |
@@ -84,11 +85,13 @@ They hold no Slack API knowledge.
 | `command-errors.ts` | `classifyError()` (any thrown value → `{code, message, hint?, retryable, slack_error?}`, by type and Slack code, credentials redacted) and `failCommand()`, the one failure path of a command: the usual text, or the JSON error object on stderr under `--json`; sets exit code 1. |
 | `mark-read.ts` | `conversations mark-read`: reads the conversation's current read cursor (`last_read` of `conversations.info`, best effort), makes the `conversations.mark` write, and returns `{ channel_id, ts, previous_last_read }`. |
 | `message.ts` | Fetch one message by channel + timestamp, per auth type; delete one, treating `message_not_found` as already deleted; remove a reaction, treating `no_reaction` as already removed. |
+| `thread-parent.ts` | Thread parent of a message ts (#482): `replyParentTs()` reads it off a `conversations.replies` response, `fetchThreadReplies()` re-reads a thread from the parent when given a reply's ts, `resolvePostThread()` resolves a link target flagged `mayBeReply` (a message link without `?thread_ts=`) before a send, falling back to the link's ts when the lookup fails. |
 | `poll.ts` | `conversations read`'s polling helpers: exact Slack `ts` comparison, the `ts > --oldest` and `--exclude-self` filters, the `next_oldest` cursor, and resolving the authenticated identity (stored `user_id`, or one `auth.test`). |
 | `saved.ts` | Resolves saved-item pointers into messages, channels, and users; the Later-list writes (`saved add`, `update`, `complete`, `reopen`, `remove`), turning their flags into one of the `saved.update` changes the Slack web client sends. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types, plus the workspace-wide thread summary (`threads` of `client.counts`, browser auth only) and each unread conversation's read cursors (`cursors`, kept off the list so the default output does not change). Also the pure helpers of the `conversations unread` action: `filterByTypes()` (`--types`) and `unreadSummaryLine()` (the spinner's closing line). |
 | `unread-messages.ts` | `conversations unread --messages` (browser auth only): flag validation, the cut at a conversation's `last_read` (reusing `poll.ts`), the conversation and per-conversation caps, normalising and paging Slack's undocumented thread view (a failure degrades to the summary), and `fetchUnreadDetails()`, which makes the calls one at a time. Logs IDs, counts and durations only, never message content. |
 | `formatter.ts` | Chalk-coloured renderers, status helpers, and `writeJson()`. |
+| `table-blocks.ts` | Slack `table` blocks (in `blocks` or `attachments[].blocks`) → text rows (`extractTables()`, `tableCellText()`, reusing `drafts.ts`'s `rich_text` walk) and aligned lines (`formatTableRows()`) for `formatMessage()`. Unknown block and cell types are skipped. |
 | `dry-run.ts` | `--dry-run` on the Slack writes: the `DRY_RUN_FLAG` option, `buildPreview()` (workspace identity, target with a best-effort `#channel` / `@user` name lookup, payload without undefined fields) and `emitDryRun()` (one JSON object under `--json`, else `formatDryRun()`'s text; logs the action and a field count only). |
 | `help.ts` | The `--help` layout: `describeCommand()` (summary, description, `Examples`, `Notes`, standard notes for `--json`, browser-only, confirmation and `--dry-run`), the root command tree and footer, and the `--help` pointer after usage errors. |
 | `clipboard.ts` | Cross-platform clipboard read (`pbpaste` / PowerShell / `xclip` / `xsel`). |

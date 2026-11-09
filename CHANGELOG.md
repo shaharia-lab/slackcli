@@ -7,13 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-07
+
+### Security
+- **Browser session tokens only go to an https slack.com workspace**: `auth login-browser --workspace-url` and every command on a browser profile now refuse a workspace URL that is not an `https://<team>.slack.com` origin before any request, so the `d` cookie and the `xoxc` token can no longer be sent to plain HTTP, a foreign host, or a look-alike such as `team.slack.com.example`. A redirect from the Slack API is refused instead of followed, since following it would replay the token and message text to the new host (#513)
+  - The URL must be the origin only: userinfo, a port other than 443, a path, a query or a fragment are refused. A trailing `/` is fine, and Enterprise Grid hosts (`*.enterprise.slack.com`) keep working
+  - A stored profile whose URL fails the check exits with `invalid_input` and asks for a fresh `auth login-auto` or `auth login-browser`; `auth list` and `auth remove` still work on it. `login-auto --workspace-url` follows the same rule
+- **`auth parse-curl` no longer prints token values**: without `--login` it printed a ready-to-run `login-browser` command with both full browser tokens, and with or without `--login` it printed the first 20 characters of each, so terminal recordings, CI logs and agents reading stdout could capture a working session. It now reports each token as found with its length, and the manual `login-browser` hint uses `<xoxd-token>` / `<xoxc-token>` placeholders (#514)
+- **Credential and download files stay owner-only on macOS and Linux**: `workspaces.json` kept its old mode when it already existed, so a copied or restored file could stay `0644` with plaintext tokens, and `files download` created files with the caller's umask (`0644` under the usual `022`). Every save now writes a `0600` temp file and renames it over `workspaces.json` (atomic, and a symlink there is replaced rather than followed), the config directory is tightened to `0700` when it is wider, and downloads are created `0600`. A config directory owned by another user, or a mode that cannot be set, is an error rather than a silent skip (#516)
+
+## [0.19.0] - 2026-11-01
+
+### Removed
+- **`conversations create` and `search files`**: both commands are removed. Use the Slack client to create channels and to search files. `search messages`, `search channels` and `search people` are unchanged (#495)
+
+## [0.18.1] - 2026-10-31
+
+### Fixed
+- **A link to a thread reply reads and replies in the whole thread, even without `?thread_ts=`**: `conversations read --permalink <reply link>` and `conversations read --thread-ts <reply ts>` returned only the reply. They now read the thread from the reply's parent, at the cost of one extra Slack call for a reply. `messages send`, `draft` and `schedule --permalink` with such a link now post under the parent, and `--dry-run` previews the parent's `thread_ts` (#482)
+  - A link that carries `?thread_ts=` still costs no extra call; one without it costs one `conversations.replies` lookup on a send. If that lookup fails, the send uses the link's own timestamp, as before
+- **`slackcli --version` prints the version on Windows**: the Windows release binary was built without a version, because the release workflow read the tag with bash syntax under PowerShell, so `-V` / `--version` printed an empty line and every release looked newer than the installed one. The release build now runs that step in bash on every platform, and fails if a binary's `--version` does not match the tag (#443)
+
+## [0.18.0] - 2026-10-28
+
 ### Added
+- **`search files [query]`**: search files with Slack's `search.files`, with the same options as `search messages` (`--in`, `--from`, `--limit`, `--page`, `--sort`, `--sort-dir`, `--workspace`, `--json`, `--fields`). Each file prints on one line with its name, type, owner, date and permalink. `--json` prints `{ query, total, page, pages, files }`, and each file's `id` feeds `files info`, `files read` and `files download` (#468)
+- **`messages send --users`**: open (or resume) a multi-person DM (group DM / MPIM) and post one message everyone sees in a single shared thread. Takes user IDs, `@handle`s or emails (comma- or space-separated), the same form as `conversations members add <users...>`; 1–8 users, where more than one opens an MPIM and a single user is a 1:1 DM. Mutually exclusive with `--recipient-id` and `--permalink`; `--thread-ts`, `--file`, `--blocks` and `--json` all work with it. A `--dry-run` previews a `group_dm` target carrying the user set without opening the conversation (#457)
+- **`conversations create <name>`**: create a public channel, or a private one with `--private`, as the authenticated user. It has no confirmation prompt; `--dry-run` previews the create without making it, and `--json` gives `{ channel_id, name, is_private }`. A taken or invalid name (`name_taken`, `invalid_name_*`) fails as `invalid_input` (#467)
+
+### Fixed
+- **`messages list-drafts` no longer fails when one draft has no recipient**: a draft started in Slack's "New message" composer before a channel or person was picked has no channel destination, and it made the whole listing fail with `Slack returned draft … without a channel destination`. Such drafts are now skipped, like deleted and sent ones, and the other drafts are listed. Slack still counts a skipped draft toward `--limit`, so the list can be shorter than the limit (#461)
+
+## [0.17.0] - 2026-10-24
+
+### Added
+- **Token from the environment**: with `SLACKCLI_TOKEN` or `SLACK_BOT_TOKEN` set to a standard app token, every command uses it with no `auth login` and nothing written to `~/.config/slackcli` or the secret store, for sandboxes and CI jobs. Precedence: `--workspace` > `SLACKCLI_WORKSPACE` > token variable > stored default; `SLACKCLI_TOKEN` wins over `SLACK_BOT_TOKEN`. The workspace, user and token type come from one `auth.test` call, so a placeholder without an `xox` prefix works. `auth whoami` reports `source: "env_token"` with the variable name as `profile`, a refused token fails `auth_failed` naming the variable (never the value), and `slackcli --help` lists both variables (#453)
 - **`canvas sections`**: look up the section IDs of a canvas by section type (`--type h2`, `any_header`, `list`, `table`, …), by text (`--contains`), or both, through Slack's `canvases.sections.lookup`, so a script can target a section without guessing its ID. Takes a canvas ID or URL, `--json` (`{ canvas_id, section_count, sections: [{ id }] }`), `--fields` and `--workspace`; without `--json` it prints one ID per line. Standard app tokens only (`canvases:read`): Slack refuses the canvases API to browser sessions, so a browser profile fails with `unsupported_auth_type` before any call (#431)
 - **`canvas create` and `canvas edit`**: create a canvas from Markdown (`--title`, `--markdown-file <path|->`, optionally tabbed in a channel with `--channel`), and apply one change to a canvas (`--operation insert_at_start|insert_at_end|insert_before|insert_after|replace|delete|rename`, with `--section` from `canvas sections`, `--markdown-file` or `--title`), so a status page or checklist can be kept current from a script. Each operation's required options are checked before any Slack call; Markdown is read from a file or standard input and refused past Slack's 1,048,576-character limit. Both take `--json`, `--dry-run` and `--workspace`; `replace` and `delete` ask for confirmation (`--yes`), the inserts, `rename` and `create` do not. Standard app tokens only (`canvases:write`), refused on browser sessions before any call (#431)
 - **Change the Later list**: `saved add` adds a message as a to-do (due now, or at `--due`), `saved update` moves an item between Saved and To-dos (`--state saved|to_do`) or changes its due date (`--due <time>`, `--no-due`), `saved complete` and `saved reopen` mark it completed or back to To-dos, and `saved remove` takes it off the list, so the Later list can be worked from a script (#436)
   - Browser session tokens (`xoxd`/`xoxc`) only, through the `saved.add` / `saved.update` / `saved.delete` endpoints the web client uses, always for one item (`item_id` + `ts`); app tokens fail with `unsupported_auth_type`. The bulk Later methods, some of which act on the whole list, are never called
   - The message is named like `messages delete`: `--channel-id` (ID, link or channel name) + `--timestamp`, or `--permalink`. `--due` takes the `messages schedule --at` formats, without the future check or the 120-day limit
   - `remove` asks for confirmation (`--yes`); all five take `--json`, `--dry-run` and `--workspace`
+
+### Fixed
+- **Messages with a Slack table no longer lose it**: Slack sends a table as a `table` block in `blocks` or `attachments[].blocks`, not in the message text, so `conversations read`, `conversations get`, thread replies and `conversations unread --messages` printed only the text above it. The table now prints as aligned rows under the message text, and `conversations get --json` includes `attachments` the way `conversations read --json` already did (#446)
 
 ## [0.16.0] - 2026-10-17
 

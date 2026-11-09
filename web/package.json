@@ -17,6 +17,6 @@
     "@astrojs/sitemap": "^3.7.3",
     "@astrojs/starlight": "^0.41.10",
     "@shaharia-lab/site-kit": "^0.1.0",
-    "astro": "^7.2.9"
+    "astro": "^7.4.2"
   }
 }

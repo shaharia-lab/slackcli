@@ -124,8 +124,10 @@ const HELP = {
       '{ status, profile, workspace_id, workspace_name, auth_type, source, ... }. status is ok (adds user, ' +
       'user_id, bot_id?), auth_failed (adds error: { code, meaning, fix }) or unreachable (adds error: { message, http_status? }).',
     notes: [
-      'source says where the selection came from: flag (--workspace), env (SLACKCLI_WORKSPACE) or default.',
-      'Exits 1 when Slack refuses the credentials or cannot be reached; the output is still printed.',
+      'source says where the selection came from: flag (--workspace), env (SLACKCLI_WORKSPACE), ' +
+        'env_token (SLACKCLI_TOKEN or SLACK_BOT_TOKEN, nothing stored; profile is the variable name) or default.',
+      'Exits 1 when Slack refuses the credentials or cannot be reached; the output is still printed. ' +
+        'With an env token there is no stored profile to print, so it fails with an error object instead.',
     ],
   },
   setDefault: {
@@ -193,8 +195,8 @@ const HELP = {
       'The cURL command is read from the argument, --from-clipboard, piped stdin, or pasted interactively ' +
         '(end with an empty line), in that order.',
       'Prefer --from-clipboard or stdin over the argument: an argument lands in shell history.',
-      'Without --login it stores nothing, but prints the full xoxd/xoxc tokens on stdout as a ready-to-run ' +
-        '"auth login-browser" command: do not capture or log that output. With --login only a 20-character prefix is shown.',
+      'Without --login it stores nothing: it prints the workspace and whether each token was found, with its length. ' +
+        'No token value or prefix is ever printed.',
     ],
   },
   migrateSecrets: {
@@ -290,14 +292,17 @@ async function loginWithParsedTokens(parsed: ParsedCurlResult, secretBackend: Se
   }
 }
 
-function printLoginHint(parsed: ParsedCurlResult): void {
+// Placeholders only: the extracted tokens are full session credentials and
+// must never reach stdout, where recordings, CI logs and agents capture them
+// (#514).
+function printLoginHint(workspaceUrl: string): void {
   writeText(chalk.bold('To login with these tokens, run:\n'));
   writeText(chalk.cyan('  slackcli auth parse-curl --login'));
-  writeText(chalk.gray('\nOr manually:\n'));
+  writeText(chalk.gray('\nOr manually, with the values from your browser:\n'));
   writeText(`  slackcli auth login-browser \\`);
-  writeText(`    --xoxd="${parsed.xoxd}" \\`);
-  writeText(`    --xoxc="${parsed.xoxc}" \\`);
-  writeText(`    --workspace-url="${parsed.workspaceUrl}"\n`);
+  writeText(`    --xoxd="<xoxd-token>" \\`);
+  writeText(`    --xoxc="<xoxc-token>" \\`);
+  writeText(`    --workspace-url="${workspaceUrl}"\n`);
 }
 
 // `auth list` keeps its own text failure (the error as the hint line); under
@@ -357,6 +362,13 @@ export function createAuthCommand(): Command {
     .option('--secret-backend <backend>', 'Where to store credentials for a NEW profile: file (default) or keychain (macOS only)', 'file')
     .action(async (options) => {
       const secretBackend = resolveSecretBackend(options.secretBackend);
+      // The host the session cookie and token are sent to: refuse it before
+      // anything is (#513). authenticateBrowser() checks it again.
+      if (!isSlackWorkspaceUrl(options.workspaceUrl)) {
+        error('--workspace-url must be an https slack.com workspace URL');
+        console.error(chalk.dim('   e.g. https://myteam.slack.com'));
+        process.exit(1);
+      }
       const spinner = ora('Authenticating...').start();
 
       try {
@@ -667,16 +679,20 @@ export function createAuthCommand(): Command {
         writeText(`  Name: ${chalk.cyan(parsed.workspaceName)}`);
         writeText(`  URL:  ${chalk.cyan(parsed.workspaceUrl)}\n`);
 
-        const tokenLength = (token: string) => chalk.gray(`(${token.length} chars)`);
+        // Presence and length only, never a value or a prefix (#514).
+        const tokenFound = (token: string) => {
+          const length = `(${token.length} chars)`;
+          return `${chalk.green('found')} ${chalk.gray(length)}`;
+        };
         writeText(chalk.bold('Tokens:'));
-        writeText(`  xoxd: ${chalk.green(parsed.xoxd.substring(0, 20))}...${tokenLength(parsed.xoxd)}`);
-        writeText(`  xoxc: ${chalk.green(parsed.xoxc.substring(0, 20))}...${tokenLength(parsed.xoxc)}\n`);
+        writeText(`  xoxd: ${tokenFound(parsed.xoxd)}`);
+        writeText(`  xoxc: ${tokenFound(parsed.xoxc)}\n`);
 
         // If --login flag is set, authenticate directly
         if (options.login) {
           await loginWithParsedTokens(parsed, secretBackend);
         } else {
-          printLoginHint(parsed);
+          printLoginHint(parsed.workspaceUrl);
         }
       } catch (err: any) {
         error('Failed to parse cURL command', err.message);

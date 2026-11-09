@@ -177,7 +177,13 @@ With `--json` the preview is one object on stdout:
   `add saved item`, `update saved item`, `complete saved item`, `reopen saved item`, `remove saved item`,
   `create user group`, `update user group`, `add user group members`,
   `remove user group members`, `enable user group`, `disable user group`.
+- `workspace.profile` is the profile key the workspace is stored under. With a
+  [token from the environment](authentication.md#5-a-token-from-the-environment-nothing-stored)
+  nothing is stored, and it is the variable's name (`SLACKCLI_TOKEN` or
+  `SLACK_BOT_TOKEN`), as in `auth whoami`.
 - `target.kind` is `channel`, `user` (a DM, which a dry run does not open),
+  `group_dm` (a multi-person DM from `messages send --users`, carrying the user
+  set as `ids` instead of a single `id`, with no name lookup),
   `message` (with `ts`), `draft`, `scheduled_message`, `emoji` or `usergroup`. `thread_ts` is set for a
   thread reply. `name` (`#channel`, `@user`, the group's name) is looked up
   for display and left out when the lookup fails.
@@ -234,7 +240,7 @@ failure line is left out, so that last line parses on its own:
 |---|---|---|
 | `auth_failed` | Slack refused the stored credentials (`invalid_auth`, `token_expired`, `token_revoked`, `not_authed`, `account_inactive`), a download returned Slack's sign-in page, or no workspace is configured | Log in again; `hint` has the command |
 | `not_found` | The channel, user, message, file, canvas, draft, pending scheduled message, user group, profile or log run does not exist (`channel_not_found`, `user_not_found`, `invalid_scheduled_message_id`, `canvas_not_found`, …), or a channel name, `@handle` or email matched nothing | Fix the ID or name |
-| `permission_denied` | The identity may not do this (`missing_scope`, `not_in_channel`, `restricted_action`, `enterprise_is_restricted`, …) | Join the channel, add the scope, or use another profile |
+| `permission_denied` | The identity may not do this (`missing_scope`, `not_in_channel`, `restricted_action`, `enterprise_is_restricted`, …), or the config directory `~/.config/slackcli` is not a directory or is owned by another user (macOS and Linux) | Join the channel, add the scope, or use another profile; for the config directory, `chown` it to your user or move it aside |
 | `rate_limited` | Slack throttled the call (HTTP 429, `ratelimited`), or too many messages were scheduled for one channel in a short window (`restricted_too_many`) | Wait, then retry |
 | `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, a channel name or handle that matches more than one ID, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a `--at` or `--in` that is unreadable, in the past or more than 120 days ahead (also Slack's `time_in_past`, `time_too_far`), a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
 | `network` | Slack could not be reached, or answered with a 5xx | Retry |
@@ -370,6 +376,23 @@ A value that matches no stored profile fails the command with
 `Workspace not found: <value> (from SLACKCLI_WORKSPACE)` rather than falling back
 to the default. See
 [workspaces and profiles](workspaces.md#pin-a-workspace-for-one-shell).
+
+**In a sandbox or CI job, pass a token in the environment** instead of
+logging in. With `SLACKCLI_TOKEN` or `SLACK_BOT_TOKEN` set (and neither
+`--workspace` nor `SLACKCLI_WORKSPACE`), every command uses that token and
+nothing is stored, so a rotated token never leaves a stale profile on disk. The
+value may be a placeholder that a proxy swaps for the real token; the workspace
+comes from Slack's `auth.test`. Add `SLACKCLI_NO_UPDATE_NOTIFIER=1` to keep
+`~/.config/slackcli` untouched entirely:
+
+```bash
+export SLACK_BOT_TOKEN=xoxb-your-bot-token SLACKCLI_NO_UPDATE_NOTIFIER=1
+slackcli auth whoami --json | jq -r '.source'   # env_token
+slackcli conversations list --json
+```
+
+A refused token fails with `auth_failed`, naming the variable and never its
+value. See [authentication](authentication.md#5-a-token-from-the-environment-nothing-stored).
 
 **Check the identity before a write**, so a job stops on an expired session or
 the wrong workspace instead of failing halfway. `auth whoami` exits `1` unless

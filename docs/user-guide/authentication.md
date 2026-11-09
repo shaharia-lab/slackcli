@@ -141,7 +141,12 @@ cat curl-command.txt | slackcli auth parse-curl --login
 
 This extracts the workspace URL and name, the `xoxd` token from the cookie
 header, and the `xoxc` token from the request body. Drop `--login` to print what
-was found without saving it.
+was found without saving it: the workspace, and whether each token was found and
+how long it is. Token values are never printed, not even in part.
+
+A copied cURL carries your full session credentials. Pipe it or read it from the
+clipboard rather than pasting it at the prompt, where it stays in your terminal's
+scrollback, and never paste one into an issue, a chat or a log.
 
 Clipboard reading uses `pbpaste` on macOS, PowerShell on Windows, and
 `xclip`/`xsel` on Linux — install one of those if the clipboard path fails.
@@ -162,12 +167,58 @@ Where the values come from: open your workspace in a browser, open DevTools
 read `d=xoxd-…` from the `Cookie` header and `"token":"xoxc-…"` from the request
 payload.
 
+`--workspace-url` must be the workspace's own origin, `https://<team>.slack.com`
+(a trailing `/` is fine; Enterprise Grid hosts end in `.enterprise.slack.com`).
+Anything else — `http://`, another host, a port, a path, a query — is refused
+before the tokens are sent anywhere, because this URL is where the CLI sends
+your session cookie. The same check runs on every command for a stored browser
+profile: one whose URL fails it exits with `invalid_input` until you sign in
+again.
+
+## 5. A token from the environment (nothing stored)
+
+Set `SLACKCLI_TOKEN` (or `SLACK_BOT_TOKEN`) to a standard app token and every
+command uses it, with no `auth login` and nothing written to
+`~/.config/slackcli` or the secret store:
+
+```bash
+export SLACK_BOT_TOKEN=xoxb-your-bot-token
+slackcli auth whoami
+slackcli conversations list --json
+```
+
+- **Variables**: `SLACKCLI_TOKEN` is the CLI's own name; `SLACK_BOT_TOKEN` is
+  the conventional one many tools and sandbox providers already set. When both
+  are set, `SLACKCLI_TOKEN` wins. An empty or whitespace-only value counts as
+  unset. `SLACK_TOKEN` is not read.
+- **Precedence**: `--workspace` > `SLACKCLI_WORKSPACE` > token variable >
+  stored default. An explicit selector always means a stored profile, so the
+  token never overrides one, and an unknown selector is still an error. With
+  neither set, the token is used **even when a stored default exists** — so
+  exporting `SLACK_BOT_TOKEN` for another tool switches slackcli to it too.
+  `auth whoami` shows which one is in effect (`Selected by: env token
+  (SLACK_BOT_TOKEN)`).
+- **Workspace**: every run makes one `auth.test` call, and the workspace, user
+  and token type (bot when Slack reports a `bot_id`, user otherwise) come from
+  its answer. The value needs no `xoxb-`/`xoxp-` prefix, so a placeholder that a
+  sandbox proxy swaps for the real token on its way to Slack works.
+- **A refused token** fails the command with `auth_failed`:
+  `Slack rejected the token in SLACK_BOT_TOKEN (invalid_auth).` The message
+  names the variable, never its value; the token is never printed or logged.
+- Standard tokens only. Browser session tokens (`xoxc`/`xoxd`) are not read
+  from the environment, and `auth list`, `set-default`, `remove`, `logout` and
+  the login commands still work on stored profiles only.
+- The update notice keeps its own cache in `~/.config/slackcli`. Set
+  `SLACKCLI_NO_UPDATE_NOTIFIER=1` (or `CI`) to leave that directory untouched
+  entirely.
+
 ## Check who you are signed in as
 
 `auth whoami` answers "which workspace and which user is the CLI acting as, and
 do the credentials still work?". It picks the profile the same way every other
-command does (`--workspace`, then `SLACKCLI_WORKSPACE`, then the stored
-default), makes one `auth.test` call to Slack, and prints the result:
+command does (`--workspace`, then `SLACKCLI_WORKSPACE`, then a
+[token variable](#5-a-token-from-the-environment-nothing-stored), then the
+stored default), makes one `auth.test` call to Slack, and prints the result:
 
 ```bash
 slackcli auth whoami
@@ -185,7 +236,9 @@ Acme Corp
   Status: verified
 ```
 
-`Selected by` is `--workspace flag`, `SLACKCLI_WORKSPACE`, or `stored default`.
+`Selected by` is `--workspace flag`, `SLACKCLI_WORKSPACE`, `env token
+(<VARIABLE>)`, or `stored default`. With an env token, `Profile` reads `none
+(token from the environment, not stored)`.
 The user is the one Slack reports for the credentials; for a bot token that is
 the bot user, shown with its bot ID.
 
@@ -200,7 +253,9 @@ There are three outcomes, and the exit code tells them apart from success:
 When the check fails, the stored profile details are still printed, with the
 user ID saved at login if there is one. No workspace configured, an unknown
 selector and an ambiguous one are errors as for any other command (exit code
-`1`, nothing on stdout).
+`1`, nothing on stdout). So is an env token Slack refuses or cannot check:
+there is no stored profile to print, so the command fails with `auth_failed`
+(or the usual network error) instead of reporting a status.
 
 There is no offline mode: the call to Slack is the point. When Slack cannot be
 reached, the check gives up after three retries instead of retrying for
@@ -224,10 +279,10 @@ With `--json`, stdout carries one object in all three outcomes:
 
 | Field | Present | Value |
 |---|---|---|
-| `profile` | always | The profile key the workspace is stored under |
-| `workspace_id`, `workspace_name` | always | As stored at login |
-| `auth_type` | always | `browser` or `standard` |
-| `source` | always | `flag`, `env`, or `default` |
+| `profile` | always | The profile key the workspace is stored under; for `env_token`, the variable's name (`SLACKCLI_TOKEN` or `SLACK_BOT_TOKEN`) |
+| `workspace_id`, `workspace_name` | always | As stored at login; for `env_token`, from `auth.test` |
+| `auth_type` | always | `browser` or `standard` (always `standard` for `env_token`) |
+| `source` | always | `flag` (`--workspace`), `env` (`SLACKCLI_WORKSPACE`), `env_token` (a token variable, nothing stored), or `default` |
 | `status` | always | `ok`, `auth_failed`, or `unreachable` |
 | `user` | `ok` | The user (or bot user) name from Slack |
 | `user_id` | `ok`; otherwise only if stored at login | From Slack when `ok`, else the stored ID |
@@ -323,6 +378,9 @@ slackcli auth logout --keep-browser-session
 
 Workspace metadata (workspace ID/name, auth type, profile) always lives in
 `~/.config/slackcli/workspaces.json` (mode `0600`, inside a `0700` directory).
+On macOS and Linux both modes are enforced on every save, so a copied or
+restored file that came back `0644` is made private again; a config directory
+owned by another user is refused.
 Where the *credentials* themselves live depends on the storage backend — see
 below. Nothing is sent anywhere except Slack.
 

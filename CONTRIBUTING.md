@@ -22,6 +22,18 @@ Opening an issue first gives the community the opportunity to discuss the proble
 3. Wait for acknowledgment or feedback before starting significant work.
 4. Reference the issue in your pull request (e.g., `Fixes #42` or `Closes #42`).
 
+## New Features Need Community Review First
+
+A feature request (a new command, flag, option, output format or behaviour) from an outside contributor gets a community review before anyone builds it:
+
+- It is labelled `needs-community-review` and stays open for at least 14 days.
+- After that, it gets `ready-for-pr` only if at least 3 people other than the author back it, with a 👍, ❤️, 🚀 or 🎉 reaction or a comment describing their own use case.
+- The maintainer may apply `ready-for-pr` at any time.
+
+Please do not open a pull request for a feature until its issue carries `ready-for-pr`. A PR for a feature without it is not reviewed: it gets a short "on hold" comment and stays open. If you'd use a feature someone else has proposed, a 👍 on the issue is the most helpful thing you can do.
+
+Bugs, documentation, dependency and security fixes are not features and follow the normal rules above.
+
 ## Development Setup
 
 ### Prerequisites
@@ -73,7 +85,7 @@ bun run build:all    # Build for all platforms
 
 ### Before Submitting
 
-- [ ] Your PR is linked to a GitHub issue.
+- [ ] Your PR is linked to a GitHub issue that carries the `ready-for-pr` label.
 - [ ] Pre-commit hooks are installed and passing — no commit in the PR was made with hooks bypassed.
 - [ ] All tests pass (`bun test`).
 - [ ] Type checking passes (`bun run type-check`).
@@ -133,6 +145,7 @@ Releases are cut weekly, on Saturday, from whatever is on `main` — provided th
 AI-generated contributions are welcome and go through the same process as human contributions:
 
 1. An issue must exist before a pull request is created.
+   A feature waits for its community review and the `ready-for-pr` label first.
 2. Pre-commit hooks must be installed and must never be bypassed.
 3. All automated checks (type checking, tests) must pass.
 4. Code must meet the same quality and security standards.

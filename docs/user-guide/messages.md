@@ -34,6 +34,9 @@ slackcli messages send --recipient-id=C1234567890 --message="Hello team!"
 # To a person — the DM is opened for you
 slackcli messages send --recipient-id=U9876543210 --message="Hey there!"
 
+# To several people together — a multi-person DM (group DM / MPIM)
+slackcli messages send --users=U1111111111,U2222222222,U3333333333 --message="Shared heads-up"
+
 # As a thread reply
 slackcli messages send --recipient-id=C1234567890 --thread-ts=1234567890.123456 --message="Great idea!"
 
@@ -56,10 +59,11 @@ printf '%s' "$REPORT" | slackcli messages send --recipient-id=C1234567890 --mess
 | Option | Purpose |
 |---|---|
 | `--recipient-id <id>` | Channel ID, user ID, Slack URL, `"#channel"`, `@handle` or email ([names](links-and-timestamps.md#channel-names-and-user-handles)) |
+| `--users <list>` | User IDs, `@handle`s or emails (comma- or space-separated) for a multi-person DM (group DM / MPIM). Cannot be combined with `--recipient-id` or `--permalink` |
 | `--message <text>` | Message text. **Required** unless `--message-file` is given |
 | `--message-file <path>` | Read the message text from a UTF-8 file, or from standard input with `-`; cannot be combined with `--message` |
 | `--thread-ts <ts>` | Post as a reply in this thread |
-| `--permalink <url>` | Replaces `--recipient-id` and `--thread-ts` |
+| `--permalink <url>` | Replaces `--recipient-id` and `--thread-ts`; a reply link posts in its parent's thread ([details](links-and-timestamps.md#--permalink)) |
 | `--file <path>` | Attach a file; the message text becomes the comment. Repeatable — pass `--file` once per attachment to share several files in one message (all-or-nothing) |
 | `--blocks <json\|@file>` | Block Kit JSON array; cannot be combined with `--file` |
 | `--json` | Print the delivered message as JSON instead of the human line |
@@ -74,6 +78,27 @@ message is posted.
 
 On success the message timestamp is printed — capture it if you want to edit or
 react to the message later, or use `--json` to get it as structured data.
+
+### Multi-person direct messages (`--users`)
+
+`--users` opens — or resumes — a **multi-person DM** (Slack's "group DM", or
+MPIM) and posts one message that everyone named sees in a single shared private
+thread. It takes user IDs, `@handle`s or emails, comma- or space-separated (the
+same form as the `<users...>` arguments on `conversations members add`):
+
+```bash
+slackcli messages send --users="U1111111111,U2222222222" --message="Shared heads-up"
+slackcli messages send --users="@alice bob@example.com U3333333333" --message="Hi all"
+```
+
+- Provide **1 to 8 users**. More than one opens a group DM; a single user is an
+  ordinary 1:1 DM. You are added to the conversation automatically — do not list
+  yourself.
+- `--users` is mutually exclusive with `--recipient-id` and `--permalink`.
+  `--thread-ts`, `--file`, `--blocks` and `--json` all work with it.
+- Opening the conversation is idempotent: the same set of people always resolves
+  to the same group DM, so repeated sends land in one thread rather than
+  creating new ones.
 
 ### Message text from a file (`--message-file`)
 
@@ -407,9 +432,13 @@ slackcli messages list-drafts
 slackcli messages list-drafts --limit=25 --json
 ```
 
-Lists the authenticated user's active drafts. The default `--limit` is `100`;
-it must be a positive integer. Human output shows each draft's destination,
-age, message preview, draft id, and any thread, file, or scheduled-send metadata.
+Lists the authenticated user's active drafts. A draft with no recipient yet (one
+started in Slack's "New message" composer before a channel or person was picked)
+is not listed: it has no destination to show, and `send-draft` cannot post it.
+Slack still counts such a draft toward the `--limit` it is asked for, so the
+list can be shorter than `--limit`. The default `--limit` is `100`; it must be a
+positive integer. Human output shows each draft's destination, age, message
+preview, draft id, and any thread, file, or scheduled-send metadata.
 
 **Browser auth only.** Slack apps cannot list drafts because Slack exposes no
 public API for it. This command uses the undocumented web-client `drafts.list`
@@ -435,8 +464,8 @@ trims each draft further, e.g. `--fields draft_id,text`):
 }
 ```
 
-`thread_ts` and `date_scheduled` are included only when present. Deleted and
-already-sent entries are excluded, and an empty result is successful with
+`thread_ts` and `date_scheduled` are included only when present. Deleted,
+already-sent and recipient-less entries are excluded, and an empty result is successful with
 `{"draft_count":0,"drafts":[]}`.
 
 ## `messages schedule`

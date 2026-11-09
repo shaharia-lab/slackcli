@@ -70,6 +70,14 @@ async request(method: string, params = {}) {
 }
 ```
 
+**Where browser credentials may go.** The constructor resolves a browser
+config's `workspace_url` through `slackWorkspaceOrigin()` (`browser-auth.ts`):
+an `https` `slack.com` workspace origin with no userinfo, port, path, query or
+fragment, else an `InvalidInputError`. `browserRequest()` only ever builds URLs
+from that canonical origin and calls `fetch` with `redirect: 'manual'`, refusing
+any 3xx, so neither a bad profile nor a redirect can carry the cookie or token
+elsewhere (#513). Do not add a browser `fetch` that skips either.
+
 Everything above it — every `listConversations`, `postMessage`, `searchMessages`
 — is auth-agnostic and goes through `request()`. **New API calls belong there,
 not in a command file.**
@@ -168,7 +176,13 @@ the command's `--help` text and in the [user guide](../user-guide/README.md).
 ## Workspace storage
 
 `src/lib/workspaces.ts` owns `~/.config/slackcli/workspaces.json` (file `0600`
-inside a `0700` directory).
+inside a `0700` directory). The modes hold for existing objects too, not just new
+ones: `ensurePrivateDir()` refuses a config directory that is not a directory or
+not the current user's and tightens a wider one to `0700`, and
+`writePrivateFile()` saves through a `0600` temp file renamed over the target, so
+every save is atomic, resets the file's mode and replaces a symlink rather than
+following it. Both skip the POSIX steps on Windows. Both take a path, so tests
+run them against temp directories, never the real config.
 
 The map key is a **profile key**. Resolution and key derivation are pure
 functions with no I/O — `resolveWorkspace()` and `deriveStorageKey()` — which is
@@ -279,6 +293,15 @@ is valid.
   passing `options.workspace`; they never read the variable themselves. The
   `auth` management commands (`list`, `set-default`, `remove`, logins) do not go
   through this seam and so ignore the variable.
+- When neither the flag nor `SLACKCLI_WORKSPACE` is set, `effectiveSelection(flag,
+  env)` — also pure — checks the token variables (`TOKEN_ENV_VARS`:
+  `SLACKCLI_TOKEN`, then `SLACK_BOT_TOKEN`; blank counts as unset) ahead of the
+  stored default. A token found there goes to `workspaceFromEnvToken()`, which
+  builds an in-memory `StandardAuthConfig` from one `auth.test` call (`token_type`
+  from `bot_id`, never the prefix, since a sandbox placeholder has none) and
+  never touches `workspaces.ts` or the secret store. A refused token becomes a
+  `CliError('auth_failed')` that names the variable. `checkIdentity()` reuses the
+  same call, reporting `source: 'env_token'` with the variable name as `profile`.
 
 Per-workspace failures in `authenticateAuto()` are collected rather than thrown:
 when several workspaces are captured at once, one stale token must not discard

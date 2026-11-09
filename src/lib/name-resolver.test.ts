@@ -7,6 +7,7 @@ import {
   lazyClient,
   resolveIdentifier,
   resolveUserList,
+  splitUserRefs,
 } from './name-resolver.ts';
 import { SlackUrlParseError } from './slack-url-parser.ts';
 
@@ -398,5 +399,17 @@ describe('lazyClient', () => {
     expect(await lazy.get()).toBe(first);
     expect(lazy.created()).toBe(first);
     expect(created).toBe(1);
+  });
+});
+
+describe('splitUserRefs', () => {
+  it('splits on commas and whitespace', () => {
+    expect(splitUserRefs(['U1,U2 U3', 'U4'])).toEqual(['U1', 'U2', 'U3', 'U4']);
+  });
+  it('keeps a leading @ (a handle is resolved later) and drops empties and a bare @', () => {
+    expect(splitUserRefs(['@U1', '', ' , ', '@', 'U2', '@alice'])).toEqual(['@U1', 'U2', '@alice']);
+  });
+  it('returns an empty array for no ids', () => {
+    expect(splitUserRefs([''])).toEqual([]);
   });
 });

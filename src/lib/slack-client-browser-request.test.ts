@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { SlackClient, SlackTransportError } from './slack-client.ts';
 import { RateLimiter } from './rate-limiter.ts';
+import { InvalidInputError } from './cli-errors.ts';
+import { fakeSlackFetch } from '../test-support/fake-slack.ts';
 import type { WorkspaceConfig } from '../types/index.ts';
 
 // Pins the browser-auth transport (browserRequest and its helpers) end to end
@@ -213,5 +215,119 @@ describe('browser-auth error contract', () => {
     expect(error).not.toBeInstanceOf(SlackTransportError);
     expect(error.message.startsWith('Slack API error: ')).toBe(true);
     expect('slackData' in error).toBe(false);
+  });
+});
+
+// #513: the session cookie and token go to an https slack.com workspace origin
+// or nowhere, whichever way the profile was made, and a redirect never moves them.
+describe('browser-auth destination', () => {
+  it.each([
+    'http://acme.slack.com',
+    'http://127.0.0.1:8080',
+    'https://collector.example',
+    'https://acme.slack.com.collector.invalid',
+    'https://evilslack.com',
+    'https://app.slack.com',
+    'https://user:pw@acme.slack.com',
+    'https://acme.slack.com:8443',
+    'https://acme.slack.com/api',
+    'https://acme.slack.com/?x=1',
+    'https://acme.slack.com/#frag',
+    'acme.slack.com',
+    '',
+  ])('refuses a profile whose workspace URL is %p, before any request', async (workspace_url) => {
+    const sent = answerWith(() => Response.json({ ok: true }));
+    // A Keychain profile carries its URL in the same plain metadata.
+    const config = { ...browserConfig, workspace_url, profile: 'work', secret_backend: 'keychain' } as WorkspaceConfig;
+
+    const error = await failureOf(Promise.resolve().then(() => new SlackClient(config).testAuth()));
+
+    expect(error).toBeInstanceOf(InvalidInputError);
+    expect(error.message).toContain('Workspace "work" has an unsafe workspace URL');
+    expect(error.hint).toContain('slackcli auth login-auto');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('names the workspace when the profile has no name of its own', () => {
+    const config = { ...browserConfig, workspace_url: 'http://acme.slack.com' } as WorkspaceConfig;
+    expect(() => new SlackClient(config)).toThrow('Workspace "Test Workspace" has an unsafe workspace URL');
+  });
+
+  it.each([
+    ['https://acme.slack.com/', 'https://acme.slack.com/api/auth.test'],
+    ['https://ACME.Slack.com', 'https://acme.slack.com/api/auth.test'],
+    ['https://acme.enterprise.slack.com', 'https://acme.enterprise.slack.com/api/auth.test'],
+    ['https://acme.slack.com:443', 'https://acme.slack.com/api/auth.test'],
+  ])('sends %p requests to the canonical origin', async (workspace_url, expected) => {
+    const sent = answerWith(() => Response.json({ ok: true }));
+    const config = { ...browserConfig, workspace_url } as WorkspaceConfig;
+
+    await new SlackClient(config, { retry: { maxRetries: 0 } }).testAuth();
+
+    expect(sent.map((request) => request.url)).toEqual([expected]);
+  });
+
+  it('never applies the browser check to a standard profile', () => {
+    const config: WorkspaceConfig = {
+      workspace_id: 'T1',
+      workspace_name: 'Standard',
+      auth_type: 'standard',
+      token: 'xoxb-test',
+      token_type: 'bot',
+    };
+    expect(() => new SlackClient(config)).not.toThrow();
+  });
+
+  it('asks fetch not to follow redirects', async () => {
+    const sent = answerWith(() => Response.json({ ok: true }));
+    await client().testAuth();
+    expect(sent[0].init.redirect).toBe('manual');
+  });
+
+  it.each([301, 302, 303, 307, 308])('refuses an HTTP %d without retrying it', async (status) => {
+    const sent = answerWith(() => new Response(null, { status, headers: { location: 'https://collector.example/api/auth.test' } }));
+    const waits: number[] = [];
+    const retrying = new SlackClient(
+      { ...browserConfig },
+      { rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }), sleep: async (ms) => { waits.push(ms); } },
+    );
+
+    const error = await failureOf(retrying.request('conversations.history', { channel: 'C123' }));
+
+    expect(error).toBeInstanceOf(SlackTransportError);
+    expect(error.message).toBe(`Slack API error: refused to follow a redirect (HTTP ${status}) with session credentials`);
+    expect(error.httpStatus).toBe(status);
+    expect(error.networkError).toBe(false);
+    expect(sent).toHaveLength(1);
+    expect(waits).toEqual([]);
+  });
+
+  // The real fetch, not a stub: a 307 would replay the body, token and message
+  // text included, to the Location. Nothing may reach the second server.
+  it('sends nothing to the target of a real 307', async () => {
+    const elsewhere: string[] = [];
+    const collector = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: async (request) => {
+        elsewhere.push(await request.text());
+        return Response.json({ ok: true });
+      },
+    });
+    const slack = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: () => new Response(null, { status: 307, headers: { location: `http://127.0.0.1:${collector.port}/api/chat.postMessage` } }),
+    });
+    globalThis.fetch = fakeSlackFetch(`http://127.0.0.1:${slack.port}`, originalFetch);
+    try {
+      const error = await failureOf(client().request('chat.postMessage', { channel: 'C123', text: 'synthetic' }));
+      expect(error).toBeInstanceOf(SlackTransportError);
+      expect(error.httpStatus).toBe(307);
+      expect(elsewhere).toEqual([]);
+    } finally {
+      await slack.stop(true);
+      await collector.stop(true);
+    }
   });
 });

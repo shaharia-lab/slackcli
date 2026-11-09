@@ -9,6 +9,7 @@ import {
   mergeWorkspaces,
   slackOriginFromApiUrl,
   isSlackWorkspaceUrl,
+  slackWorkspaceOrigin,
   SLACK_CLIENT_URL,
 } from './browser-auth';
 import { isSafeStartUrl } from './browser-launcher';
@@ -298,8 +299,48 @@ describe('isSlackWorkspaceUrl', () => {
     'https://notslack.com',
     'javascript:alert(1)',
     '',
+    // Origin only, since #513.
+    'https://user:pw@alpha.slack.com',
+    'https://alpha.slack.com:8443',
+    'https://alpha.slack.com/client/T111',
+    'https://alpha.slack.com/?x=1',
   ])('rejects %s', (url) => {
     expect(isSlackWorkspaceUrl(url)).toBe(false);
+  });
+});
+
+describe('slackWorkspaceOrigin', () => {
+  it.each([
+    ['https://alpha.slack.com', 'https://alpha.slack.com'],
+    ['https://alpha.slack.com/', 'https://alpha.slack.com'],
+    ['https://ALPHA.Slack.COM', 'https://alpha.slack.com'],
+    ['https://alpha.slack.com:443/', 'https://alpha.slack.com'],
+    ['https://myorg.enterprise.slack.com/', 'https://myorg.enterprise.slack.com'],
+    ['https://slack.com', 'https://slack.com'],
+  ])('canonicalises %s to %s', (url, origin) => {
+    expect(slackWorkspaceOrigin(url)).toBe(origin);
+  });
+
+  it.each([
+    'http://alpha.slack.com',
+    'http://127.0.0.1:8080',
+    'https://collector.example',
+    'https://alpha.slack.com.collector.invalid',
+    'https://alpha.slack.com.',
+    'https://notslack.com',
+    'https://app.slack.com',
+    'https://APP.slack.com/',
+    'https://user@alpha.slack.com',
+    'https://:pw@alpha.slack.com',
+    'https://alpha.slack.com:8443',
+    'https://alpha.slack.com/api/',
+    'https://alpha.slack.com/?x=1',
+    'https://alpha.slack.com/#top',
+    'alpha.slack.com',
+    'not a url',
+    '',
+  ])('refuses %p', (url) => {
+    expect(slackWorkspaceOrigin(url)).toBeNull();
   });
 });
 

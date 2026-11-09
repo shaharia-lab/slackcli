@@ -60,6 +60,8 @@ function defaultAnswers(): Record<string, Answer> {
     'conversations.info': (params) => ({ ok: true, channel: { id: params.channel, name: 'deploys' } }),
     'users.info': (params) => ({ ok: true, user: { id: params.user, name: 'alice' } }),
     'conversations.list': { ok: true, channels: [{ id: 'C0123456789', name: 'deploys' }] },
+    // A message link without ?thread_ts= looks its thread parent up (#482).
+    'conversations.replies': (params) => ({ ok: true, messages: [{ ts: params.ts, thread_ts: params.ts }] }),
   };
 }
 
@@ -199,7 +201,8 @@ describe('scheduled messages (#379)', () => {
         '--message', 'Fixed', '--in', '2h',
       ]);
       expect(out).toMatchObject({ channel_id: 'C0123456789', thread_ts: '1712345678.000100' });
-      expect(calls[0].params).toMatchObject({ channel: 'C0123456789', thread_ts: '1712345678.000100' });
+      expect(methods()).toEqual(['conversations.replies', 'chat.scheduleMessage']);
+      expect(calls[1].params).toMatchObject({ channel: 'C0123456789', thread_ts: '1712345678.000100' });
     });
 
     it('opens the DM for a user and schedules into it', async () => {

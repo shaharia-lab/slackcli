@@ -62,7 +62,7 @@ slackcli conversations read C1234567890 --oldest="$CURSOR" --exclude-self --json
 
 | Option | Default | Purpose |
 |---|---|---|
-| `--thread-ts <ts>` | — | Read a specific thread instead of the channel |
+| `--thread-ts <ts>` | — | Read a specific thread instead of the channel; a reply's ts reads its whole thread |
 | `--permalink <url>` | — | Replaces the channel argument and `--thread-ts` |
 | `--exclude-replies` | off | Drop threaded replies from channel history |
 | `--exclude-self` | off | Drop messages sent by the authenticated user (or, for a bot token, its bot) |
@@ -74,6 +74,9 @@ slackcli conversations read C1234567890 --oldest="$CURSOR" --exclude-self --json
 Channel history comes back newest-first from Slack and is reversed so you read
 top to bottom. Thread replies are already chronological. `--json` also includes
 reactions, blocks, attachments, file metadata, and a resolved `users` array.
+A table in a message (a Slack `table` block, sent in `blocks` or
+`attachments` rather than in the message text) prints as aligned rows under
+the message text.
 
 `--json` also carries a polling cursor:
 
@@ -90,6 +93,11 @@ saved at login; a workspace saved before that, or a bot token (whose `bot_id`
 is not stored), costs one `auth.test` call. See
 [Poll a channel or thread safely](scripting.md#poll-a-channel-or-thread-safely).
 
+Given a reply's timestamp (`--thread-ts`, or a reply link without
+`?thread_ts=`), Slack's thread API returns only that reply. `read` then reads
+the thread again from the parent the reply names, so you get the parent and
+all replies for one extra call.
+
 ## `conversations get`
 
 Fetch one message by channel and timestamp.
@@ -99,6 +107,10 @@ slackcli conversations get C1234567890 1234567890.123456
 slackcli conversations get --permalink="https://myteam.slack.com/archives/C1234567890/p1234567890123456"
 slackcli conversations get C1234567890 p1234567890123456 --json
 ```
+
+`--json` gives `{ channel_id, message, users }`. `message` carries `ts`,
+`thread_ts`, `user`, `text`, `type`, `reply_count`, `reactions`, `bot_id`,
+`blocks`, `attachments` and, when the message has files, their metadata.
 
 **Auth-type caveat.** With browser auth this resolves both top-level messages and
 thread replies. With a standard token it can only resolve **top-level** messages

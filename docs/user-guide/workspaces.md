@@ -32,11 +32,15 @@ A command picks its workspace from the first of these that is set:
 | --- | --- | --- |
 | 1 | `--workspace <id\|name>` | That one command |
 | 2 | `SLACKCLI_WORKSPACE` | The current shell or process environment |
-| 3 | The stored default (`auth set-default`) | Every shell on the machine |
+| 3 | `SLACKCLI_TOKEN`, then `SLACK_BOT_TOKEN` — a token used with nothing stored ([details](authentication.md#5-a-token-from-the-environment-nothing-stored)) | The current shell or process environment |
+| 4 | The stored default (`auth set-default`) | Every shell on the machine |
 
 - The variable takes the same values as `--workspace` (see
   [how a selector is resolved](#how-a-selector-is-resolved)).
 - An unset, empty, or whitespace-only variable is ignored.
+- `--workspace` and `SLACKCLI_WORKSPACE` always select a stored profile, even
+  when a token variable is set. A token variable, when set, wins over the
+  stored default.
 - A value that matches no profile is an error that names the variable —
   `Workspace not found: acme (from SLACKCLI_WORKSPACE)` — and never falls back to
   the stored default. A value that matches several profiles gets the same
@@ -55,6 +59,7 @@ the result, with where it came from:
 slackcli auth whoami                    # Selected by: stored default
 SLACKCLI_WORKSPACE=acme slackcli auth whoami   # Selected by: SLACKCLI_WORKSPACE
 slackcli auth whoami --workspace=other  # Selected by: --workspace flag
+SLACK_BOT_TOKEN=xoxb-… slackcli auth whoami   # Selected by: env token (SLACK_BOT_TOKEN)
 ```
 
 It also prints the profile key and the authenticated user, so two profiles for

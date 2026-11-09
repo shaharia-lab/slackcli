@@ -41,7 +41,10 @@ Confirm with `slackcli --version`.
 slackcli auth list        # always exits 0
 ```
 
-- Prints `No authenticated workspaces found.`: propose authentication (below).
+- Prints `No authenticated workspaces found.`: if `SLACKCLI_TOKEN` or
+  `SLACK_BOT_TOKEN` is set, commands use that token with nothing stored; check
+  it with `slackcli auth whoami --json` (`source` `env_token`). Otherwise
+  propose authentication (below).
 - Lists workspaces (one marked `(default)`, each with ID and auth type):
   verify the token with `slackcli team info --json` (add `--workspace=<id|name>`
   if the user named one). On exit 1 the last stderr line is

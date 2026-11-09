@@ -352,6 +352,19 @@ export function lazyClient<T extends NameLookupClient>(
 }
 
 /**
+ * Split a comma/space-separated list of user references (IDs, `@handle`s,
+ * emails) into a clean array, keeping each one as typed. A bare "@" is dropped.
+ * The companion splitter for {@link resolveUserList}: callers that take a raw
+ * `<users...>` (or a `--users` list) run this first, then resolve the result.
+ */
+export function splitUserRefs(raw: string[]): string[] {
+  return raw
+    .flatMap((token) => token.split(/[\s,]+/))
+    .map((s) => s.trim())
+    .filter((s) => s.replace(/^@/, ''));
+}
+
+/**
  * Resolve a list of user references (IDs, `@handle`s, handles, email
  * addresses) to user IDs, in input order. All handles share one `users.list`
  * scan; a list of IDs makes no call at all. A leading `@` on an ID is dropped,

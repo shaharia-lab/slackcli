@@ -197,11 +197,16 @@ export function renderRootFooter(width = HELP_WIDTH): string {
     item(
       'Commands act on the stored default workspace (the first one you log in to; change it with ' +
         '"slackcli auth set-default"). Pick another for one call with --workspace <id|name>, ' +
-        'or for a whole shell with SLACKCLI_WORKSPACE. The flag wins over the variable.',
+        'or for a whole shell with SLACKCLI_WORKSPACE. The flag wins over the variable. ' +
+        'With neither set, a token in SLACKCLI_TOKEN or SLACK_BOT_TOKEN is used ahead of the ' +
+        'stored default, with nothing stored. Precedence: --workspace > SLACKCLI_WORKSPACE > ' +
+        'token variable > stored default.',
     ),
     '',
     'Environment:',
     env('SLACKCLI_WORKSPACE', 'Workspace to use when --workspace is not given'),
+    env('SLACKCLI_TOKEN', 'xoxb/xoxp token to use without a stored profile'),
+    env('SLACK_BOT_TOKEN', 'The same, read when SLACKCLI_TOKEN is not set'),
     env('SLACKCLI_LOG_LEVEL', `Log level: ${LOG_LEVEL_SETTINGS.join(', ')} (default info)`),
     env('SLACKCLI_LOG_DIR', 'Directory for the diagnostic log (see "slackcli logs path")'),
     env('SLACKCLI_BROWSER', 'Browser executable for "auth login-auto"'),

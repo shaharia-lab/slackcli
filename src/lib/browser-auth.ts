@@ -76,19 +76,35 @@ const SLACK_CLIENT_HOST = 'app.slack.com';
  * credential in cleartext.
  */
 export function isSlackWorkspaceUrl(candidate: string): boolean {
+  return slackWorkspaceOrigin(candidate) !== null;
+}
+
+/**
+ * The canonical origin (`https://team.slack.com`) of a workspace URL, or null
+ * when the URL is not one. This is the only form the browser transport sends
+ * credentials to (#513).
+ *
+ * Origin only: userinfo, an explicit port, a path beyond `/`, a query or a
+ * fragment are refused rather than stripped, since none of them belongs in an
+ * API base and each one is a way to make a URL read as something it is not.
+ */
+export function slackWorkspaceOrigin(candidate: string): string | null {
   let parsed: URL;
   try {
     parsed = new URL(candidate);
   } catch {
-    return false;
+    return null;
   }
-  if (parsed.protocol !== 'https:') return false;
+  if (parsed.protocol !== 'https:') return null;
+  if (parsed.username || parsed.password || parsed.port) return null;
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
 
   const host = parsed.hostname.toLowerCase();
-  if (host === SLACK_CLIENT_HOST) return false;
+  if (host === SLACK_CLIENT_HOST) return null;
   // Suffix match on a dot boundary — a plain `includes` would accept
   // `notslack.com.evil.net`.
-  return host === 'slack.com' || host.endsWith('.slack.com');
+  if (host !== 'slack.com' && !host.endsWith('.slack.com')) return null;
+  return parsed.origin;
 }
 
 /**

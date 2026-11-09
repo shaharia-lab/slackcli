@@ -102,6 +102,9 @@ The repository policy is binding, and it is stricter than most:
 1. **An issue must exist first**, describing WHAT, WHY, and optionally HOW.
 2. **The issue must carry the `ready-for-pr` label.** A PR opened before the
    issue is triaged is likely to be rejected even if the code is good.
+   A feature request from an outside contributor first waits at least 14 days
+   for community review (`needs-community-review`); see
+   [CONTRIBUTING.md](../../CONTRIBUTING.md#new-features-need-community-review-first).
 3. The PR must link that issue — a `PR must link an open issue` workflow checks
    this.
 4. Type-check, tests, and hooks must pass; commits must be signed.

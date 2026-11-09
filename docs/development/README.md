@@ -44,6 +44,8 @@ human and AI contributors alike:
    report, feature request, improvement) and stating WHAT, WHY, and optionally
    HOW. Blank issues are disabled.
 2. **The issue must carry the `ready-for-pr` label** before a PR is opened.
+   A feature request from an outside contributor first waits at least 14 days
+   for community review (`needs-community-review`).
 3. The PR must link that issue and follow the PR template, checklist included —
    a workflow enforces the link.
 4. Type-check, tests, and pre-commit hooks pass; commits are signed.

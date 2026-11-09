@@ -1,8 +1,9 @@
-import { mkdir, readFile, writeFile, exists } from 'node:fs/promises';
+import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile, exists } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getLogger } from '@logtape/logtape';
-import { errorMessageForLog, tildifyText } from './tildify.ts';
+import { errorMessageForLog, tildify, tildifyText } from './tildify.ts';
 import type { WorkspacesData, WorkspaceConfig, SecretBackend } from '../types/index.ts';
 import {
   FileSecretStore,
@@ -16,17 +17,67 @@ import {
   type SecretStore,
 } from './secret-store.ts';
 import { warning } from './formatter.ts';
-import { InvalidInputError, NotFoundError } from './cli-errors.ts';
+import { CliError, InvalidInputError, NotFoundError } from './cli-errors.ts';
 
 const logger = getLogger(['slackcli', 'workspaces']);
 
 const CONFIG_DIR = join(homedir(), '.config', 'slackcli');
 const WORKSPACES_FILE = join(CONFIG_DIR, 'workspaces.json');
 
-// Ensure config directory exists
+// Ensure config directory exists, owner-only
 async function ensureConfigDir(): Promise<void> {
-  if (!await exists(CONFIG_DIR)) {
-    await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  await ensurePrivateDir(CONFIG_DIR);
+}
+
+// The directory holding credentials must be the current user's and `0700`.
+// mkdir's mode applies only on creation, so an existing directory (restored
+// from a backup, created by hand) is checked and tightened here. A symlinked
+// directory is followed: its target must be ours too, and gets the same mode.
+// Not ours, or not a directory: refuse rather than chmod someone else's path.
+// Windows has no POSIX modes, so only the mkdir runs there (#516).
+export async function ensurePrivateDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') return;
+
+  const info = await stat(dir);
+  if (!info.isDirectory()) {
+    throw new CliError('permission_denied', `${tildify(dir, homedir())} is not a directory`,
+      'Move it aside so SlackCLI can create its config directory.');
+  }
+  if (info.uid !== process.getuid?.()) {
+    throw new CliError('permission_denied', `${tildify(dir, homedir())} is not owned by the current user`,
+      'Give it to your user (chown) or move it aside; it holds Slack credentials.');
+  }
+  if ((info.mode & 0o077) !== 0) {
+    await chmod(dir, 0o700);
+    logger.info('Tightened config directory mode to 0700');
+  }
+}
+
+// Write a credential file owner-only, whatever the mode of any existing file.
+// writeFile's mode applies only on creation, so the content goes to a fresh
+// `0600` temp file beside the target and is renamed over it: the swap is
+// atomic (a failed write leaves the old file intact), and a symlink at the
+// target is replaced, never followed. On Windows a rename over a file another
+// process holds open fails, and modes mean nothing there, so it writes in
+// place as before (#516).
+export async function writePrivateFile(path: string, content: string): Promise<void> {
+  if (process.platform === 'win32') {
+    await writeFile(path, content, { mode: 0o600 });
+    return;
+  }
+
+  const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  const handle = await open(tmpPath, 'wx', 0o600);
+  try {
+    await handle.writeFile(content);
+    await handle.sync();
+    await handle.close();
+    await rename(tmpPath, path);
+  } catch (err) {
+    await handle.close().catch(() => {});
+    await rm(tmpPath, { force: true }).catch(() => {});
+    throw err;
   }
 }
 
@@ -78,7 +129,7 @@ export function describeLoadError(error: unknown, home: string = homedir()): str
 // Save workspaces data
 export async function saveWorkspaces(data: WorkspacesData): Promise<void> {
   await ensureConfigDir();
-  await writeFile(WORKSPACES_FILE, JSON.stringify(data, null, 2), { mode: 0o600 });
+  await writePrivateFile(WORKSPACES_FILE, JSON.stringify(data, null, 2));
   logger.info('Saved {count} workspaces', {
     count: Object.keys(data.workspaces).length,
     default_workspace: data.default_workspace,

@@ -73,8 +73,9 @@ where the terminal is not known to show Unicode.
 ## Two things that apply everywhere
 
 **`--workspace <id|name>`** — every command that talks to Slack accepts it.
-Without it, a command uses `SLACKCLI_WORKSPACE` if that is set, otherwise your
-default workspace. See [workspaces and profiles](workspaces.md) and
+Without it, a command uses `SLACKCLI_WORKSPACE` if that is set, then a token in
+`SLACKCLI_TOKEN` / `SLACK_BOT_TOKEN` (nothing stored), otherwise your default
+workspace. See [workspaces and profiles](workspaces.md) and
 [pin a workspace for one shell](workspaces.md#pin-a-workspace-for-one-shell).
 
 **Paste Slack URLs instead of IDs** — anywhere a channel, user, message, canvas,

@@ -11,9 +11,10 @@ body:
         request until this issue carries the `ready-for-pr` label** — PRs that skip triage are
         likely to be rejected, even if the code is good.
 
-        New features wait about 2 weeks for community feedback before they can get `ready-for-pr`:
-        the issue needs a 👍 (or a comment with their own use case) from at least 3 people other
-        than you. Please don't open a PR yet; a PR for a feature without `ready-for-pr` stays on hold.
+        Features are judged against the [feature request criteria](https://github.com/shaharia-lab/slackcli/blob/main/CONTRIBUTING.md#feature-request-criteria):
+        they must be built on an official, documented, non-deprecated Slack API method, be useful
+        beyond one workflow, and you may have one open feature request at a time. Requests that do
+        not meet the criteria are closed.
   - type: textarea
     id: what
     attributes:
@@ -30,6 +31,26 @@ body:
     validations:
       required: true
   - type: textarea
+    id: slack-api
+    attributes:
+      label: Slack API method(s)
+      description: The official Slack API method(s) this feature needs, with a link to each in the Slack API reference. Internal web-client endpoints and deprecated APIs (such as RTM) are not accepted.
+      placeholder: "reminders.list: https://docs.slack.dev/reference/methods/reminders.list"
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Which auth types does it work with?
+      description: App tokens are `xoxb`/`xoxp`; a browser session is `xoxc` + `xoxd`.
+      options:
+        - App tokens and browser sessions
+        - App tokens only
+        - Browser sessions only
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
     id: how
     attributes:
       label: HOW — suggested implementation (optional)
@@ -40,6 +61,10 @@ body:
       label: Before submitting
       options:
         - label: I searched existing issues and this has not been requested yet.
+          required: true
+        - label: This feature uses an official, documented, non-deprecated Slack API method.
+          required: true
+        - label: I have no other open feature request in this repository.
           required: true
         - label: I understand a PR is only welcome after this issue receives the `ready-for-pr` label.
           required: true

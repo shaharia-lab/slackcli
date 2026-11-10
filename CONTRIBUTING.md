@@ -22,15 +22,18 @@ Opening an issue first gives the community the opportunity to discuss the proble
 3. Wait for acknowledgment or feedback before starting significant work.
 4. Reference the issue in your pull request (e.g., `Fixes #42` or `Closes #42`).
 
-## New Features Need Community Review First
+## Feature Request Criteria
 
-A feature request (a new command, flag, option, output format or behaviour) from an outside contributor gets a community review before anyone builds it:
+A feature request (a new command, flag, option, output format or behaviour) is accepted only if it meets all of these:
 
-- It is labelled `needs-community-review` and stays open for at least 14 days.
-- After that, it gets `ready-for-pr` only if at least 3 people other than the author back it, with a 👍, ❤️, 🚀 or 🎉 reaction or a comment describing their own use case.
-- The maintainer may apply `ready-for-pr` at any time.
+- **It is built on an official Slack API.** The feature uses a documented, non-deprecated method from the [Slack API reference](https://docs.slack.dev/reference/methods). Internal web-client endpoints, deprecated APIs (for example RTM) and driving the Slack web UI are not accepted: they tend to work only with browser logins and break without notice, so they cannot be maintained.
+- **It states the API and auth types.** The request names the Slack method(s) it needs and whether it works with app tokens (`xoxb`/`xoxp`), browser sessions (`xoxc`/`xoxd`) or both. The feature request template asks for both.
+- **It is useful beyond one workflow.** It solves a problem a broad set of SlackCLI users have and fits what the CLI is for, not one person's particular setup.
+- **One at a time.** Keep at most one open feature request per person. Further requests may be closed until the first one is settled.
 
-Please do not open a pull request for a feature until its issue carries `ready-for-pr`. A PR for a feature without it is not reviewed: it gets a short "on hold" comment and stays open. If you'd use a feature someone else has proposed, a 👍 on the issue is the most helpful thing you can do.
+A request that does not meet these criteria is declined and closed with the reason. A request that does stays open, and gets `ready-for-pr` when the maintainers decide to take it. Requests that see no activity are closed over time by the stale workflow.
+
+Please do not open a pull request for a feature until its issue carries `ready-for-pr`. A PR for a feature without it is not reviewed: it gets a short "on hold" comment and stays open.
 
 Bugs, documentation, dependency and security fixes are not features and follow the normal rules above.
 
@@ -145,7 +148,7 @@ Releases are cut weekly, on Saturday, from whatever is on `main` — provided th
 AI-generated contributions are welcome and go through the same process as human contributions:
 
 1. An issue must exist before a pull request is created.
-   A feature waits for its community review and the `ready-for-pr` label first.
+   A feature must meet the [feature request criteria](#feature-request-criteria) and wait for the `ready-for-pr` label.
 2. Pre-commit hooks must be installed and must never be bypassed.
 3. All automated checks (type checking, tests) must pass.
 4. Code must meet the same quality and security standards.

@@ -30,6 +30,7 @@ export interface CommandErrorObject {
 // authentication codes are not here: the client already turns them into a
 // `SlackAuthError`, which is classified first.
 const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
+  not_found: 'not_found',
   channel_not_found: 'not_found',
   user_not_found: 'not_found',
   users_not_found: 'not_found',
@@ -86,6 +87,9 @@ const SLACK_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   invalid_users: 'invalid_input',
   msg_too_long: 'invalid_input',
   no_text: 'invalid_input',
+  cannot_parse: 'invalid_input',
+  cannot_complete_recurring: 'invalid_input',
+  cannot_complete_others: 'permission_denied',
   too_many_attachments: 'invalid_input',
   time_in_past: 'invalid_input',
   time_too_far: 'invalid_input',

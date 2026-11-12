@@ -12,6 +12,7 @@ slackcli/
 │   │   ├── conversations.ts
 │   │   ├── files.ts
 │   │   ├── messages.ts
+│   │   ├── reminders.ts
 │   │   ├── saved.ts
 │   │   ├── search.ts
 │   │   └── update.ts
@@ -47,6 +48,7 @@ They hold no Slack API knowledge.
 | `logs.ts` | `path`, `show`, `clear` |
 | `messages.ts` | `send`, `react`, `unreact`, `edit`, `delete`, `draft`, `list-drafts`, `send-draft`, `delete-draft`, `schedule`, `list-scheduled`, `delete-scheduled` |
 | `saved.ts` | `list`, `add`, `update`, `complete`, `reopen`, `remove` |
+| `reminders.ts` | `add`, `list`, `info`, `update`, `complete`, `delete` |
 | `search.ts` | `messages`, `channels`, `people` |
 | `update.ts` | (default action), `check` |
 
@@ -87,7 +89,8 @@ They hold no Slack API knowledge.
 | `message.ts` | Fetch one message by channel + timestamp, per auth type; delete one, treating `message_not_found` as already deleted; remove a reaction, treating `no_reaction` as already removed. |
 | `thread-parent.ts` | Thread parent of a message ts (#482): `replyParentTs()` reads it off a `conversations.replies` response, `fetchThreadReplies()` re-reads a thread from the parent when given a reply's ts, `resolvePostThread()` resolves a link target flagged `mayBeReply` (a message link without `?thread_ts=`) before a send, falling back to the link's ts when the lookup fails. |
 | `poll.ts` | `conversations read`'s polling helpers: exact Slack `ts` comparison, the `ts > --oldest` and `--exclude-self` filters, the `next_oldest` cursor, and resolving the authenticated identity (stored `user_id`, or one `auth.test`). |
-| `saved.ts` | Resolves saved-item pointers into messages, channels, and users; the Later-list writes (`saved add`, `update`, `complete`, `reopen`, `remove`), turning their flags into one of the `saved.update` changes the Slack web client sends. |
+| `saved.ts` | Resolves saved-item pointers into messages, channels, and users; preserves standalone reminder To-do IDs, rich-text descriptions, due dates and state; the Later-list writes (`saved add`, `update`, `complete`, `reopen`, `remove`), including clearing one reminder by its saved-item ID. |
+| `reminders.ts` | Reminder input validation, raw To-do pagination, legacy/modern ID routing, safe post-creation ID resolution, and create/read/edit/complete/delete operations. Uses `reminders.add` for creation, `saved.*` for modern To-dos and `reminders.*` for legacy IDs. |
 | `unread.ts` | Fetches and normalises unread channel data across both auth types, plus the workspace-wide thread summary (`threads` of `client.counts`, browser auth only) and each unread conversation's read cursors (`cursors`, kept off the list so the default output does not change). Also the pure helpers of the `conversations unread` action: `filterByTypes()` (`--types`) and `unreadSummaryLine()` (the spinner's closing line). |
 | `unread-messages.ts` | `conversations unread --messages` (browser auth only): flag validation, the cut at a conversation's `last_read` (reusing `poll.ts`), the conversation and per-conversation caps, normalising and paging Slack's undocumented thread view (a failure degrades to the summary), and `fetchUnreadDetails()`, which makes the calls one at a time. Logs IDs, counts and durations only, never message content. |
 | `formatter.ts` | Chalk-coloured renderers, status helpers, and `writeJson()`. |

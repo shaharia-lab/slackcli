@@ -9,6 +9,8 @@ import type {
   SlackAuthTestResponse,
   ScheduledMessageSummary,
   SavedItemUpdate,
+  ReminderAddInput,
+  SavedReminderUpdate,
   SlackDraftListResponse,
   SlackScheduledMessage,
   SlackScheduledMessageListResponse,
@@ -339,6 +341,24 @@ function savedItemParams(channel: string, ts: string): Record<string, string> {
     throw new InvalidInputError('A Later-list write needs both the channel ID and the message timestamp.');
   }
   return { item_type: 'message', item_id: channel, ts };
+}
+
+// Never let a missing or legacy reminder ID become an untargeted saved.*
+// write. These are saved.list IDs, not reminders.add IDs or message links.
+export function normalizeSavedReminderId(value: string): string {
+  const id = value.trim();
+  if (!/^Sa[A-Z0-9]+$/.test(id)) {
+    throw new InvalidInputError(
+      '--item-id must be a saved reminder ID (Sa…) from "saved list --json", not a reminders.add ID (Rm…).',
+    );
+  }
+  return id;
+}
+
+export function normalizeLegacyReminderId(value: string): string {
+  const id = value.trim();
+  if (!/^Rm[A-Z0-9]+$/.test(id)) throw new InvalidInputError('Expected a legacy reminder ID (Rm…).');
+  return id;
 }
 
 // chat.scheduledMessages.list page size, and a bound on the pages followed so a
@@ -950,6 +970,63 @@ export class SlackClient {
   async deleteSavedItem(channel: string, ts: string): Promise<any> {
     this.requireBrowserAuth(SAVED_WRITE_AUTH_MESSAGE);
     return this.request('saved.delete', savedItemParams(channel, ts));
+  }
+
+  // Clear one standalone reminder To-do using its saved.list ID. Browser
+  // auth only, through the same saved.delete endpoint as message removal.
+  async deleteSavedReminder(itemId: string): Promise<any> {
+    this.requireBrowserAuth(SAVED_WRITE_AUTH_MESSAGE);
+    return this.request('saved.delete', {
+      item_type: 'reminder',
+      item_id: normalizeSavedReminderId(itemId),
+    });
+  }
+
+  // User reminders never accept a target user: all operations act as the
+  // logged-in identity. Bot tokens cannot create a reminder for themselves.
+  requireReminderUserAuth(): void {
+    if (this.isBotToken) {
+      throw new UnsupportedAuthTypeError('Reminders require a user token (xoxp) or browser login (auth login-auto).');
+    }
+  }
+
+  async addReminder(input: ReminderAddInput): Promise<any> {
+    this.requireReminderUserAuth();
+    return this.request('reminders.add', {
+      text: input.text, time: input.time, ...(input.recurrence ? { recurrence: input.recurrence } : {}),
+    });
+  }
+
+  async listReminders(): Promise<any> {
+    this.requireReminderUserAuth();
+    return this.request('reminders.list');
+  }
+
+  async getReminder(id: string): Promise<any> {
+    this.requireReminderUserAuth();
+    return this.request('reminders.info', { reminder: normalizeLegacyReminderId(id) });
+  }
+
+  async completeReminder(id: string): Promise<any> {
+    this.requireReminderUserAuth();
+    return this.request('reminders.complete', { reminder: normalizeLegacyReminderId(id) });
+  }
+
+  async deleteReminder(id: string): Promise<any> {
+    this.requireReminderUserAuth();
+    return this.request('reminders.delete', { reminder: normalizeLegacyReminderId(id) });
+  }
+
+  async listReminderItems(cursor?: string): Promise<any> {
+    this.requireBrowserAuth(SAVED_WRITE_AUTH_MESSAGE);
+    return this.request('saved.list', { filter: 'todo_with_completed', limit: 15, cursor });
+  }
+
+  async updateSavedReminder(itemId: string, update: SavedReminderUpdate): Promise<any> {
+    this.requireBrowserAuth(SAVED_WRITE_AUTH_MESSAGE);
+    return this.request('saved.update', {
+      ...update, item_type: 'reminder', item_id: normalizeSavedReminderId(itemId),
+    });
   }
 
   // Batch-fetch messages by channel + timestamp (browser auth only).

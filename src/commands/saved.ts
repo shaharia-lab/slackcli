@@ -11,6 +11,7 @@ import {
   COMPLETE_UPDATE,
   enrichSavedItems,
   removeSavedItem,
+  removeSavedReminder,
   reopenUpdate,
   savedUpdateFromOptions,
   type SavedWriteResult,
@@ -19,7 +20,8 @@ import {
 import { CHANNEL_NAME_NOTE, describeCommand, type CommandHelp } from '../lib/help.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { resolveMessageTarget, workspaceMismatchWarning } from '../lib/slack-url-parser.ts';
-import { SAVED_WRITE_AUTH_MESSAGE, type SlackClient } from '../lib/slack-client.ts';
+import { normalizeSavedReminderId, SAVED_WRITE_AUTH_MESSAGE, type SlackClient } from '../lib/slack-client.ts';
+import { InvalidInputError } from '../lib/cli-errors.ts';
 import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
 import { resolveIdentifier } from '../lib/name-resolver.ts';
 import { confirmWrite } from './usergroups.ts';
@@ -45,7 +47,7 @@ const HELP = {
     summary: 'View and change your saved-for-later items',
     description:
       'Read your Slack "Later" (saved for later) list, with message text, channel and author resolved, ' +
-      'and add, update, complete, reopen or remove the messages on it.',
+      'and add, update, complete, reopen or remove saved messages, or clear standalone reminder To-dos.',
   },
   list: {
     summary: 'List your saved-for-later items',
@@ -62,7 +64,8 @@ const HELP = {
       '{ item_count, items }. With no items nothing is written to stdout (exit 0).',
     notes: [
       'Browser auth reads saved.list (the Later list): items are { type, channel_id, channel_name, message, date_saved, todo_state }, ' +
-        'with message text resolved; non-message items carry only type, channel_id and date_saved.',
+        'with message text resolved. Reminder To-dos are { type, item_id, text, date_saved, date_due, todo_state }; ' +
+        'other non-message items carry only type, channel_id and date_saved.',
       'App tokens (xoxb/xoxp) read stars.list (starred items) and return Slack\'s items as-is: ' +
         'no todo_state, so --state matches nothing.',
       '--limit caps the items fetched, before --state filters them.',
@@ -153,15 +156,16 @@ const HELP = {
     ],
   },
   remove: {
-    summary: 'Remove a message from your Later list',
+    summary: 'Clear a saved message or reminder To-do',
     description:
-      'Remove one message from your Later list (saved.delete). The message itself is not touched. ' +
-      MESSAGE_TARGET_TEXT,
+      'Remove one saved message or standalone reminder To-do (saved.delete). The original message is not touched. ' +
+      MESSAGE_TARGET_TEXT + ' For a standalone reminder, use --item-id from saved list.',
     examples: [
       'slackcli saved remove --channel-id C0123456789 --timestamp 1712345678.123456',
       'slackcli saved remove --permalink https://acme.slack.com/archives/C0123456789/p1712345678123456 --yes --json',
+      'slackcli saved remove --item-id Sa0ABC123 --yes --json',
     ],
-    json: '{ channel_id, ts, removed }.',
+    json: '{ channel_id, ts, removed } for a message; { item_id, item_type: "reminder", removed } for a reminder.',
     browserOnly: true,
     confirms: true,
     dryRun: true,
@@ -169,6 +173,8 @@ const HELP = {
       MESSAGE_ID_FORMATS_NOTE,
       CHANNEL_NAME_NOTE,
       PERMALINK_MESSAGE_NOTE,
+      '--item-id takes a reminder To-do ID (Sa…) from saved list --json, not a reminders.add ID (Rm…). ' +
+        'It cannot be combined with --channel-id, --timestamp or --permalink.',
       'Any failure exits 1 with the Slack code in slack_error.',
     ],
   },
@@ -209,6 +215,20 @@ function reportSavedWrite(result: SavedWriteResult, json: boolean): void {
   }
   const due = result.date_due > 0 ? `due ${formatScheduleTime(result.date_due)}` : 'no due date';
   success(`Message ${result.ts}: ${result.todo_state ?? 'unknown state'}, ${due}`);
+}
+
+async function resolveRemovalTarget(
+  options: { itemId?: string; permalink?: string; channelId?: string; timestamp?: string; workspace?: string },
+  spinner: ReturnType<typeof ora>,
+) {
+  if (options.itemId === undefined) return resolveSavedTarget(options, spinner);
+  if ([options.permalink, options.channelId, options.timestamp].some((value) => value !== undefined)) {
+    throw new InvalidInputError('--item-id cannot be combined with --channel-id, --timestamp or --permalink.');
+  }
+  const itemId = normalizeSavedReminderId(options.itemId);
+  const client = await getAuthenticatedClient(options.workspace);
+  client.requireBrowserAuth(SAVED_WRITE_AUTH_MESSAGE);
+  return { client, itemId };
 }
 
 export function createSavedCommand(): Command {
@@ -411,6 +431,7 @@ export function createSavedCommand(): Command {
     });
 
   describeCommand(saved.command('remove'), HELP.remove)
+    .option('--item-id <id>', 'Standalone reminder To-do ID (Sa…) from saved list')
     .option('--channel-id <id>', 'Channel ID, URL or name where the message is')
     .option('--timestamp <ts>', 'Message timestamp (1234567890.123456 or p1234567890123456)')
     .option('--permalink <url>', 'Slack message link (replaces --channel-id and --timestamp)')
@@ -422,7 +443,9 @@ export function createSavedCommand(): Command {
       const spinner = ora('Removing saved item...').start();
 
       try {
-        const { client, channelId, timestamp } = await resolveSavedTarget(options, spinner);
+        const target = await resolveRemovalTarget(options, spinner);
+        const { client } = target;
+        const reminder = 'itemId' in target;
         spinner.stop();
 
         if (options.dryRun) {
@@ -430,27 +453,34 @@ export function createSavedCommand(): Command {
             await buildPreview(
               client,
               'remove saved item',
-              { kind: 'message', id: channelId, ts: timestamp },
+              reminder
+                ? { kind: 'reminder', id: target.itemId }
+                : { kind: 'message', id: target.channelId, ts: target.timestamp },
               undefined,
-              { lookupName: true },
+              { lookupName: !reminder },
             ),
             options.json,
           );
           return;
         }
-        if (!(await confirmWrite(`Remove message ${timestamp} in ${channelId} from your Later list?`, options.yes, options.json))) {
+        const prompt = reminder
+          ? `Clear reminder To-do ${target.itemId}?`
+          : `Remove message ${target.timestamp} in ${target.channelId} from your Later list?`;
+        if (!(await confirmWrite(prompt, options.yes, options.json))) {
           // confirmWrite() set the exit code and, under --json, reported the refusal.
           if (!options.json) error('Saved item was not removed');
           return;
         }
 
         spinner.start('Removing saved item...');
-        const result = await removeSavedItem(client, channelId, timestamp);
+        const result = reminder
+          ? await removeSavedReminder(client, target.itemId)
+          : await removeSavedItem(client, target.channelId, target.timestamp);
         spinner.succeed('Removed from your Later list');
         if (options.json) {
           writeJson(result);
         } else {
-          success(`Message timestamp: ${result.ts}`);
+          success('item_id' in result ? `Reminder item: ${result.item_id}` : `Message timestamp: ${result.ts}`);
         }
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to remove saved item' });

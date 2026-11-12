@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import chalk from 'chalk';
 import {
+  formatReminders,
   formatChannelList,
   formatSavedItems,
   warning,
@@ -87,6 +88,39 @@ describe('formatDraftList', () => {
 });
 
 describe('formatSavedItems', () => {
+  it('formats modern and legacy reminders and empty results', () => {
+    expect(formatReminders([])).toBe('No reminders found.');
+    const output = formatReminders([
+      { id: 'Sa0ABC123', source: 'saved', text: 'Take a break', recurring: false, time: 0, todo_state: 'completed' },
+      { id: 'Rm0ABC123', source: 'legacy', text: 'Weekly report', recurring: true },
+    ]);
+    expect(output).toContain('Sa0ABC123  Take a break');
+    expect(output).toContain('no due date [completed]');
+    expect(output).toContain('recurring [pending]');
+  });
+
+  it('renders a standalone reminder with its text, state, saved-item ID and due date', () => {
+    const output = formatSavedItems([{
+      type: 'reminder', item_id: 'Sa0ABC123', text: 'Call the vendor',
+      todo_state: 'to_do', date_due: 1791791400,
+    }], new Map());
+
+    expect(output).toContain('Reminder');
+    expect(output).toContain('Call the vendor');
+    expect(output).toContain('[to_do]');
+    expect(output).toContain('item: Sa0ABC123');
+    expect(output).toContain('due:');
+    expect(output).not.toContain('channel:');
+  });
+
+  it('renders a reminder without text or a due date', () => {
+    const output = formatSavedItems([{ type: 'reminder', item_id: 'Sa0ABC123', date_due: 0 }], new Map());
+
+    expect(output).toContain('item: Sa0ABC123');
+    expect(output).not.toContain('undefined');
+    expect(output).not.toContain('due:');
+  });
+
   it('renders message items with user info', () => {
     const items: SavedItem[] = [{
       type: 'message',

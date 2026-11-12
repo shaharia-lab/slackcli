@@ -325,12 +325,46 @@ export interface AuthLoginBrowserOptions {
   profile?: string;
 }
 
+export interface ReminderRecurrence {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  weekdays?: string[];
+}
+
+export interface ReminderAddInput {
+  text: string;
+  time: string;
+  recurrence?: ReminderRecurrence;
+}
+
+export interface ReminderRecord {
+  id: string;
+  source: 'saved' | 'legacy';
+  text: string;
+  recurring: boolean;
+  time?: number;
+  complete_ts?: number;
+  todo_state?: string;
+  // For a newly created To-do, id is Sa… and reminder_id is Slack's Rm… ID.
+  reminder_id?: string;
+}
+
+export interface SavedReminderUpdate {
+  description?: Array<Record<string, unknown>>;
+  date_due?: number;
+  mark?: 'completed';
+  todo_state?: 'completed';
+}
+
 // Saved items
 export interface SavedItem {
   // Slack's item_type: usually 'message' or 'file', but kept open because the API
   // also returns other kinds (e.g. 'channel').
   type: string;
-  channel_id: string;
+  channel_id?: string;
+  // Standalone reminder To-dos use a saved-item ID (Sa…), not a channel + ts.
+  item_id?: string;
+  text?: string;
+  date_due?: number;
   channel_name?: string;
   message?: SlackMessage;
   date_saved?: number;
@@ -596,7 +630,7 @@ export interface DryRunWorkspace {
 }
 
 export interface DryRunTarget {
-  // channel | user | group_dm | message | draft | usergroup | scheduled_message | emoji | canvas
+  // channel | user | group_dm | message | reminder | draft | usergroup | scheduled_message | emoji | canvas
   kind: string;
   // Absent only when the write creates the target (usergroups create), or when
   // the target is a set of users rather than one id (group_dm uses `ids`).

@@ -2,6 +2,7 @@ import type { SlackClient } from './slack-client.ts';
 import type { SavedItem, SavedItemUpdate, SlackUser } from '../types/index.ts';
 import { InvalidInputError } from './cli-errors.ts';
 import { parseDueTime } from './schedule-time.ts';
+import { extractDraftText } from './drafts.ts';
 
 const PAGE_SIZE = 100;
 // Chunk channel groups so a single messages.list call cannot trip too_many_channels
@@ -131,7 +132,20 @@ async function enrichBrowserItems(
   const otherItems = rawItems.filter((item: any) => item.item_type !== 'message');
 
   for (const item of otherItems) {
-    items.push({ type: item.item_type, channel_id: item.item_id, date_saved: item.date_created } as SavedItem);
+    if (item.item_type === 'reminder') {
+      items.push({
+        type: 'reminder',
+        item_id: item.item_id,
+        text: typeof item.description === 'string'
+          ? item.description
+          : extractDraftText(Array.isArray(item.description) ? item.description : []),
+        date_saved: item.date_created,
+        date_due: item.date_due,
+        todo_state: item.todo_state,
+      });
+    } else {
+      items.push({ type: item.item_type, channel_id: item.item_id, date_saved: item.date_created } as SavedItem);
+    }
   }
 
   if (messageItems.length === 0) {
@@ -235,6 +249,12 @@ export interface RemovedSavedItemResult {
   removed: true;
 }
 
+export interface RemovedSavedReminderResult {
+  item_id: string;
+  item_type: 'reminder';
+  removed: true;
+}
+
 export const SAVED_STATES = ['saved', 'to_do'] as const;
 
 export const COMPLETE_UPDATE: SavedItemUpdate = { mark: 'completed', todo_state: 'completed', date_due: 0 };
@@ -333,4 +353,14 @@ export async function removeSavedItem(
 ): Promise<RemovedSavedItemResult> {
   await client.deleteSavedItem(channelId, timestamp);
   return { channel_id: channelId, ts: timestamp, removed: true };
+}
+
+// A standalone reminder has no message timestamp. Its Sa… ID comes from
+// saved.list; the Rm… ID returned by reminders.add cannot target this row.
+export async function removeSavedReminder(
+  client: Pick<SlackClient, 'deleteSavedReminder'>,
+  itemId: string,
+): Promise<RemovedSavedReminderResult> {
+  await client.deleteSavedReminder(itemId);
+  return { item_id: itemId, item_type: 'reminder', removed: true };
 }

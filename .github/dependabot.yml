@@ -3,17 +3,22 @@ updates:
   # Keep GitHub Actions pinned-by-SHA references up to date. Dependabot
   # rewrites the SHA and the trailing `# vX.Y.Z` version comment together.
   # No auto-merge: every bump is reviewed before it lands (supply-chain guard).
+  # Twice a month, all bumps in one PR: Dependabot has no biweekly interval.
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: cron
+      cronjob: "0 6 1,15 * *"
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
       include: scope
     labels:
       - dependencies
-      - github-actions
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Keep the hash-locked pre-commit version (.github/requirements/) current.
   # Dependabot regenerates the hashes in pre-commit.txt along with the bump,
@@ -21,10 +26,34 @@ updates:
   - package-ecosystem: pip
     directory: /.github/requirements
     schedule:
-      interval: weekly
+      interval: cron
+      cronjob: "0 6 1,15 * *"
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
       include: scope
     labels:
       - dependencies
+    groups:
+      pip:
+        patterns:
+          - "*"
+
+  # The website is not version-tracked (limit 0); this entry only exists so
+  # its security updates arrive as one grouped PR instead of one per package.
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: cron
+      cronjob: "0 6 1,15 * *"
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+    groups:
+      web-security:
+        applies-to: security-updates
+        patterns:
+          - "*"

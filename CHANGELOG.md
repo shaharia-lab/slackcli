@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`slackcli update` works when the temp directory is on another filesystem**: the download was staged under `os.tmpdir()` and moved into place with `rename()`, which fails with `EXDEV` when `/tmp` is a tmpfs or another volume. It is now staged in the binary's own folder. A failed install also puts the previous binary back instead of leaving only `slackcli.backup` behind (#440)
+
 ## [0.19.1] - 2026-11-07
 
 ### Security

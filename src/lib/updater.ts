@@ -11,7 +11,7 @@ import {
   closeSync,
   unlinkSync,
 } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import chalk from 'chalk';
 import { getLogger } from '@logtape/logtape';
@@ -276,31 +276,9 @@ export async function performUpdate(): Promise<void> {
   }
   logger.info('Digest verification passed ({digest})', { digest: asset.digest });
 
-  // mkdtemp creates a fresh 0700 directory and fails rather than reusing an
-  // existing path, so a same-host user cannot pre-create the file we are about
-  // to chmod 0755 and rename over the CLI itself.
-  const tmpDir = await mkdtemp(join(tmpdir(), 'slackcli-update-'));
-  const tmpPath = join(tmpDir, binaryName);
-
-  // Get current binary path
-  const currentBinary = process.execPath;
-
   try {
-    // Write to temp file
-    await writeFile(tmpPath, bytes);
-    await chmod(tmpPath, 0o755);
-
     info(`Installing update...`);
-
-    // Backup current binary
-    const backupPath = `${currentBinary}.backup`;
-    await rename(currentBinary, backupPath);
-
-    // Move new binary to current location
-    await rename(tmpPath, currentBinary);
-
-    // Remove backup
-    await unlink(backupPath);
+    await installBinary(process.execPath, bytes, binaryName);
 
     // Keep the notifier's cache in step with what is now installed, so the
     // next run does not announce an update from a stale cached check.
@@ -310,11 +288,62 @@ export async function performUpdate(): Promise<void> {
     success(`Updated to version ${latestVersion}`);
     info('Please restart slackcli to use the new version');
   } catch (error: any) {
-    // Try to restore from backup if it exists
     logger.error('Self-update install failed: {error}', {
       error: errorMessageForLog(error),
     });
     logError(`Update failed: ${error.message}`);
+    throw error;
+  }
+}
+
+type RenameFn = (from: string, to: string) => Promise<void>;
+
+// Replace the binary at `currentBinary` with `bytes`. `renameFile` is a test
+// seam for making a rename fail; the CLI always uses fs.rename.
+export async function installBinary(
+  currentBinary: string,
+  bytes: Uint8Array,
+  binaryName: string,
+  renameFile: RenameFn = rename,
+): Promise<void> {
+  // Stage next to the binary, not in os.tmpdir(): rename() cannot cross
+  // filesystems, and a tmpfs /tmp made every update fail with EXDEV (#440).
+  // mkdtemp creates a fresh 0700 directory and fails rather than reusing an
+  // existing path, so a same-host user cannot pre-create the file we are about
+  // to chmod 0755 and rename over the CLI itself.
+  const tmpDir = await mkdtemp(join(dirname(currentBinary), '.slackcli-update-'));
+  const tmpPath = join(tmpDir, binaryName);
+  const backupPath = `${currentBinary}.backup`;
+  // Restore only what this run moved aside: a stale .backup from an earlier
+  // failed run must never be moved over a binary that was not touched.
+  let movedAside = false;
+  let installed = false;
+
+  try {
+    await writeFile(tmpPath, bytes);
+    await chmod(tmpPath, 0o755);
+
+    await renameFile(currentBinary, backupPath);
+    movedAside = true;
+    await renameFile(tmpPath, currentBinary);
+    installed = true;
+
+    await unlink(backupPath);
+  } catch (error) {
+    if (movedAside && !installed) {
+      try {
+        await renameFile(backupPath, currentBinary);
+        logger.info('Self-update: restored the previous binary');
+      } catch (restoreError) {
+        logger.error('Self-update could not restore the previous binary: {error}', {
+          error: errorMessageForLog(restoreError),
+        });
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)} ` +
+            `(the previous binary is at ${backupPath}; move it back to ${currentBinary})`,
+        );
+      }
+    }
     throw error;
   } finally {
     await rm(tmpDir, { recursive: true, force: true });

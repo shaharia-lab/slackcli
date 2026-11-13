@@ -12,6 +12,7 @@ import {
   quoteCommand,
   getCurrentVersion,
   notifyIfUpdateAvailable,
+  installBinary,
   performUpdate,
   setUpdateCacheDirForTesting,
   BACKGROUND_CHECK_TIMEOUT_MS,
@@ -19,10 +20,10 @@ import {
   verifyAssetDigest,
 } from './updater.ts';
 import { createHash } from 'crypto';
-import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import packageJson from '../../package.json';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import { configureLogging } from './logger.ts';
@@ -553,17 +554,16 @@ describe('performUpdate integrity check', () => {
     expect(await readFile(installed, 'utf-8')).toBe('THE BINARY THAT IS ALREADY INSTALLED');
   });
 
-  it('installs bytes that match, and leaves no temp directory behind', async () => {
-    const { installed } = await fakeInstall();
+  it('installs bytes that match, and leaves nothing behind in the install folder', async () => {
+    const { dir, installed } = await fakeInstall();
     const payload = new TextEncoder().encode('THE NEW BINARY');
     stubRelease(payload, `sha256:${createHash('sha256').update(payload).digest('hex')}`);
 
-    const before = (await readdir(tmpdir())).filter(n => n.startsWith('slackcli-update-'));
     await performUpdate();
-    const after = (await readdir(tmpdir())).filter(n => n.startsWith('slackcli-update-'));
 
     expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
-    expect(after).toHaveLength(before.length);
+    // No staging directory and no .backup left next to the binary.
+    expect(await readdir(dir)).toEqual(['slackcli']);
   });
 
   describe('logging', () => {
@@ -612,6 +612,109 @@ describe('performUpdate integrity check', () => {
     const cache = JSON.parse(await readFile(join(cacheDir, 'update-check.json'), 'utf-8'));
     expect(cache.latestVersion).toBe('v99.0.0');
     expect(cache.checkedAt).toBeGreaterThanOrEqual(startedAt);
+  });
+});
+
+describe('installBinary', () => {
+  const dirs: string[] = [];
+  const NEW = new TextEncoder().encode('THE NEW BINARY');
+  const OLD = 'THE BINARY THAT IS ALREADY INSTALLED';
+
+  afterEach(async () => {
+    for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  });
+
+  async function install(): Promise<{ dir: string; installed: string }> {
+    const dir = await mkdtemp(join(tmpdir(), 'slackcli-installed-'));
+    dirs.push(dir);
+    const installed = join(dir, 'slackcli');
+    await writeFile(installed, OLD);
+    return { dir, installed };
+  }
+
+  // A rename that fails on the `failAt`-th call (1-based) and records every call.
+  function failingRename(failAt: number[], calls: Array<[string, string]> = []) {
+    return async (from: string, to: string) => {
+      calls.push([from, to]);
+      if (failAt.includes(calls.length)) {
+        throw Object.assign(new Error('EXDEV: cross-device link not permitted'), { code: 'EXDEV' });
+      }
+      await rename(from, to);
+    };
+  }
+
+  it('stages the download in the install folder, not the system temp directory', async () => {
+    const { dir, installed } = await install();
+    const calls: Array<[string, string]> = [];
+
+    await installBinary(installed, NEW, 'slackcli-linux', failingRename([], calls));
+
+    // The move into place starts from a staging dir inside the install folder,
+    // so it never crosses a filesystem boundary.
+    const [, move] = calls;
+    expect(move[1]).toBe(installed);
+    expect(dirname(dirname(move[0]))).toBe(dir);
+    expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
+    expect(await readdir(dir)).toEqual(['slackcli']);
+  });
+
+  it('puts the previous binary back when the move into place fails', async () => {
+    const { dir, installed } = await install();
+
+    await expect(installBinary(installed, NEW, 'slackcli-linux', failingRename([2]))).rejects.toThrow(/EXDEV/);
+
+    expect(await readFile(installed, 'utf-8')).toBe(OLD);
+    expect(await readdir(dir)).toEqual(['slackcli']);
+  });
+
+  it('says where the previous binary is when it cannot be put back', async () => {
+    const { dir, installed } = await install();
+
+    const failure = installBinary(installed, NEW, 'slackcli-linux', failingRename([2, 3]));
+
+    await expect(failure).rejects.toThrow(/EXDEV/);
+    await expect(failure).rejects.toThrow(`the previous binary is at ${installed}.backup`);
+    expect(await readFile(`${installed}.backup`, 'utf-8')).toBe(OLD);
+    expect(await readdir(dir)).toEqual(['slackcli.backup']);
+  });
+
+  it('leaves the binary untouched when moving it aside fails', async () => {
+    const { installed } = await install();
+    const calls: Array<[string, string]> = [];
+
+    await expect(installBinary(installed, NEW, 'slackcli-linux', failingRename([1], calls))).rejects.toThrow(/EXDEV/);
+
+    expect(calls).toHaveLength(1);
+    expect(await readFile(installed, 'utf-8')).toBe(OLD);
+  });
+
+  it('never restores a stale .backup left by an earlier failed run', async () => {
+    const { installed } = await install();
+    await writeFile(`${installed}.backup`, 'A STALE BACKUP');
+    const calls: Array<[string, string]> = [];
+
+    await expect(installBinary(installed, NEW, 'slackcli-linux', failingRename([1], calls))).rejects.toThrow(/EXDEV/);
+
+    expect(calls).toHaveLength(1);
+    expect(await readFile(installed, 'utf-8')).toBe(OLD);
+  });
+
+  it('replaces a stale .backup and installs the new binary', async () => {
+    const { dir, installed } = await install();
+    await writeFile(`${installed}.backup`, 'A STALE BACKUP');
+
+    await installBinary(installed, NEW, 'slackcli-linux');
+
+    expect(await readFile(installed, 'utf-8')).toBe('THE NEW BINARY');
+    expect(await readdir(dir)).toEqual(['slackcli']);
+  });
+
+  it.skipIf(process.platform === 'win32')('installs the new binary as executable', async () => {
+    const { installed } = await install();
+
+    await installBinary(installed, NEW, 'slackcli-linux');
+
+    expect((await stat(installed)).mode & 0o777).toBe(0o755);
   });
 });
 

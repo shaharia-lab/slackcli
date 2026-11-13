@@ -108,6 +108,10 @@ prompt.
 - Credentials land in `~/.config/slackcli/workspaces.json` (mode `0600`); the
   profile directory is `0700` on macOS and Linux (Windows uses ACL defaults).
 
+SlackCLI also records the browser's User-Agent and sends it with every request
+on these workspaces, so Slack sees the session used by the browser it belongs to
+(see [why the User-Agent matters](#why-slackcli-reuses-your-browsers-user-agent)).
+
 Partial success is still success: if one captured workspace has a stale token,
 the others are still saved and the failure is reported.
 
@@ -140,7 +144,8 @@ cat curl-command.txt | slackcli auth parse-curl --login
 ```
 
 This extracts the workspace URL and name, the `xoxd` token from the cookie
-header, and the `xoxc` token from the request body. Drop `--login` to print what
+header, the `xoxc` token from the request body, and the browser's `User-Agent`
+header, which SlackCLI then sends with every request on that workspace. Drop `--login` to print what
 was found without saving it: the workspace, and whether each token was found and
 how long it is. Token values are never printed, not even in part.
 
@@ -150,6 +155,19 @@ scrollback, and never paste one into an issue, a chat or a log.
 
 Clipboard reading uses `pbpaste` on macOS, PowerShell on Windows, and
 `xclip`/`xsel` on Linux — install one of those if the clipboard path fails.
+
+### Why SlackCLI reuses your browser's User-Agent
+
+Browser tokens belong to one browser session. If the same session suddenly
+calls Slack from a client with a different User-Agent, workspaces with stricter
+session security can treat it as a stolen session and sign you out everywhere,
+desktop app included. So `login-auto` and `parse-curl` store the browser's
+User-Agent with the workspace (it is not a secret) and reuse it on every API
+call and file download.
+
+Workspaces saved before this was added, and ones added with `login-browser`,
+send SlackCLI's own User-Agent. If Slack signs you out after using SlackCLI, log
+in again with `login-auto` or `parse-curl` to pick up your browser's.
 
 ## 4. Browser session tokens by hand
 

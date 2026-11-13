@@ -279,7 +279,8 @@ async function loginWithParsedTokens(parsed: ParsedCurlResult, secretBackend: Se
       parsed.workspaceUrl,
       parsed.workspaceName,
       undefined,
-      secretBackend
+      secretBackend,
+      parsed.userAgent
     );
     spinner.succeed('Authentication successful!');
     success(`Authenticated as workspace: ${config.workspace_name}`);

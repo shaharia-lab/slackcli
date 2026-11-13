@@ -417,6 +417,8 @@ interface FakeOptions {
   requests?: Array<{ url: string; postData?: string }>;
   cookies?: Array<{ name?: string; domain?: string; value?: string }>;
   localConfig?: string | null;
+  /** What `navigator.userAgent` evaluates to in the page. */
+  userAgent?: unknown;
   throwOn?: string;
   /** Every command starts failing after this many calls — a browser the user
    *  closed mid-capture. */
@@ -464,6 +466,9 @@ function makeFakeSession(options: FakeOptions = {}): CdpSession {
         // localStorage read should yield a config payload.
         if (expression.includes('localConfig_v2')) {
           return { result: { value: options.localConfig ?? undefined } } as T;
+        }
+        if (expression === 'navigator.userAgent') {
+          return { result: { value: options.userAgent } } as T;
         }
         return { result: { value: 1 } } as T;
       }
@@ -530,6 +535,57 @@ describe('captureSlackTokens', () => {
     expect(result.xoxd).toBe('xoxd-session-abc');
     expect(result.workspaces).toHaveLength(1);
     expect(result.workspaces[0].workspaceUrl).toBe('https://alpha.slack.com');
+  });
+
+  it("returns the page's User-Agent so the session's browser is replayed", async () => {
+    const session = makeFakeSession({
+      requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+      cookies: SLACK_COOKIES,
+      userAgent: '  Mozilla/5.0 (X11; Linux x86_64) Chrome/142.0.0.0 Safari/537.36 ',
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.userAgent).toBe('Mozilla/5.0 (X11; Linux x86_64) Chrome/142.0.0.0 Safari/537.36');
+  });
+
+  it('omits the User-Agent when the page reports an unusable one', async () => {
+    for (const userAgent of [undefined, 42, '', 'Mozilla/5.0\r\nX-Injected: 1']) {
+      const session = makeFakeSession({
+        requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+        cookies: SLACK_COOKIES,
+        userAgent,
+      });
+
+      const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect('userAgent' in result).toBe(false);
+    }
+  });
+
+  it('still succeeds when reading the User-Agent fails', async () => {
+    const base = makeFakeSession({
+      requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+      cookies: SLACK_COOKIES,
+    });
+    const session: CdpSession = {
+      ...base,
+      async send<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+        if (params?.expression === 'navigator.userAgent') throw new Error('context destroyed');
+        return base.send<T>(method, params);
+      },
+    };
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.userAgent).toBeUndefined();
+    expect(result.workspaces).toHaveLength(1);
   });
 
   it('unions intercepted workspaces with those only in localConfig', async () => {
@@ -715,6 +771,8 @@ describe('captureSlackTokens', () => {
           return { cookies: script.cookies ?? SLACK_COOKIES } as T;
         }
         if (method !== 'Runtime.evaluate') return {} as T;
+        // Read once after capture succeeds; not a liveness probe.
+        if (params?.expression === 'navigator.userAgent') return { result: {} } as T;
         if (!String(params?.expression ?? '').includes('localConfig_v2')) {
           stats.probes += 1;
           if (script.failingProbes?.includes(stats.probes)) {

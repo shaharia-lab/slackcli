@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { parseCurlCommand, CurlParseError, looksLikeCurlCommand, extractSlackWorkspaceName } from './curl-parser';
+import {
+  parseCurlCommand,
+  CurlParseError,
+  looksLikeCurlCommand,
+  extractSlackWorkspaceName,
+  extractUserAgent,
+} from './curl-parser';
 
 // Sample cURL command with anonymized tokens (based on real Slack API request format)
 const SAMPLE_CURL_COMMAND = `curl 'https://myworkspace.slack.com/api/conversations.view?_x_id=noversion-1770041775.173&_x_version_ts=1770035254&_x_frontend_build_type=current&_x_desktop_ia=4&_x_gantry=true&fp=66&_x_num_retries=0' \\
@@ -288,6 +294,56 @@ describe('parseCurlCommand', () => {
         expect(result.xoxc).toMatch(/^xoxc-/);
       }
     });
+  });
+});
+
+describe('extractUserAgent', () => {
+  const CHROME_UA =
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
+
+  it('reads the lowercase header DevTools copies', () => {
+    expect(extractUserAgent(SAMPLE_CURL_COMMAND)).toBe(CHROME_UA);
+  });
+
+  it('reads a capitalised, double-quoted header', () => {
+    expect(extractUserAgent(`curl "https://a.slack.com/api/x" -H "User-Agent: ${CHROME_UA}"`)).toBe(CHROME_UA);
+  });
+
+  it('reads a --header flag', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' --header 'user-agent: ${CHROME_UA}'`)).toBe(CHROME_UA);
+  });
+
+  it("reads curl's -A and --user-agent flags", () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -A '${CHROME_UA}'`)).toBe(CHROME_UA);
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' --user-agent "${CHROME_UA}"`)).toBe(CHROME_UA);
+  });
+
+  it('returns undefined when the command has no User-Agent', () => {
+    expect(extractUserAgent(CURL_WITH_COOKIE_HEADER)).toBeUndefined();
+  });
+
+  it('does not take other headers for the User-Agent', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H 'x-user-agent-hint: nope'`)).toBeUndefined();
+  });
+
+  it('refuses a value carrying a raw newline', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H 'user-agent: Mozilla/5.0\r\nX-Injected: 1'`)).toBeUndefined();
+  });
+
+  it('returns quickly on a long run of whitespace after the header name', () => {
+    const start = performance.now();
+    expect(extractUserAgent(`curl -H 'user-agent:${' '.repeat(50_000)}`)).toBeUndefined();
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+});
+
+describe('parseCurlCommand user agent', () => {
+  it('includes the User-Agent when the command has one', () => {
+    expect(parseCurlCommand(SAMPLE_CURL_COMMAND).userAgent).toContain('Chrome/144.0.0.0');
+  });
+
+  it('leaves the field out when the command has none', () => {
+    expect('userAgent' in parseCurlCommand(CURL_WITH_COOKIE_HEADER)).toBe(false);
   });
 });
 

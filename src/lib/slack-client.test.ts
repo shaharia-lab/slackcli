@@ -509,6 +509,26 @@ describe('SlackClient.fetchFile', () => {
     expect(requests[0]!.headers.get('Cookie')).toBe('d=xoxd-a%2Fb%2Bc%3D');
   });
 
+  it("sends the browser workspace's stored User-Agent, or the default without one", async () => {
+    const requests = scriptFetch([ok(), ok()]);
+    const config = {
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser' as const,
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      workspace_url: 'https://example.slack.com',
+    };
+
+    await new SlackClient({ ...config, user_agent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/142.0.0.0' }).fetchFile(FILE_URL);
+    await new SlackClient(config).fetchFile(FILE_URL);
+
+    expect(requests.map((r) => r.headers.get('User-Agent'))).toEqual([
+      'Mozilla/5.0 (X11; Linux x86_64) Chrome/142.0.0.0',
+      'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
+    ]);
+  });
+
   it('drops bearer credentials on an off-Slack hop and restores them when a later hop returns to Slack', async () => {
     const requests = scriptFetch([
       redirectTo('https://downloads.example.com/signed/file.txt'),

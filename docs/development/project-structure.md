@@ -61,7 +61,8 @@ They hold no Slack API knowledge.
 | `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. Owns `slackWorkspaceOrigin()` / `isSlackWorkspaceUrl()`, the one check on where browser credentials may be sent. |
 | `browser-launcher.ts` | Finds and launches a local Chromium-family browser; owns the profile directory. |
 | `cdp-client.ts` | Minimal Chrome DevTools Protocol client over Bun's WebSocket. |
-| `curl-parser.ts` | Extracts tokens from a DevTools cURL command. |
+| `curl-parser.ts` | Extracts tokens, and the browser's `User-Agent`, from a DevTools cURL command. |
+| `user-agent.ts` | The User-Agent a browser-auth workspace sends: `sanitizeUserAgent()` (printable ASCII only, so a captured value cannot inject a header) and `browserUserAgent()` (the stored value, or the historical default). |
 | `curl-input.ts` | Resolves `auth parse-curl`'s input source (argument → `--from-clipboard` → piped stdin → interactive prompt) into a typed result; clipboard, stdin and TTY are injectable for tests. |
 | `slack-url-parser.ts` | Slack URL / permalink / timestamp normalisation. |
 | `name-resolver.ts` | Channel names (`#general`) and user handles / emails → IDs. `parseNameReference()` is pure, so an ID or URL never reaches Slack; `resolveIdentifier()` is the per-argument entry point commands call after `slack-url-parser.ts` (it also drops the `@`/`#` from a prefixed ID), and `resolveUserList()` resolves a `<users...>` list with one shared `users.list` scan. Exact, case-insensitive matches only; nothing found throws `NotFoundError`, several matches `InvalidInputError`. `lazyClient()` lets write commands create a client only when a lookup needs one, so their no-auth confirmation refusal is unchanged. |

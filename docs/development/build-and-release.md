@@ -257,7 +257,7 @@ same.
 
 ## The self-updater
 
-`src/lib/updater.ts` backs `slackcli update`. Four behaviours worth knowing
+`src/lib/updater.ts` backs `slackcli update`. Five behaviours worth knowing
 before you change it:
 
 - It **fails closed** on verification: the release asset's digest must be a
@@ -277,6 +277,14 @@ before you change it:
   there ignores folder ACLs and always reports a folder writable. Tests make a
   folder unwritable with `chmod 0o555` and skip those cases as root or on
   Windows, where mode bits do not apply.
+- `installBinary()` **stages the download next to the binary** (a `mkdtemp`
+  `.slackcli-update-*` folder in the install folder, not `os.tmpdir()`), because
+  `rename()` cannot cross filesystems and a tmpfs `/tmp` made every update fail
+  with `EXDEV` (#440). It moves the old binary to `<binary>.backup`, moves the
+  new one into place, then deletes the backup. If the move into place fails it
+  puts the old binary back, but only when this run moved it aside, so a stale
+  `.backup` from an earlier run is never restored. Tests make a rename fail
+  through its `renameFile` seam.
 - The background check runs at most every 24 hours, caches to
   `~/.config/slackcli/update-check.json`, and prints its notice to **stderr** on
   `beforeExit` — so it never contaminates `--json` on stdout. Its GitHub lookup

@@ -88,6 +88,8 @@ jobs:
           security set-keychain-settings "$keychain"
           security unlock-keychain -p "$password" "$keychain"
           security default-keychain -d user -s "$keychain"
+          # Reads and deletes search the search list, not the default keychain.
+          security list-keychains -d user -s "$keychain"
 
       - name: Run Keychain tests
         env:

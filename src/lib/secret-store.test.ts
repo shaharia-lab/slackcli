@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { resetSync, type LogRecord } from '@logtape/logtape';
 import { configureLogging } from './logger.ts';
 import {
@@ -284,17 +287,19 @@ describe('FileSecretStore', () => {
 
 describe('MacOSKeychainSecretStore', () => {
   // A fake `security` CLI: scripted responses per call, and records every
-  // invocation so tests can assert on the exact argv used.
+  // invocation so tests can assert on the exact argv and stdin used.
   function fakeRunner(script: SecurityCliResult[]) {
     const calls: string[][] = [];
+    const inputs: Array<string | undefined> = [];
     let i = 0;
-    const run = async (args: string[]) => {
+    const run = async (args: string[], input?: string) => {
       calls.push(args);
+      inputs.push(input);
       const result = script[Math.min(i, script.length - 1)];
       i++;
       return result;
     };
-    return { run, calls };
+    return { run, calls, inputs };
   }
 
   const ok = (stdout = ''): SecurityCliResult => ({ code: 0, stdout, stderr: '' });
@@ -316,10 +321,93 @@ describe('MacOSKeychainSecretStore', () => {
   });
 
   it('writes with -U so a refresh updates in place rather than failing "already exists"', async () => {
-    const { run, calls } = fakeRunner([ok()]);
+    const { run, calls, inputs } = fakeRunner([ok()]);
     const store = new MacOSKeychainSecretStore(run, 'darwin');
     await store.set('T1:token', 'xoxb-new');
-    expect(calls[0]).toEqual(['add-generic-password', '-a', 'T1:token', '-s', 'slackcli', '-w', 'xoxb-new', '-U']);
+    expect(calls[0]).toEqual(['-i']);
+    expect(inputs[0]).toBe('add-generic-password -a "T1:token" -s slackcli -w "xoxb-new" -U\n');
+  });
+
+  it('passes the secret on stdin, never in argv (#515)', async () => {
+    const { run, calls, inputs } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    const xoxd = 'xoxd-a%2Fb%2Bc%3D%3D/+=';
+    await store.set('work:xoxd', xoxd);
+    expect(calls[0].some((arg) => arg.includes('xoxd-'))).toBe(false);
+    // The xoxd alphabet needs no escaping inside double quotes.
+    expect(inputs[0]).toContain(`-w "${xoxd}" -U`);
+  });
+
+  it('escapes backslashes and double quotes so the parser reads the exact value back', async () => {
+    const { run, inputs } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    await store.set('my "team" profile:token', 'a\\b"c d\'e');
+    expect(inputs[0]).toBe(
+      'add-generic-password -a "my \\"team\\" profile:token" -s slackcli -w "a\\\\b\\"c d\'e" -U\n',
+    );
+  });
+
+  it('passes a non-ASCII profile key through unchanged', async () => {
+    const { run, inputs } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    await store.set('équipe:token', 'xoxb-1');
+    expect(inputs[0]).toContain('-a "équipe:token"');
+  });
+
+  it.each([
+    ['a line feed', 'xoxb-a\nadd-generic-password -a x -s y -w z'],
+    ['a carriage return', 'xoxb-a\rb'],
+    ['a NUL', 'xoxb-a\0b'],
+    ['a tab', 'xoxb-a\tb'],
+    ['non-ASCII text', 'xoxb-équipe'],
+  ])('refuses a value containing %s without running the CLI', async (_label, value) => {
+    const { run, calls } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    const err = await store.set('T1:token', value).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain('outside printable ASCII');
+    expect(err.message).not.toContain(value);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a profile key containing a line break without running the CLI', async () => {
+    const { run, calls } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    await expect(store.set('evil\nprofile:token', 'xoxb-1')).rejects.toThrow('line break or NUL');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a command line security -i would split, and accepts one just under the limit', async () => {
+    const { run, calls } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    const overhead = 'add-generic-password -a "T1:token" -s slackcli -w "" -U'.length;
+    const tooLong = 'x'.repeat(4095 - overhead);
+    const err = await store.set('T1:token', tooLong).catch((e) => e);
+    expect(err.message).toContain('too long');
+    expect(err.message).not.toContain(tooLong);
+    expect(calls).toHaveLength(0);
+
+    await store.set('T1:token', 'x'.repeat(4094 - overhead));
+    expect(calls).toHaveLength(1);
+  });
+
+  it('counts the line limit in bytes, not characters', async () => {
+    const { run, calls } = fakeRunner([ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    const key = 'é:token';
+    const overhead = Buffer.byteLength(`add-generic-password -a "${key}" -s slackcli -w "" -U`);
+    // The key's two-byte character puts this one byte over the limit, though
+    // it is one character under it.
+    await expect(store.set(key, 'x'.repeat(4095 - overhead))).rejects.toThrow('too long');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reads and deletes without sending anything on stdin', async () => {
+    const { run, inputs } = fakeRunner([ok('v'), ok()]);
+    const store = new MacOSKeychainSecretStore(run, 'darwin');
+    await store.get('T1:token');
+    await store.delete('T1:token');
+    expect(inputs).toEqual([undefined, undefined]);
   });
 
   it('treats deleting an absent item as success', async () => {
@@ -366,6 +454,38 @@ describe('runSecurityCli (the real, non-injected default)', () => {
   it('is exported as a plain function, so a caller can spawn the real "security" CLI', async () => {
     const { runSecurityCli } = await import('./secret-store.ts');
     expect(typeof runSecurityCli).toBe('function');
+  });
+
+  // A stand-in `security` on PATH proves the real spawn wiring: argv and stdin
+  // arrive separately, and the exit code and output come back.
+  describe.skipIf(process.platform === 'win32')('with a stand-in security binary', () => {
+    const originalPath = process.env.PATH;
+    let binDir = '';
+
+    beforeEach(() => {
+      binDir = mkdtempSync(join(tmpdir(), 'slackcli-security-'));
+      const script = join(binDir, 'security');
+      writeFileSync(script, '#!/bin/sh\necho "argv:$*"\ncat >&2\nexit 7\n');
+      chmodSync(script, 0o700);
+      process.env.PATH = `${binDir}:${originalPath}`;
+    });
+
+    afterEach(() => {
+      process.env.PATH = originalPath;
+      rmSync(binDir, { recursive: true, force: true });
+    });
+
+    it('writes input to stdin, not argv, and returns the exit code and output', async () => {
+      const { runSecurityCli } = await import('./secret-store.ts');
+      const result = await runSecurityCli(['-i'], 'add-generic-password -w "s3cret"\n');
+      expect(result).toEqual({ code: 7, stdout: 'argv:-i', stderr: 'add-generic-password -w "s3cret"' });
+    });
+
+    it('closes stdin when there is no input', async () => {
+      const { runSecurityCli } = await import('./secret-store.ts');
+      const result = await runSecurityCli(['find-generic-password']);
+      expect(result).toEqual({ code: 7, stdout: 'argv:find-generic-password', stderr: '' });
+    });
   });
 });
 

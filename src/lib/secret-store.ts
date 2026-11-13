@@ -227,11 +227,14 @@ export class FileSecretStore implements SecretStore {
 // MacOSKeychainSecretStore: shells out to the macOS `security` CLI rather than
 // adding an FFI binding to Security.framework — the same trade-off
 // cdp-client.ts made against Playwright, to stay inside the 150MB CI binary
-// budget with no extra dependency. `security add-generic-password -w <value>`
-// has no way to pass the secret except as an argv element, so it is briefly
-// visible to other processes on the same host via `ps`; that is a known,
-// documented limitation of the shell-out approach (see docs/user-guide), not
-// an oversight. Every item is stored under service "slackcli", account
+// budget with no extra dependency. It also keeps /usr/bin/security, a stable
+// Apple-signed binary, as the app every item trusts, so a self-update of our
+// ad-hoc-signed binary never triggers a new Keychain prompt.
+//
+// A write never puts the secret in argv (#515): `security -i` reads the
+// `add-generic-password` command line from stdin instead, so `ps` sees only
+// `security -i`. Reads and deletes carry no secret and pass plain argv. Every
+// item is stored under service "slackcli", account
 // `<profile key>:<token|xoxc|xoxd>` (secretKey()).
 // ---------------------------------------------------------------------------
 
@@ -246,14 +249,19 @@ export interface SecurityCliResult {
   stderr: string;
 }
 
-// Runs the `security` CLI with the given arguments. Injectable so tests never
-// need a real macOS keychain — see cdp-client.test.ts for the same pattern
-// applied to an untestable transport.
-export type SecurityCliRunner = (args: string[]) => Promise<SecurityCliResult>;
+// Runs the `security` CLI with the given arguments, writing `input` (if any) to
+// its stdin and then closing it. Injectable so tests never need
+// a real macOS keychain — see cdp-client.test.ts for the same pattern applied
+// to an untestable transport.
+export type SecurityCliRunner = (args: string[], input?: string) => Promise<SecurityCliResult>;
 
-export const runSecurityCli: SecurityCliRunner = (args) =>
+export const runSecurityCli: SecurityCliRunner = (args, input) =>
   new Promise((resolve) => {
-    const proc = spawn('security', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn('security', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    // A spawn failure surfaces through proc's 'error' below; this only stops
+    // the matching EPIPE on stdin from being thrown as unhandled.
+    proc.stdin.on('error', () => {});
+    proc.stdin.end(input ?? '');
     let stdout = '';
     let stderr = '';
 
@@ -272,6 +280,52 @@ export const runSecurityCli: SecurityCliRunner = (args) =>
       resolve({ code: code ?? -1, stdout: stdout.trim(), stderr: stderr.trim() });
     });
   });
+
+// `security -i` reads each command line into a fixed 4096-byte buffer and runs
+// whatever overflows it as a further command, so a line must fit with room for
+// its terminating newline (SecurityTool/macOS/security.c, MAX_LINE_LEN).
+const SECURITY_MAX_LINE_BYTES = 4095;
+
+// Quote one argument for the `security -i` line parser (split_line() in
+// SecurityTool/macOS/security.c): inside double quotes, a backslash makes the
+// next byte literal, so escaping `\` and `"` is enough. A line break would end
+// the command early and a NUL would truncate it, so both are refused rather
+// than encoded.
+function quoteSecurityArg(arg: string, what: string): string {
+  if (/[\0\n\r]/.test(arg)) {
+    throw new Error(`Cannot store ${what} in the Keychain: it contains a line break or NUL character`);
+  }
+  return `"${arg.replace(/[\\"]/g, (ch) => `\\${ch}`)}"`;
+}
+
+// `security find-generic-password -w` prints a value as hex as soon as it holds
+// a byte outside printable ASCII, so such a value could be written but never
+// read back as itself. Slack credentials are printable ASCII; anything else is
+// refused at write time instead of being silently corrupted on read.
+function assertPrintableAscii(value: string, key: string): void {
+  if (!/^[\x20-\x7e]*$/.test(value)) {
+    throw new Error(
+      `Cannot store the value for "${key}" in the Keychain: it contains a character outside printable ASCII`,
+    );
+  }
+}
+
+// The stdin line `security -i` runs for a write. -U updates an existing item in
+// place rather than failing with "already exists" (needed for token refresh).
+function addGenericPasswordLine(key: string, value: string): string {
+  assertPrintableAscii(value, key);
+  const line = [
+    'add-generic-password',
+    '-a', quoteSecurityArg(key, `"${key}"`),
+    '-s', KEYCHAIN_SERVICE,
+    '-w', quoteSecurityArg(value, `the value for "${key}"`),
+    '-U',
+  ].join(' ');
+  if (Buffer.byteLength(line, 'utf8') >= SECURITY_MAX_LINE_BYTES) {
+    throw new Error(`Cannot store the value for "${key}" in the Keychain: it is too long`);
+  }
+  return `${line}\n`;
+}
 
 function isNotFound(result: SecurityCliResult): boolean {
   return result.code === SEC_ITEM_NOT_FOUND || /could not be found/i.test(result.stderr);
@@ -340,11 +394,9 @@ export class MacOSKeychainSecretStore implements SecretStore {
 
   async set(key: string, value: string): Promise<void> {
     this.assertAvailable();
-    // -U: update in place if an entry for this service+account already exists,
-    // rather than failing with "already exists" (needed for token refresh).
-    const result = await this.run([
-      'add-generic-password', '-a', key, '-s', KEYCHAIN_SERVICE, '-w', value, '-U',
-    ]);
+    // The secret goes through stdin, never argv (#515). `security -i` exits
+    // with the status of the last command it ran, which is this one.
+    const result = await this.run(['-i'], addGenericPasswordLine(key, value));
     if (result.code !== 0) throw keychainError(result, `write "${key}"`);
   }
 

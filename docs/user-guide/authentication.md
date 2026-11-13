@@ -445,12 +445,13 @@ any point leaves the original untouched, so it is always safe to re-run.
   add/find/delete-generic-password`, service `slackcli`) rather than an FFI
   binding to Security.framework — the same trade-off `cdp-client.ts` makes
   against Playwright, to avoid a new dependency and stay inside the 150MB
-  binary budget. One consequence: `security add-generic-password -w <value>`
-  has no way to pass the secret except as a command-line argument, so it is
-  briefly visible to other processes on the same host via `ps` while the write
-  is in flight (not persisted, not logged, but not hidden from a concurrently
-  running `ps` either). Keychain access itself may prompt for the login
-  password or Touch ID, per your Keychain Access settings for the item.
+  binary budget. A write sends the credential to `security -i` on stdin, so it
+  never appears in a command line that `ps` or a process-auditing tool could
+  see. Keychain access itself may prompt for the login password or Touch ID,
+  per your Keychain Access settings for the item.
+- The Keychain backend only stores credentials made of printable ASCII and no
+  longer than about 4,000 bytes, and refuses a profile name containing a line
+  break or NUL character. Every Slack token fits.
 - The Keychain is not a sandbox against another process running as your user —
   it protects credentials at rest (other users, backups, casual file
   inspection, syncing tools that read `~/.config`), not against something else

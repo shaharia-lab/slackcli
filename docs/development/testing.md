@@ -103,13 +103,19 @@ Nothing outside `*.test.ts` imports these, so the binary has no bypass.
 **No network, no real Slack, no live credentials.** Tests must pass offline on a
 machine that has never authenticated.
 
+**The one opt-in exception is the macOS Keychain.** `secret-store.keychain.test.ts`
+round-trips real items through the `security` CLI, so it is skipped unless the
+platform is macOS and `SLACKCLI_KEYCHAIN_TESTS=1` is set. It writes to the
+default keychain under run-unique account names and deletes them afterwards.
+
 ## CI
 
 Three workflows exercise tests:
 
 - **Tests** (`test.yml`) — `unit-tests` runs `bun test`; `integration-tests`
   builds the binary and smoke-tests `--help` and `--version` on the real
-  artefact.
+  artefact; `keychain-tests` runs the Keychain tests on `macos-latest` against
+  a throwaway default keychain.
 - **CI** (`ci.yml`) — lints workflow files with `actionlint`, then type-checks,
   builds, verifies the binary runs, and enforces the 150 MB size budget.
 - **SonarQube Cloud** (`sonar.yml`) — runs

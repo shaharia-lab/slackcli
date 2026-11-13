@@ -2047,6 +2047,53 @@ describe('SlackClient standard-path transport failures', () => {
   });
 });
 
+describe('SlackClient.listSavedItems (#438)', () => {
+  function clientFor(authType: 'browser' | 'standard'): { client: SlackClient; request: ReturnType<typeof spyOn> } {
+    const client = new SlackClient(authType === 'browser'
+      ? {
+        workspace_id: 'T123',
+        workspace_name: 'Test Workspace',
+        auth_type: 'browser',
+        xoxd_token: 'xoxd-test',
+        xoxc_token: 'xoxc-test',
+        workspace_url: 'https://example.slack.com',
+      }
+      : { workspace_id: 'T123', workspace_name: 'Test Workspace', auth_type: 'standard', token: 'xoxb-test', token_type: 'bot' });
+    const request = spyOn(client, 'request').mockResolvedValue({ ok: true });
+    return { client, request };
+  }
+
+  it('sends the page size to saved.list as limit, since Slack ignores count', async () => {
+    const { client, request } = clientFor('browser');
+    await client.listSavedItems({ count: 20, cursor: 'abc' });
+    expect(request).toHaveBeenCalledWith('saved.list', { limit: 20, cursor: 'abc' });
+  });
+
+  it('caps limit at 50, above which saved.list answers invalid_arguments', async () => {
+    const { client, request } = clientFor('browser');
+    await client.listSavedItems({ count: 100 });
+    expect(request).toHaveBeenCalledWith('saved.list', { limit: 50 });
+  });
+
+  it('passes the view filter to saved.list', async () => {
+    const { client, request } = clientFor('browser');
+    await client.listSavedItems({ count: 50, filter: 'completed' });
+    expect(request).toHaveBeenCalledWith('saved.list', { limit: 50, filter: 'completed' });
+  });
+
+  it('sends no filter or page size when none is given', async () => {
+    const { client, request } = clientFor('browser');
+    await client.listSavedItems();
+    expect(request).toHaveBeenCalledWith('saved.list', {});
+  });
+
+  it('keeps count and drops the filter for stars.list', async () => {
+    const { client, request } = clientFor('standard');
+    await client.listSavedItems({ count: 100, cursor: 'abc', filter: 'completed' });
+    expect(request).toHaveBeenCalledWith('stars.list', { count: 100, cursor: 'abc' });
+  });
+});
+
 describe('SlackClient.lookupUserByEmail', () => {
   it('calls users.lookupByEmail with the address, through request()', async () => {
     const client = new SlackClient({

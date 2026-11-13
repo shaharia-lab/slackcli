@@ -30,7 +30,10 @@ The two auth types read different Slack lists and return different shapes:
   resolves each one into the message text, the channel name, and the author.
   Each `--json` item is `{type, channel_id, channel_name, message, date_saved,
   todo_state}`; non-message items carry only `type`, `channel_id` and
-  `date_saved`.
+  `date_saved`. Unfiltered, `saved.list` returns only uncompleted items, so
+  SlackCLI reads it twice: once as is (saved and to-do items) and once for
+  completed items. `--state completed` reads only the second, `--state saved`
+  and `--state to_do` only the first.
 - **Standard auth** (app tokens) falls back to `stars.list`, which returns
   *starred* items with the message inline. They are passed through as Slack
   returns them, so the `--json` item shape is Slack's `stars.list` shape. Those

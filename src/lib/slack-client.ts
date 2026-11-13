@@ -315,6 +315,13 @@ export const EMOJI_WRITE_AUTH_MESSAGE =
   'Managing custom emoji (emoji add/remove) requires browser authentication; ' +
   'sign in with a browser session (slackcli auth login-auto or auth login-browser)';
 
+// A saved.list view, as the web client's Later tabs request it. Only the
+// ones slackcli reads are listed.
+export type SavedListFilter = 'completed';
+
+// saved.list answers invalid_arguments to a `limit` above 50.
+const SAVED_LIST_MAX_LIMIT = 50;
+
 // Later-list writes use Slack's web-client saved.add/saved.update/saved.delete
 // endpoints, which authenticate with a browser session; an app token has no
 // equivalent (stars.* is a different list).
@@ -916,18 +923,23 @@ export class SlackClient {
     });
   }
 
-  // List saved items (browser: saved.list, standard: stars.list)
+  // List saved items (browser: saved.list, standard: stars.list). saved.list
+  // takes its page size as `limit` (at most 50) and ignores `count`; without a
+  // `filter` it returns only uncompleted items (#438). stars.list has no filter.
   async listSavedItems(options: {
     count?: number;
     cursor?: string;
+    filter?: SavedListFilter;
   } = {}): Promise<any> {
     const params: Record<string, any> = {};
-    if (options.count) params.count = options.count;
     if (options.cursor) params.cursor = options.cursor;
 
     if (this.config.auth_type === 'browser') {
+      if (options.count) params.limit = Math.min(options.count, SAVED_LIST_MAX_LIMIT);
+      if (options.filter) params.filter = options.filter;
       return this.request('saved.list', params);
     }
+    if (options.count) params.count = options.count;
     return this.request('stars.list', params);
   }
 

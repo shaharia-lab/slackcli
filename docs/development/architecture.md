@@ -162,7 +162,7 @@ endpoints. Each divergence is one method, and each is a deliberate trade:
 | `listDrafts` | `drafts.list` | throws — no public API exists |
 | `addEmoji`, `addEmojiAlias`, `removeEmoji` | `emoji.add` (multipart for an image), `emoji.remove` | throws — only the Enterprise Grid `admin.emoji.*` API exists |
 | `scheduleMessage`, `listScheduledMessages`, `deleteScheduledMessage` | throws — Slack answers `not_allowed_token_type` (`requireStandardAuth()`) | `chat.scheduleMessage`, `chat.scheduledMessages.list`, `chat.deleteScheduledMessage` |
-| `listSavedItems` | `saved.list` | `stars.list` |
+| `listSavedItems` | `saved.list` (page size as `limit`, max 50; no `filter` = uncompleted items, `filter=completed` = completed ones) | `stars.list` |
 | `addSavedItem`, `updateSavedItem`, `deleteSavedItem` | `saved.add`, `saved.update`, `saved.delete` (one item: `item_type=message`, `item_id`, `ts`) | throws — `stars.*` is a different list |
 | `searchModules` | `search.modules` | list + client-side filter (capped at 1000) |
 | `getUnreadCounts` | `client.counts` (channels, DMs and the `threads` summary) | `conversations.list` unread fields — no thread equivalent |
@@ -213,9 +213,13 @@ metadata (`metadataOf()`) plus secrets (`storeCredentials()` /
   mutates the loaded document; `saveWorkspaces()` still does the one write.
 - `MacOSKeychainSecretStore` (macOS only) shells out to the `security` CLI
   (service `slackcli`, account `<profile key>:<token|xoxc|xoxd>`) rather than
-  an FFI binding — the `cdp-client.ts` trade-off again. Its `SecurityCliRunner`
-  is injectable, the same seam `cdp-client.test.ts` uses for an untestable
-  transport, so it is fully unit-tested without a real Mac or keychain.
+  an FFI binding — the `cdp-client.ts` trade-off again. A write never puts the
+  secret in argv: it runs `security -i` and sends the quoted
+  `add-generic-password` line on stdin (#515). Its `SecurityCliRunner` is
+  injectable, the same seam `cdp-client.test.ts` uses for an untestable
+  transport, so it is fully unit-tested without a real Mac or keychain;
+  `secret-store.keychain.test.ts` adds real round trips that run only on macOS
+  with `SLACKCLI_KEYCHAIN_TESTS=1` (the `keychain-tests` job in `test.yml`).
 - `get` returns `null` only when a secret does not exist. A backend that is
   unavailable or refuses access throws `SecretStoreError` (`reason`
   `unavailable` / `access_denied`); a record whose secret is missing surfaces as

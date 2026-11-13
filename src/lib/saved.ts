@@ -1,4 +1,4 @@
-import type { SlackClient } from './slack-client.ts';
+import type { SavedListFilter, SlackClient } from './slack-client.ts';
 import type { SavedItem, SavedItemUpdate, SlackUser } from '../types/index.ts';
 import { InvalidInputError } from './cli-errors.ts';
 import { parseDueTime } from './schedule-time.ts';
@@ -15,33 +15,58 @@ type ChannelGroup = { channel: string; timestamps: string[] };
 type MappedItems = { items: SavedItem[]; userIds: Set<string> };
 
 /**
- * Paginate through every saved item. The response shape tells us which auth
- * path served it: browser auth returns `saved_items`, standard auth `items`.
+ * The saved.list views that together hold the items in `state`. With no
+ * filter Slack returns only uncompleted items (saved and to-do), so completed
+ * ones need a second view (#438). `undefined` means no filter.
+ */
+export function savedListViews(state?: string): (SavedListFilter | undefined)[] {
+  if (state === 'completed') return ['completed'];
+  if (state) return [undefined];
+  return [undefined, 'completed'];
+}
+
+/**
+ * Paginate through every saved item in the views `state` needs. The response
+ * shape tells us which auth path served it: browser auth returns
+ * `saved_items`, standard auth `items` (stars.list has no views, so one pass).
  */
 async function fetchAllSavedItems(
   client: SlackClient,
-  options: { limit?: number; onProgress?: ProgressCallback },
+  options: { limit?: number; state?: string; onProgress?: ProgressCallback },
 ): Promise<{ rawItems: any[]; isBrowserFormat: boolean }> {
   const rawItems: any[] = [];
+  // An item completed between two views can show up in both.
+  const seen = new Set<string>();
   let isBrowserFormat = false;
-  let cursor: string | undefined;
 
-  do {
-    const soFar = rawItems.length > 0 ? ` (${rawItems.length} so far)` : '';
-    options.onProgress?.(`Fetching saved items${soFar}...`);
-    const response = await client.listSavedItems({ count: PAGE_SIZE, cursor });
+  for (const filter of savedListViews(options.state)) {
+    let cursor: string | undefined;
+    do {
+      const soFar = rawItems.length > 0 ? ` (${rawItems.length} so far)` : '';
+      options.onProgress?.(`Fetching saved items${soFar}...`);
+      const response = await client.listSavedItems({ count: PAGE_SIZE, cursor, filter });
 
-    isBrowserFormat = !!response.saved_items;
-    const pageItems = isBrowserFormat ? response.saved_items : (response.items || []);
-    rawItems.push(...pageItems);
+      isBrowserFormat = !!response.saved_items;
+      const pageItems = isBrowserFormat ? response.saved_items : (response.items || []);
+      for (const item of pageItems) {
+        if (isBrowserFormat) {
+          const key = `${item.item_id}:${item.ts}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+        }
+        rawItems.push(item);
+      }
 
-    cursor = response.response_metadata?.next_cursor || undefined;
+      cursor = response.response_metadata?.next_cursor || undefined;
 
-    if (options.limit && rawItems.length >= options.limit) {
-      rawItems.length = options.limit;
-      break;
-    }
-  } while (cursor);
+      if (options.limit && rawItems.length >= options.limit) {
+        rawItems.length = options.limit;
+        return { rawItems, isBrowserFormat };
+      }
+    } while (cursor);
+
+    if (!isBrowserFormat) break;
+  }
 
   return { rawItems, isBrowserFormat };
 }
@@ -200,6 +225,8 @@ export async function enrichSavedItems(
   client: SlackClient,
   options: {
     limit?: number;
+    /** Fetch only the saved.list views holding this todo_state; callers still filter. */
+    state?: string;
     onProgress?: (message: string) => void;
   } = {},
 ): Promise<{ items: SavedItem[]; users: Map<string, SlackUser> }> {

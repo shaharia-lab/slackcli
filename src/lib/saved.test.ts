@@ -6,6 +6,7 @@ import {
   enrichSavedItems,
   removeSavedItem,
   reopenUpdate,
+  savedListViews,
   savedUpdateFromOptions,
   updateSavedItem,
 } from './saved.ts';
@@ -41,7 +42,8 @@ describe('enrichSavedItems', () => {
   it('paginates through all pages of saved items (browser auth)', async () => {
     let callCount = 0;
     const client = createMockClient({
-      listSavedItems: () => {
+      listSavedItems: (opts) => {
+        if (opts.filter === 'completed') return Promise.resolve({ saved_items: [] });
         callCount++;
         if (callCount === 1) {
           return Promise.resolve({
@@ -363,10 +365,10 @@ describe('enrichSavedItems', () => {
   it('reports progress for each phase (browser auth)', async () => {
     const messages: string[] = [];
     const client = createMockClient({
-      listSavedItems: () => Promise.resolve({
-        saved_items: [
-          { item_type: 'message', item_id: 'C1', ts: '1.1', date_created: '1700000000' },
-        ],
+      listSavedItems: (opts) => Promise.resolve({
+        saved_items: opts.filter === 'completed'
+          ? []
+          : [{ item_type: 'message', item_id: 'C1', ts: '1.1', date_created: '1700000000' }],
       }),
       listMessages: () => Promise.resolve({
         messages: { C1: [{ ts: '1.1', text: 'hi', type: 'message', user: 'U1' }] },
@@ -378,6 +380,7 @@ describe('enrichSavedItems', () => {
     await enrichSavedItems(client, { onProgress: (m) => messages.push(m) });
     expect(messages).toEqual([
       'Fetching saved items...',
+      'Fetching saved items (1 so far)...',
       'Fetching message details...',
       'Fetching user information...',
     ]);
@@ -387,7 +390,8 @@ describe('enrichSavedItems', () => {
     const messages: string[] = [];
     let callCount = 0;
     const client = createMockClient({
-      listSavedItems: () => {
+      listSavedItems: (opts) => {
+        if (opts.filter === 'completed') return Promise.resolve({ saved_items: [] });
         callCount++;
         const next = callCount < 3 ? { next_cursor: `page${callCount + 1}` } : {};
         return Promise.resolve({
@@ -405,6 +409,7 @@ describe('enrichSavedItems', () => {
       'Fetching saved items...',
       'Fetching saved items (2 so far)...',
       'Fetching saved items (4 so far)...',
+      'Fetching saved items (6 so far)...',
     ]);
   });
 });
@@ -423,6 +428,135 @@ function refusal(run: () => unknown): string {
   }
   throw new Error('expected an InvalidInputError');
 }
+
+describe('savedListViews (#438)', () => {
+  it('reads the default view and the completed view with no --state', () => {
+    expect(savedListViews()).toEqual([undefined, 'completed']);
+  });
+
+  it('reads only the completed view for --state completed', () => {
+    expect(savedListViews('completed')).toEqual(['completed']);
+  });
+
+  it('reads only the default (uncompleted) view for saved and to_do', () => {
+    expect(savedListViews('saved')).toEqual([undefined]);
+    expect(savedListViews('to_do')).toEqual([undefined]);
+  });
+
+  it('reads only the default view for an unknown state, which then matches nothing', () => {
+    expect(savedListViews('bogus')).toEqual([undefined]);
+  });
+});
+
+describe('enrichSavedItems views (#438)', () => {
+  const listMessages = (ids: any) => {
+    const msgs: Record<string, any[]> = {};
+    for (const group of ids) {
+      msgs[group.channel] = group.timestamps.map((ts: string) => ({ ts, text: `msg ${ts}`, type: 'message' }));
+    }
+    return Promise.resolve({ messages: msgs });
+  };
+  const item = (ts: string, todoState: string) =>
+    ({ item_type: 'message', item_id: 'C1', ts, date_created: '1700000000', todo_state: todoState });
+
+  // Mirrors Slack: no filter returns uncompleted items, filter=completed the rest.
+  function laterList(calls: any[]) {
+    return createMockClient({
+      listSavedItems: (opts) => {
+        calls.push(opts);
+        return Promise.resolve({
+          saved_items: opts.filter === 'completed'
+            ? [item('3.3', 'completed')]
+            : [item('1.1', 'saved'), item('2.2', 'to_do')],
+        });
+      },
+      listMessages,
+    });
+  }
+
+  it('includes completed items alongside saved and to-do ones', async () => {
+    const calls: any[] = [];
+    const result = await enrichSavedItems(laterList(calls));
+    expect(result.items.map(i => i.todo_state)).toEqual(['saved', 'to_do', 'completed']);
+    expect(calls.map(c => c.filter)).toEqual([undefined, 'completed']);
+  });
+
+  it('asks Slack only for the completed view with --state completed', async () => {
+    const calls: any[] = [];
+    const result = await enrichSavedItems(laterList(calls), { state: 'completed' });
+    expect(calls.map(c => c.filter)).toEqual(['completed']);
+    expect(result.items.map(i => i.message!.ts)).toEqual(['3.3']);
+  });
+
+  it('skips the completed view with --state to_do', async () => {
+    const calls: any[] = [];
+    await enrichSavedItems(laterList(calls), { state: 'to_do' });
+    expect(calls.map(c => c.filter)).toEqual([undefined]);
+  });
+
+  it('pages each view with its own cursor', async () => {
+    const calls: any[] = [];
+    const client = createMockClient({
+      listSavedItems: (opts) => {
+        calls.push(opts);
+        const page = opts.cursor ? 2 : 1;
+        const prefix = opts.filter === 'completed' ? 'c' : 'u';
+        return Promise.resolve({
+          saved_items: [item(`${prefix === 'c' ? 9 : 1}.${page}`, prefix === 'c' ? 'completed' : 'to_do')],
+          response_metadata: { next_cursor: page === 1 ? `${prefix}2` : '' },
+        });
+      },
+      listMessages,
+    });
+
+    const result = await enrichSavedItems(client);
+    expect(calls.map(c => [c.filter, c.cursor])).toEqual([
+      [undefined, undefined], [undefined, 'u2'], ['completed', undefined], ['completed', 'c2'],
+    ]);
+    expect(result.items).toHaveLength(4);
+  });
+
+  it('lists an item once when it appears in both views', async () => {
+    const client = createMockClient({
+      listSavedItems: (opts) => Promise.resolve({
+        saved_items: opts.filter === 'completed' ? [item('1.1', 'completed')] : [item('1.1', 'to_do')],
+      }),
+      listMessages,
+    });
+
+    const result = await enrichSavedItems(client);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].todo_state).toBe('to_do');
+  });
+
+  it('stops before the completed view once --limit is reached', async () => {
+    const calls: any[] = [];
+    const result = await enrichSavedItems(laterList(calls), { limit: 2 });
+    expect(calls.map(c => c.filter)).toEqual([undefined]);
+    expect(result.items).toHaveLength(2);
+  });
+
+  it('counts --limit across both views', async () => {
+    const calls: any[] = [];
+    const result = await enrichSavedItems(laterList(calls), { limit: 3 });
+    expect(calls.map(c => c.filter)).toEqual([undefined, 'completed']);
+    expect(result.items).toHaveLength(3);
+  });
+
+  it('calls stars.list once for app tokens, which have no views', async () => {
+    const calls: any[] = [];
+    const client = createMockClient({
+      listSavedItems: (opts) => {
+        calls.push(opts);
+        return Promise.resolve({ items: [{ type: 'message', message: { text: 'starred', ts: '1.1', type: 'message' } }] });
+      },
+    });
+
+    const result = await enrichSavedItems(client);
+    expect(calls).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
+  });
+});
 
 describe('addDueDate', () => {
   it('is now when no --due is given', () => {

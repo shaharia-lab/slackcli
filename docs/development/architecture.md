@@ -213,9 +213,13 @@ metadata (`metadataOf()`) plus secrets (`storeCredentials()` /
   mutates the loaded document; `saveWorkspaces()` still does the one write.
 - `MacOSKeychainSecretStore` (macOS only) shells out to the `security` CLI
   (service `slackcli`, account `<profile key>:<token|xoxc|xoxd>`) rather than
-  an FFI binding — the `cdp-client.ts` trade-off again. Its `SecurityCliRunner`
-  is injectable, the same seam `cdp-client.test.ts` uses for an untestable
-  transport, so it is fully unit-tested without a real Mac or keychain.
+  an FFI binding — the `cdp-client.ts` trade-off again. A write never puts the
+  secret in argv: it runs `security -i` and sends the quoted
+  `add-generic-password` line on stdin (#515). Its `SecurityCliRunner` is
+  injectable, the same seam `cdp-client.test.ts` uses for an untestable
+  transport, so it is fully unit-tested without a real Mac or keychain;
+  `secret-store.keychain.test.ts` adds real round trips that run only on macOS
+  with `SLACKCLI_KEYCHAIN_TESTS=1` (the `keychain-tests` job in `test.yml`).
 - `get` returns `null` only when a secret does not exist. A backend that is
   unavailable or refuses access throws `SecretStoreError` (`reason`
   `unavailable` / `access_denied`); a record whose secret is missing surfaces as

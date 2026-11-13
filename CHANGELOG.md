@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Keychain writes no longer put the credential in a command line**: storing or refreshing a profile with `--secret-backend keychain`, or `auth migrate-secrets --to keychain`, ran `security add-generic-password -w <token>`, so the token was briefly visible to `ps` and to tools that record process command lines. The write now goes to `security -i` on stdin. Existing Keychain items keep working with no prompt or re-login. A credential or profile name with a line break or NUL character is refused rather than stored (#515)
+
 ### Fixed
 - **`slackcli update` works when the temp directory is on another filesystem**: the download was staged under `os.tmpdir()` and moved into place with `rename()`, which fails with `EXDEV` when `/tmp` is a tmpfs or another volume. It is now staged in the binary's own folder. A failed install also puts the previous binary back instead of leaving only `slackcli.backup` behind (#440)
 - **`saved list` includes completed Later items**: on browser auth, `saved.list` was called without a filter, which Slack answers with uncompleted items only, so completed items were missing and `--state completed` matched nothing. SlackCLI now also reads the completed view, and sends the page size as `limit` (at most 50), which Slack honours, instead of `count`, which it ignored (#438)

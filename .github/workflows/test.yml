@@ -59,3 +59,37 @@ jobs:
 
       - name: Test auth commands (help)
         run: ./dist/slackcli auth --help
+
+  # The Keychain backend's real round trips (#515): only a macOS runner has
+  # the `security` CLI. A throwaway keychain is made the default for this job
+  # so the tests never touch the runner's login keychain.
+  keychain-tests:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Pinned: keep CI aligned with release.yml. See release.yml for
+          # details on the 1.3.12 macOS codesign regression.
+          bun-version: 1.4.1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Create a throwaway default keychain
+        run: |
+          keychain="$RUNNER_TEMP/slackcli-test.keychain-db"
+          password="$(uuidgen)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security default-keychain -d user -s "$keychain"
+
+      - name: Run Keychain tests
+        env:
+          SLACKCLI_KEYCHAIN_TESTS: '1'
+        run: bun test src/lib/secret-store.keychain.test.ts src/lib/secret-store.test.ts

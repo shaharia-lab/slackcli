@@ -289,8 +289,8 @@ const SECURITY_MAX_LINE_BYTES = 4095;
 // Quote one argument for the `security -i` line parser (split_line() in
 // SecurityTool/macOS/security.c): inside double quotes, a backslash makes the
 // next byte literal, so escaping `\` and `"` is enough. A line break would end
-// the command early and a NUL would truncate it; neither occurs in a Slack
-// credential or a sensible profile name, so they are refused rather than encoded.
+// the command early and a NUL would truncate it, so both are refused rather
+// than encoded.
 function quoteSecurityArg(arg: string, what: string): string {
   if (/[\0\n\r]/.test(arg)) {
     throw new Error(`Cannot store ${what} in the Keychain: it contains a line break or NUL character`);
@@ -298,9 +298,22 @@ function quoteSecurityArg(arg: string, what: string): string {
   return `"${arg.replace(/[\\"]/g, (ch) => `\\${ch}`)}"`;
 }
 
+// `security find-generic-password -w` prints a value as hex as soon as it holds
+// a byte outside printable ASCII, so such a value could be written but never
+// read back as itself. Slack credentials are printable ASCII; anything else is
+// refused at write time instead of being silently corrupted on read.
+function assertPrintableAscii(value: string, key: string): void {
+  if (!/^[\x20-\x7e]*$/.test(value)) {
+    throw new Error(
+      `Cannot store the value for "${key}" in the Keychain: it contains a character outside printable ASCII`,
+    );
+  }
+}
+
 // The stdin line `security -i` runs for a write. -U updates an existing item in
 // place rather than failing with "already exists" (needed for token refresh).
 function addGenericPasswordLine(key: string, value: string): string {
+  assertPrintableAscii(value, key);
   const line = [
     'add-generic-password',
     '-a', quoteSecurityArg(key, `"${key}"`),

@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`saved list` includes completed Later items**: on browser auth, `saved.list` was called without a filter, which Slack answers with uncompleted items only, so completed items were missing and `--state completed` matched nothing. SlackCLI now also reads the completed view, and sends the page size as `limit` (at most 50), which Slack honours, instead of `count`, which it ignored (#438)
 
 ### Security
-- **Keychain writes no longer put the credential in a command line**: storing or refreshing a profile with `--secret-backend keychain`, or `auth migrate-secrets --to keychain`, ran `security add-generic-password -w <token>`, so the token was briefly visible to `ps` and to tools that record process command lines. The write now goes to `security -i` on stdin. Existing Keychain items keep working with no prompt or re-login. A credential or profile name with a line break or NUL character, or a credential longer than about 4,000 bytes, is refused rather than stored (#515)
+- **Keychain writes no longer put the credential in a command line**: storing or refreshing a profile with `--secret-backend keychain`, or `auth migrate-secrets --to keychain`, ran `security add-generic-password -w <token>`, so the token was briefly visible to `ps` and to tools that record process command lines. The write now goes to `security -i` on stdin. Existing Keychain items keep working with no prompt or re-login. A credential that is not printable ASCII or is longer than about 4,000 bytes, or a profile name with a line break or NUL character, is refused rather than stored, since it could not be read back intact (#515)
 
 ## [0.19.1] - 2026-11-07
 

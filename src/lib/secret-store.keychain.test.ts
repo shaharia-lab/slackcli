@@ -40,11 +40,16 @@ describe.skipIf(!enabled)('MacOSKeychainSecretStore against the real Keychain', 
     ['a URL-encoded xoxd cookie', 'xoxd-AbC%2FdEf%2BgHi%3D%3D'],
     ['a decoded xoxd cookie', 'xoxd-AbC/dEf+gHi=='],
     ['quotes, backslashes and spaces', `a\\b"c d'e\\"f`],
-    ['non-ASCII text', 'xoxb-équipe-✓'],
   ])('stores and reads back %s exactly', async (_label, value) => {
     const k = key(_label);
     await store.set(k, value);
     expect(await store.get(k)).toBe(value);
+  });
+
+  it('stores under a non-ASCII profile key', async () => {
+    const k = key('équipe ✓');
+    await store.set(k, 'xoxb-unicode-account');
+    expect(await store.get(k)).toBe('xoxb-unicode-account');
   });
 
   it('updates an existing item in place', async () => {

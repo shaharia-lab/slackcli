@@ -347,7 +347,7 @@ describe('MacOSKeychainSecretStore', () => {
     );
   });
 
-  it('passes non-ASCII text through unchanged', async () => {
+  it('passes a non-ASCII profile key through unchanged', async () => {
     const { run, inputs } = fakeRunner([ok()]);
     const store = new MacOSKeychainSecretStore(run, 'darwin');
     await store.set('équipe:token', 'xoxb-1');
@@ -358,12 +358,14 @@ describe('MacOSKeychainSecretStore', () => {
     ['a line feed', 'xoxb-a\nadd-generic-password -a x -s y -w z'],
     ['a carriage return', 'xoxb-a\rb'],
     ['a NUL', 'xoxb-a\0b'],
+    ['a tab', 'xoxb-a\tb'],
+    ['non-ASCII text', 'xoxb-équipe'],
   ])('refuses a value containing %s without running the CLI', async (_label, value) => {
     const { run, calls } = fakeRunner([ok()]);
     const store = new MacOSKeychainSecretStore(run, 'darwin');
     const err = await store.set('T1:token', value).catch((e) => e);
     expect(err).toBeInstanceOf(Error);
-    expect(err.message).toContain('line break or NUL');
+    expect(err.message).toContain('outside printable ASCII');
     expect(err.message).not.toContain(value);
     expect(calls).toHaveLength(0);
   });
@@ -392,9 +394,11 @@ describe('MacOSKeychainSecretStore', () => {
   it('counts the line limit in bytes, not characters', async () => {
     const { run, calls } = fakeRunner([ok()]);
     const store = new MacOSKeychainSecretStore(run, 'darwin');
-    const overhead = 'add-generic-password -a "T1:token" -s slackcli -w "" -U'.length;
-    // Two-byte characters: under the limit in characters, over it in bytes.
-    await expect(store.set('T1:token', 'é'.repeat(4094 - overhead))).rejects.toThrow('too long');
+    const key = 'é:token';
+    const overhead = Buffer.byteLength(`add-generic-password -a "${key}" -s slackcli -w "" -U`);
+    // The key's two-byte character puts this one byte over the limit, though
+    // it is one character under it.
+    await expect(store.set(key, 'x'.repeat(4095 - overhead))).rejects.toThrow('too long');
     expect(calls).toHaveLength(0);
   });
 

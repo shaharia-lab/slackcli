@@ -431,9 +431,9 @@ any point leaves the original untouched, so it is always safe to re-run.
   never appears in a command line that `ps` or a process-auditing tool could
   see. Keychain access itself may prompt for the login password or Touch ID,
   per your Keychain Access settings for the item.
-- A credential or profile name containing a line break or NUL character, or a
-  credential longer than about 4,000 bytes, cannot be stored in the Keychain;
-  no Slack token comes close to either.
+- The Keychain backend only stores credentials made of printable ASCII and no
+  longer than about 4,000 bytes, and refuses a profile name containing a line
+  break or NUL character. Every Slack token fits.
 - The Keychain is not a sandbox against another process running as your user —
   it protects credentials at rest (other users, backups, casual file
   inspection, syncing tools that read `~/.config`), not against something else

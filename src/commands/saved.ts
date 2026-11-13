@@ -62,7 +62,8 @@ const HELP = {
       '{ item_count, items }. With no items nothing is written to stdout (exit 0).',
     notes: [
       'Browser auth reads saved.list (the Later list): items are { type, channel_id, channel_name, message, date_saved, todo_state }, ' +
-        'with message text resolved; non-message items carry only type, channel_id and date_saved.',
+        'with message text resolved; non-message items carry only type, channel_id and date_saved. ' +
+        'Saved, to-do and completed items are all listed.',
       'App tokens (xoxb/xoxp) read stars.list (starred items) and return Slack\'s items as-is: ' +
         'no todo_state, so --state matches nothing.',
       '--limit caps the items fetched, before --state filters them.',
@@ -229,6 +230,7 @@ export function createSavedCommand(): Command {
 
         let { items, users } = await enrichSavedItems(client, {
           limit: options.limit ? Number.parseInt(options.limit) : undefined,
+          state: options.state,
           onProgress: (msg) => { spinner.text = msg; },
         });
 

@@ -342,7 +342,19 @@ Three modules, in order:
    enumerate workspaces the user is signed into but has not opened — that union
    is why one sign-in enrols every workspace. localStorage is Slack client
    internals and may change shape without notice, so a failure to read it
-   degrades to whatever interception found rather than failing the run.
+   degrades to whatever interception found rather than failing the run. Last,
+   it reads the page's `navigator.userAgent`; see below.
+
+**The session's User-Agent is part of the session.** Calling Slack with browser
+tokens under a different User-Agent looks like the session replayed from a
+second client, and stricter workspaces sign the account out everywhere (#105).
+So `login-auto` (`navigator.userAgent`) and `parse-curl` (the copied
+`User-Agent` header) hand it to `authenticateBrowser()`, which stores it as the
+non-secret `user_agent` field, and `browserUserAgent()` in `user-agent.ts`
+replays it on API calls and file downloads. `sanitizeUserAgent()` accepts
+printable ASCII only, because the value comes from pasted input or a web page
+and ends up in a header; anything else is dropped and the historical default
+is sent.
 
 Security invariants worth preserving if you work here: only `https://` URLs on a
 `slack.com` host are ever paired with the session cookie, and that check is
@@ -357,7 +369,7 @@ Each is dependency-free and pure, so each is directly testable:
 
 | Module | Job |
 |---|---|
-| `curl-parser.ts` | Pull `xoxd`/`xoxc` out of a DevTools cURL command. Handles URL-encoded tokens, `-b` / `--cookie` / `-H 'Cookie:'`, and enterprise Slack URLs. The most thoroughly tested file in the repo — use it as the model for new tests. |
+| `curl-parser.ts` | Pull `xoxd`/`xoxc`, and the browser's `User-Agent`, out of a DevTools cURL command. Handles URL-encoded tokens, `-b` / `--cookie` / `-H 'Cookie:'`, and enterprise Slack URLs. The most thoroughly tested file in the repo — use it as the model for new tests. |
 | `slack-url-parser.ts` | Normalise Slack URLs, permalinks, and timestamps into IDs. Also produces the workspace-mismatch warning. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks, for drafts. |
 | `canvas-parser.ts` | Slack canvas (Quip-based) HTML → Markdown, zero dependencies. |

@@ -158,7 +158,8 @@ Re-run with --workspace=<profile> (see "slackcli auth list").
       "auth_type": "browser",
       "workspace_url": "https://example.slack.com",
       "xoxd_token": "xoxd-...",
-      "xoxc_token": "xoxc-..."
+      "xoxc_token": "xoxc-...",
+      "user_agent": "Mozilla/5.0 (...) Chrome/142.0.0.0 Safari/537.36"
     },
     "automation-bot": {
       "workspace_id": "T1234567",
@@ -171,6 +172,10 @@ Re-run with --workspace=<profile> (see "slackcli auth list").
   }
 }
 ```
+
+`user_agent` is the User-Agent of the browser a browser profile was captured
+from (`login-auto`, `parse-curl`). It is not a secret, and profiles without it
+send SlackCLI's own.
 
 It holds live credentials, except for a profile stored with
 `"secret_backend": "keychain"` — there the token fields above are absent and

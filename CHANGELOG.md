@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Browser-auth workspaces send your browser's User-Agent**: every request made with browser tokens sent `SlackCLI/0.1.0` as its User-Agent, and file downloads sent Bun's. On workspaces with stricter session security, Slack can read that as a stolen session and sign the account out everywhere, desktop app included. `auth login-auto` and `auth parse-curl` now store the browser's User-Agent with the workspace and send it on every API call and file download. Workspaces saved earlier, and ones added with `login-browser`, keep the old value until you log in again (#535)
 - **`slackcli update` works when the temp directory is on another filesystem**: the download was staged under `os.tmpdir()` and moved into place with `rename()`, which fails with `EXDEV` when `/tmp` is a tmpfs or another volume. It is now staged in the binary's own folder. A failed install also puts the previous binary back instead of leaving only `slackcli.backup` behind (#440)
 - **`saved list` includes completed Later items**: on browser auth, `saved.list` was called without a filter, which Slack answers with uncompleted items only, so completed items were missing and `--state completed` matched nothing. SlackCLI now also reads the completed view, and sends the page size as `limit` (at most 50), which Slack honours, instead of `count`, which it ignored (#438)
 

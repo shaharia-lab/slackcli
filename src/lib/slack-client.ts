@@ -22,6 +22,7 @@ import type { RetryOptions } from './retry.ts';
 import { InvalidInputError, UnsupportedAuthTypeError } from './cli-errors.ts';
 import { SlackAuthError, authErrorProfile, isAuthErrorCode } from './auth-errors.ts';
 import { slackWorkspaceOrigin } from './browser-auth.ts';
+import { browserUserAgent } from './user-agent.ts';
 import type { CanvasSectionCriteria } from './canvas-sections.ts';
 import type { CanvasChange } from './canvas-write.ts';
 
@@ -257,6 +258,7 @@ function buildFileAuthHeaders(config: WorkspaceConfig): Record<string, string> {
   return {
     Cookie: `d=${encodeURIComponent(config.xoxd_token)}`,
     Origin: 'https://app.slack.com',
+    'User-Agent': browserUserAgent(config),
   };
 }
 
@@ -579,7 +581,7 @@ export class SlackClient {
     const baseHeaders: Record<string, string> = {
       'Cookie': `d=${encodedXoxdToken}`,
       'Origin': 'https://app.slack.com',
-      'User-Agent': 'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
+      'User-Agent': browserUserAgent(this.config),
     };
 
     // A Blob param (e.g. emoji.add's image) means a multipart upload; see

@@ -24,6 +24,7 @@
 
 import { getLogger } from '@logtape/logtape';
 import { errorMessageForLog } from './tildify.ts';
+import { sanitizeUserAgent } from './user-agent.ts';
 import { connectCdpSocket, createCdpSession, type CdpSession } from './cdp-client.ts';
 import {
   launchBrowser,
@@ -48,7 +49,7 @@ export interface CapturedWorkspace {
 }
 
 export type CaptureResult =
-  | { ok: true; xoxd: string; workspaces: CapturedWorkspace[] }
+  | { ok: true; xoxd: string; workspaces: CapturedWorkspace[]; userAgent?: string }
   | { ok: false; reason: CaptureFailure; message: string };
 
 type CaptureFailureResult = Extract<CaptureResult, { ok: false }>;
@@ -415,11 +416,13 @@ export async function captureSlackTokens(
   }
 
   const workspaces = mergeWorkspaces([...intercepted.values()], fromLocalConfig);
+  const userAgent = await readUserAgent(session);
   logger.info('Token capture succeeded: {workspaces} workspaces', {
     workspaces: workspaces.length,
     team_ids: workspaces.flatMap((w) => (w.teamId ? [w.teamId] : [])),
+    user_agent_captured: Boolean(userAgent),
   });
-  return { ok: true, xoxd, workspaces };
+  return { ok: true, xoxd, workspaces, ...(userAgent ? { userAgent } : {}) };
 }
 
 /** Record a capture failure's typed reason; the message is guidance, not data. */
@@ -578,6 +581,25 @@ async function readSessionCookie(session: CdpSession): Promise<string | null> {
     }
   }
   return null;
+}
+
+/**
+ * The User-Agent of the page Slack signed in on, so later requests replay the
+ * session's own browser (see user-agent.ts). Read from the page rather than
+ * `Browser.getVersion` because that is what Slack itself saw. Undefined when
+ * unreadable; the caller then stores none. Never throws.
+ */
+async function readUserAgent(session: CdpSession): Promise<string | undefined> {
+  try {
+    const evaluated = await session.send<{ result?: { value?: unknown } }>('Runtime.evaluate', {
+      expression: 'navigator.userAgent',
+      returnByValue: true,
+    });
+    return sanitizeUserAgent(evaluated?.result?.value);
+  } catch (err) {
+    logger.debug('User-Agent read failed: {error}', { error: errorMessageForLog(err) });
+    return undefined;
+  }
 }
 
 /** Read signed-in workspaces from Slack's localStorage. Never throws. */

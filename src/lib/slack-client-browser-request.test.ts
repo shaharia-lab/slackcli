@@ -87,6 +87,31 @@ describe('browser-auth request shape', () => {
     ]);
   });
 
+  it("replays the session's stored User-Agent instead of the default", async () => {
+    const sent = answerWith(() => Response.json({ ok: true }));
+    const userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
+
+    await new SlackClient(
+      { ...browserConfig, user_agent: userAgent },
+      { rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }), retry: { maxRetries: 0 } },
+    ).request('auth.test', {});
+
+    expect((sent[0].init.headers as Record<string, string>)['User-Agent']).toBe(userAgent);
+  });
+
+  it('falls back to the default User-Agent when the stored one is unusable', async () => {
+    const sent = answerWith(() => Response.json({ ok: true }));
+
+    await new SlackClient(
+      { ...browserConfig, user_agent: 'Mozilla/5.0\r\nX-Injected: 1' },
+      { rateLimiter: new RateLimiter({ maxConcurrent: 1, minIntervalMs: 0 }), retry: { maxRetries: 0 } },
+    ).request('auth.test', {});
+
+    expect((sent[0].init.headers as Record<string, string>)['User-Agent']).toBe(
+      'Mozilla/5.0 (compatible; SlackCLI/0.1.0)',
+    );
+  });
+
   it('sends a multipart body with no Content-Type when a param is a Blob', async () => {
     const sent = answerWith(() => Response.json({ ok: true }));
 

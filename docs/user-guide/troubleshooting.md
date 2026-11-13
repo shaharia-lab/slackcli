@@ -87,6 +87,10 @@ deleted: log in to that workspace again. Details in
   `slackcli auth login-auto --headless`, or re-run `parse-curl` / `login-browser`
   with fresh values.
 - The workspace URL must be `https://yourteam.slack.com`.
+- If using SlackCLI signs you out of the desktop app or the browser, log in
+  again with `slackcli auth login-auto` or `auth parse-curl`, so SlackCLI uses
+  the same User-Agent as your browser session. See
+  [why the User-Agent matters](authentication.md#why-slackcli-reuses-your-browsers-user-agent).
 
 ## `Authentication failed for profile …` (`invalid_auth`, `not_authed`, `token_expired`, `token_revoked`, `account_inactive`)
 

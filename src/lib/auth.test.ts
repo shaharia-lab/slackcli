@@ -1874,3 +1874,83 @@ describe.skipIf(process.platform === 'win32')('auth list through the CLI', () =>
     expect(requests).toEqual([]);
   }, 30_000);
 });
+
+// The session's own User-Agent is replayed on every request (#535), starting
+// with the auth.test that verifies the login. It is stored with the workspace.
+describe('browser login User-Agent', () => {
+  const originalFetch = globalThis.fetch;
+  const CHROME_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
+  let sentUserAgents: Array<string | undefined>;
+  let saved: WorkspaceConfig[];
+  let add: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    sentUserAgents = [];
+    saved = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      sentUserAgents.push((init?.headers as Record<string, string>)['User-Agent']);
+      return Response.json({ ok: true, team_id: 'T1', team: 'Acme Corp', user_id: 'U1' });
+    }) as unknown as typeof fetch;
+    add = spyOn(workspaces, 'addWorkspace').mockImplementation(async (config: WorkspaceConfig) => {
+      saved.push(config);
+      return config.workspace_id;
+    });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    add.mockRestore();
+  });
+
+  it('verifies with and stores the given User-Agent', async () => {
+    const { config } = await authenticateBrowser(
+      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', undefined, undefined, 'file', CHROME_UA,
+    );
+
+    expect(sentUserAgents).toEqual([CHROME_UA]);
+    expect(config.auth_type === 'browser' && config.user_agent).toBe(CHROME_UA);
+    expect(saved).toHaveLength(1);
+    expect((saved[0] as { user_agent?: string }).user_agent).toBe(CHROME_UA);
+  });
+
+  it('stores none and sends the default when no User-Agent is given', async () => {
+    await authenticateBrowser('xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com');
+
+    expect(sentUserAgents).toEqual(['Mozilla/5.0 (compatible; SlackCLI/0.1.0)']);
+    expect('user_agent' in saved[0]!).toBe(false);
+  });
+
+  it('drops an unusable User-Agent rather than storing it', async () => {
+    await authenticateBrowser(
+      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', undefined, undefined, 'file', 'bad\r\nX-Injected: 1',
+    );
+
+    expect(sentUserAgents).toEqual(['Mozilla/5.0 (compatible; SlackCLI/0.1.0)']);
+    expect('user_agent' in saved[0]!).toBe(false);
+  });
+
+  it('stores the User-Agent login-auto read from the browser', async () => {
+    const open = spyOn(browserAuth, 'openBrowserSession').mockResolvedValue({
+      ok: true,
+      session: {} as never,
+      stop: async () => {},
+    } as never);
+    const capture = spyOn(browserAuth, 'captureSlackTokens').mockResolvedValue({
+      ok: true,
+      xoxd: 'xoxd-DUMMYAUDIT',
+      userAgent: CHROME_UA,
+      workspaces: [{ workspaceUrl: 'https://acme.slack.com', xoxc: 'xoxc-DUMMYAUDIT', teamId: 'T1', teamName: 'Acme Corp' }],
+    });
+
+    try {
+      const result = await authenticateAuto({ headless: true });
+
+      expect(result.saved).toHaveLength(1);
+      expect((result.saved[0] as { user_agent?: string }).user_agent).toBe(CHROME_UA);
+      expect(sentUserAgents).toEqual([CHROME_UA]);
+    } finally {
+      open.mockRestore();
+      capture.mockRestore();
+    }
+  });
+});

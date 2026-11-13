@@ -22,6 +22,7 @@ import type {
   SlackAuthTestResponse,
 } from '../types/index.ts';
 import { extractSlackWorkspaceName } from './curl-parser.ts';
+import { sanitizeUserAgent } from './user-agent.ts';
 import {
   captureSlackTokens,
   openBrowserSession,
@@ -116,7 +117,8 @@ export async function authenticateBrowser(
   workspaceUrl: string,
   workspaceName?: string,
   profile?: string,
-  secretBackend: SecretBackend = 'file'
+  secretBackend: SecretBackend = 'file',
+  userAgent?: string
 ): Promise<AuthResult> {
   // Refused before the tokens go anywhere (#513); the canonical origin is what
   // gets stored, so a trailing slash never reaches the API base.
@@ -139,6 +141,10 @@ export async function authenticateBrowser(
     xoxd_token: xoxdToken,
     xoxc_token: xoxcToken,
   };
+  // Stored only when usable, so the client never replays a bad header and the
+  // verifying call below already looks like the session's own browser.
+  const sessionUserAgent = sanitizeUserAgent(userAgent);
+  if (sessionUserAgent) tempConfig.user_agent = sessionUserAgent;
 
   const client = new SlackClient(tempConfig);
 
@@ -289,7 +295,7 @@ function sessionRefused(enrolment: Enrolment): boolean {
 
 /** Verify and persist each captured workspace through `authenticateBrowser`. */
 async function enrolCapturedWorkspaces(
-  capture: { xoxd: string; workspaces: CapturedWorkspace[] },
+  capture: { xoxd: string; workspaces: CapturedWorkspace[]; userAgent?: string },
   secretBackend: SecretBackend
 ): Promise<Enrolment> {
   const saved: WorkspaceConfig[] = [];
@@ -318,7 +324,8 @@ async function enrolCapturedWorkspaces(
         workspace.workspaceUrl,
         workspace.teamName,
         undefined,
-        secretBackend
+        secretBackend,
+        capture.userAgent
       );
       saved.push(config);
     } catch (err: any) {

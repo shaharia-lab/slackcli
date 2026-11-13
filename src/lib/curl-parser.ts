@@ -2,11 +2,15 @@
  * Curl command parser for extracting Slack authentication tokens
  */
 
+import { sanitizeUserAgent } from './user-agent.ts';
+
 export interface ParsedCurlResult {
   workspaceName: string;
   workspaceUrl: string;
   xoxd: string;
   xoxc: string;
+  /** The browser's User-Agent, when the command carries a usable one. */
+  userAgent?: string;
 }
 
 export interface ParseError {
@@ -32,6 +36,23 @@ export function extractSlackWorkspaceName(url: string): string {
  * means the leftmost flag in the command wins.
  */
 const DATA_BODY_PATTERN = /--data(?:-raw)?\s+\$?(?:'([^']+)'|"([^"]+)")/;
+
+/**
+ * The browser's User-Agent: a `-H`/`--header` `User-Agent:` header (DevTools
+ * writes it lowercase) or curl's own `-A`/`--user-agent` flag, single- or
+ * double-quoted. Groups 1–4 hold the value, whichever form matched. As with
+ * the cookie pattern, the value's first character excludes whitespace so the
+ * `\s*` before it cannot backtrack against it.
+ */
+const USER_AGENT_PATTERN =
+  /(?:-H|--header)\s+(?:'[Uu]ser-[Aa]gent:\s*([^'\s][^']*)'|"[Uu]ser-[Aa]gent:\s*([^"\s][^"]*)")|(?:^|\s)(?:-A|--user-agent)\s+(?:'([^']+)'|"([^"]+)")/;
+
+/** The User-Agent a cURL command sends, or undefined when absent or unusable. */
+export function extractUserAgent(curlInput: string): string | undefined {
+  const match = USER_AGENT_PATTERN.exec(curlInput);
+  if (!match) return undefined;
+  return sanitizeUserAgent(match[1] ?? match[2] ?? match[3] ?? match[4]);
+}
 
 /**
  * Parse a cURL command and extract Slack authentication tokens
@@ -77,12 +98,14 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
     throw new CurlParseError('xoxc', 'Could not find xoxc token in request data');
   }
   const xoxc = xoxcMatch[1];
+  const userAgent = extractUserAgent(curlInput);
 
   return {
     workspaceName,
     workspaceUrl,
     xoxd,
     xoxc,
+    ...(userAgent ? { userAgent } : {}),
   };
 }
 

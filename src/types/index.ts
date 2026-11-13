@@ -43,6 +43,10 @@ export interface BrowserAuthConfig {
   auth_type: 'browser';
   xoxd_token: string;
   xoxc_token: string;
+  // The User-Agent of the browser the session came from, replayed on every
+  // request (src/lib/user-agent.ts). Not a secret. Absent on workspaces saved
+  // before it was captured and on login-browser ones.
+  user_agent?: string;
 }
 
 export type WorkspaceConfig = StandardAuthConfig | BrowserAuthConfig;

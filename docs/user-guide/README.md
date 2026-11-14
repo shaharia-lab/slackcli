@@ -39,6 +39,7 @@ where the terminal is not known to show Unicode.
 | `auth` | Sign in, check the active identity, list/select/remove workspaces, extract tokens |
 | `conversations` | List channels and DMs, read history and threads, unreads, mark as read |
 | `messages` | Send, reply, edit, delete, react, unreact, create/list drafts, schedule for later, attach files, Block Kit |
+| `reminders` | Create, list, inspect, update, complete and delete your own reminders and reminder To-dos |
 | `search` | Search messages, channels, and people |
 | `team` | Read the workspace's own name, domain, and ID |
 | `usergroups` | List, read, and manage user groups ("subteams") |
@@ -69,6 +70,7 @@ where the terminal is not known to show Unicode.
 15. [Scripting and JSON output](scripting.md)
 16. [Claude Code plugin](claude-code-plugin.md)
 17. [Troubleshooting](troubleshooting.md)
+18. [Reminders](reminders.md)
 
 ## Two things that apply everywhere
 

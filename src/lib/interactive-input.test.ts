@@ -60,7 +60,9 @@ describe('interactive-input', () => {
 
       beforeEach(() => {
         rl = Object.assign(new EventEmitter(), { close: () => {} });
-        process.stdin.isTTY = true;
+        // Other test files redefine isTTY as a non-writable own property, so a
+        // plain assignment throws when they run first.
+        Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
         spies.push(
           spyOn(readline, 'createInterface').mockReturnValue(rl as unknown as readline.Interface),
           spyOn(console, 'log').mockImplementation(() => {}),
@@ -68,7 +70,7 @@ describe('interactive-input', () => {
       });
 
       afterEach(() => {
-        process.stdin.isTTY = originalIsTTY;
+        Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
         while (spies.length) spies.pop()?.mockRestore();
       });
 

@@ -318,6 +318,37 @@ describe('extractUserAgent', () => {
     expect(extractUserAgent(`curl 'https://a.slack.com/api/x' --user-agent "${CHROME_UA}"`)).toBe(CHROME_UA);
   });
 
+  it('takes the leftmost form when both a header and -A are present', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H 'user-agent: Header/1' -A 'Flag/2'`)).toBe('Header/1');
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -A 'Flag/2' -H 'user-agent: Header/1'`)).toBe('Flag/2');
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' --user-agent "Flag/2" --header "User-Agent: Header/1"`)).toBe('Flag/2');
+  });
+
+  it('matches the header name in either case and either quote style', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H 'User-Agent: Mozilla/5.0'`)).toBe('Mozilla/5.0');
+    expect(extractUserAgent(`curl "https://a.slack.com/api/x" -H "user-agent: Mozilla/5.0"`)).toBe('Mozilla/5.0');
+  });
+
+  it('skips whitespace between the header name and its value', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H 'user-agent:   Mozilla/5.0'`)).toBe('Mozilla/5.0');
+    expect(extractUserAgent(`curl "https://a.slack.com/api/x" -H "User-Agent:Mozilla/5.0"`)).toBe('Mozilla/5.0');
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H 'user-agent:Mozilla/5.0'`)).toBe('Mozilla/5.0');
+  });
+
+  it('reads -A at the very start of the input', () => {
+    expect(extractUserAgent(`-A 'Flag/2'`)).toBe('Flag/2');
+  });
+
+  it('does not read -A or --user-agent inside another word', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' x-A 'Flag/2'`)).toBeUndefined();
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' x--user-agent 'Flag/2'`)).toBeUndefined();
+  });
+
+  it('refuses an empty or whitespace-only header value', () => {
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H 'user-agent: '`)).toBeUndefined();
+    expect(extractUserAgent(`curl 'https://a.slack.com/api/x' -H "User-Agent:"`)).toBeUndefined();
+  });
+
   it('returns undefined when the command has no User-Agent', () => {
     expect(extractUserAgent(CURL_WITH_COOKIE_HEADER)).toBeUndefined();
   });
@@ -333,6 +364,12 @@ describe('extractUserAgent', () => {
   it('returns quickly on a long run of whitespace after the header name', () => {
     const start = performance.now();
     expect(extractUserAgent(`curl -H 'user-agent:${' '.repeat(50_000)}`)).toBeUndefined();
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+
+  it('returns quickly on a long run of whitespace in a double-quoted header', () => {
+    const start = performance.now();
+    expect(extractUserAgent(`curl -H "user-agent:${' '.repeat(50_000)}`)).toBeUndefined();
     expect(performance.now() - start).toBeLessThan(500);
   });
 });

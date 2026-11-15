@@ -37,15 +37,35 @@ export function extractSlackWorkspaceName(url: string): string {
  */
 const DATA_BODY_PATTERN = /--data(?:-raw)?\s+\$?(?:'([^']+)'|"([^"]+)")/;
 
+/** `-H`/`--header` and the whitespace after it. */
+const HEADER_FLAG = /(?:-H|--header)\s+/;
+
 /**
- * The browser's User-Agent: a `-H`/`--header` `User-Agent:` header (DevTools
- * writes it lowercase) or curl's own `-A`/`--user-agent` flag, single- or
- * double-quoted. Groups 1–4 hold the value, whichever form matched. As with
- * the cookie pattern, the value's first character excludes whitespace so the
- * `\s*` before it cannot backtrack against it.
+ * A single-quoted `User-Agent:` header (DevTools writes it lowercase); group 1
+ * holds the value. As with the cookie pattern, the value's first character
+ * excludes whitespace so the `\s*` before it cannot backtrack against it.
  */
-const USER_AGENT_PATTERN =
-  /(?:-H|--header)\s+(?:'[Uu]ser-[Aa]gent:\s*([^'\s][^']*)'|"[Uu]ser-[Aa]gent:\s*([^"\s][^"]*)")|(?:^|\s)(?:-A|--user-agent)\s+(?:'([^']+)'|"([^"]+)")/;
+const SINGLE_QUOTED_UA_HEADER = /'[Uu]ser-[Aa]gent:\s*([^'\s][^']*)'/;
+
+/** The double-quoted form of {@link SINGLE_QUOTED_UA_HEADER}, same guard. */
+const DOUBLE_QUOTED_UA_HEADER = /"[Uu]ser-[Aa]gent:\s*([^"\s][^"]*)"/;
+
+/** curl's own `-A`/`--user-agent` flag, as a whole word, and the whitespace after it. */
+const USER_AGENT_FLAG = /(?:^|\s)(?:-A|--user-agent)\s+/;
+
+/** A single- or double-quoted flag value: group 1 or group 2. */
+const QUOTED_FLAG_VALUE = /(?:'([^']+)'|"([^"]+)")/;
+
+/**
+ * The browser's User-Agent: a `-H`/`--header` `User-Agent:` header or curl's
+ * `-A`/`--user-agent` flag, single- or double-quoted. Groups 1–4 hold the
+ * value, whichever form matched. One alternation, so the leftmost occurrence
+ * of either form wins.
+ */
+const USER_AGENT_PATTERN = new RegExp(
+  `${HEADER_FLAG.source}(?:${SINGLE_QUOTED_UA_HEADER.source}|${DOUBLE_QUOTED_UA_HEADER.source})` +
+    `|${USER_AGENT_FLAG.source}${QUOTED_FLAG_VALUE.source}`
+);
 
 /** The User-Agent a cURL command sends, or undefined when absent or unusable. */
 export function extractUserAgent(curlInput: string): string | undefined {

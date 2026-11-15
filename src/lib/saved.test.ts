@@ -543,6 +543,70 @@ describe('enrichSavedItems views (#438)', () => {
     expect(result.items).toHaveLength(3);
   });
 
+  it('stops paging the completed view once --limit is reached in it', async () => {
+    const calls: any[] = [];
+    const client = createMockClient({
+      listSavedItems: (opts) => {
+        calls.push(opts);
+        return Promise.resolve(opts.filter === 'completed'
+          ? { saved_items: [item('3.3', 'completed'), item('4.4', 'completed')], response_metadata: { next_cursor: 'c2' } }
+          : { saved_items: [item('1.1', 'saved'), item('2.2', 'to_do')] });
+      },
+      listMessages,
+    });
+
+    const result = await enrichSavedItems(client, { limit: 3 });
+    expect(calls.map(c => [c.filter, c.cursor])).toEqual([[undefined, undefined], ['completed', undefined]]);
+    expect(result.items.map(i => i.message!.ts)).toEqual(['1.1', '2.2', '3.3']);
+  });
+
+  it('does not count an item seen in both views towards --limit', async () => {
+    const client = createMockClient({
+      listSavedItems: (opts) => Promise.resolve({
+        saved_items: opts.filter === 'completed'
+          ? [item('1.1', 'completed'), item('3.3', 'completed')]
+          : [item('1.1', 'to_do')],
+      }),
+      listMessages,
+    });
+
+    const result = await enrichSavedItems(client, { limit: 2 });
+    expect(result.items.map(i => [i.message!.ts, i.todo_state])).toEqual([['1.1', 'to_do'], ['3.3', 'completed']]);
+  });
+
+  it('pages stars.list with its cursor for app tokens, then stops', async () => {
+    const calls: any[] = [];
+    const client = createMockClient({
+      listSavedItems: (opts) => {
+        calls.push(opts);
+        const ts = opts.cursor ? '2.2' : '1.1';
+        return Promise.resolve({
+          items: [{ type: 'message', message: { text: `starred ${ts}`, ts, type: 'message' } }],
+          response_metadata: { next_cursor: opts.cursor ? '' : 'p2' },
+        });
+      },
+    });
+
+    const result = await enrichSavedItems(client);
+    expect(calls.map(c => [c.filter, c.cursor])).toEqual([[undefined, undefined], [undefined, 'p2']]);
+    expect(result.items.map(i => i.message!.ts)).toEqual(['1.1', '2.2']);
+  });
+
+  it('truncates stars.list items to --limit for app tokens', async () => {
+    const calls: any[] = [];
+    const starred = (ts: string) => ({ type: 'message', message: { text: `starred ${ts}`, ts, type: 'message' } });
+    const client = createMockClient({
+      listSavedItems: (opts) => {
+        calls.push(opts);
+        return Promise.resolve({ items: [starred('1.1'), starred('2.2'), starred('3.3')], response_metadata: { next_cursor: 'p2' } });
+      },
+    });
+
+    const result = await enrichSavedItems(client, { limit: 2 });
+    expect(calls).toHaveLength(1);
+    expect(result.items.map(i => i.message!.ts)).toEqual(['1.1', '2.2']);
+  });
+
   it('calls stars.list once for app tokens, which have no views', async () => {
     const calls: any[] = [];
     const client = createMockClient({

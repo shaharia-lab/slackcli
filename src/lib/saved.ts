@@ -25,6 +25,60 @@ export function savedListViews(state?: string): (SavedListFilter | undefined)[] 
   return [undefined, 'completed'];
 }
 
+/** Where the pages of every view are collected, and what has been seen so far. */
+type SavedItemsAccumulator = { rawItems: any[]; seen: Set<string> };
+
+type FetchSavedOptions = { limit?: number; state?: string; onProgress?: ProgressCallback };
+
+/**
+ * Append one listSavedItems page to `acc` and report whether browser auth
+ * served it. Browser items are deduplicated by `item_id:ts`, because an item
+ * completed between two views can show up in both.
+ */
+function collectSavedPage(response: any, acc: SavedItemsAccumulator): boolean {
+  const isBrowserFormat = !!response.saved_items;
+  const pageItems = isBrowserFormat ? response.saved_items : (response.items || []);
+  for (const item of pageItems) {
+    if (isBrowserFormat) {
+      const key = `${item.item_id}:${item.ts}`;
+      if (acc.seen.has(key)) continue;
+      acc.seen.add(key);
+    }
+    acc.rawItems.push(item);
+  }
+  return isBrowserFormat;
+}
+
+/**
+ * Page through one saved.list view. Once `limit` is reached the items are
+ * truncated to it and no further page is requested.
+ */
+async function fetchSavedView(
+  client: SlackClient,
+  filter: SavedListFilter | undefined,
+  acc: SavedItemsAccumulator,
+  options: FetchSavedOptions,
+): Promise<{ isBrowserFormat: boolean; limitReached: boolean }> {
+  const { rawItems } = acc;
+  let isBrowserFormat = false;
+  let cursor: string | undefined;
+  do {
+    const soFar = rawItems.length > 0 ? ` (${rawItems.length} so far)` : '';
+    options.onProgress?.(`Fetching saved items${soFar}...`);
+    const response = await client.listSavedItems({ count: PAGE_SIZE, cursor, filter });
+
+    isBrowserFormat = collectSavedPage(response, acc);
+    cursor = response.response_metadata?.next_cursor || undefined;
+
+    if (options.limit && rawItems.length >= options.limit) {
+      rawItems.length = options.limit;
+      return { isBrowserFormat, limitReached: true };
+    }
+  } while (cursor);
+
+  return { isBrowserFormat, limitReached: false };
+}
+
 /**
  * Paginate through every saved item in the views `state` needs. The response
  * shape tells us which auth path served it: browser auth returns
@@ -32,43 +86,18 @@ export function savedListViews(state?: string): (SavedListFilter | undefined)[] 
  */
 async function fetchAllSavedItems(
   client: SlackClient,
-  options: { limit?: number; state?: string; onProgress?: ProgressCallback },
+  options: FetchSavedOptions,
 ): Promise<{ rawItems: any[]; isBrowserFormat: boolean }> {
-  const rawItems: any[] = [];
-  // An item completed between two views can show up in both.
-  const seen = new Set<string>();
+  const acc: SavedItemsAccumulator = { rawItems: [], seen: new Set<string>() };
   let isBrowserFormat = false;
 
   for (const filter of savedListViews(options.state)) {
-    let cursor: string | undefined;
-    do {
-      const soFar = rawItems.length > 0 ? ` (${rawItems.length} so far)` : '';
-      options.onProgress?.(`Fetching saved items${soFar}...`);
-      const response = await client.listSavedItems({ count: PAGE_SIZE, cursor, filter });
-
-      isBrowserFormat = !!response.saved_items;
-      const pageItems = isBrowserFormat ? response.saved_items : (response.items || []);
-      for (const item of pageItems) {
-        if (isBrowserFormat) {
-          const key = `${item.item_id}:${item.ts}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-        }
-        rawItems.push(item);
-      }
-
-      cursor = response.response_metadata?.next_cursor || undefined;
-
-      if (options.limit && rawItems.length >= options.limit) {
-        rawItems.length = options.limit;
-        return { rawItems, isBrowserFormat };
-      }
-    } while (cursor);
-
-    if (!isBrowserFormat) break;
+    const view = await fetchSavedView(client, filter, acc, options);
+    isBrowserFormat = view.isBrowserFormat;
+    if (view.limitReached || !isBrowserFormat) break;
   }
 
-  return { rawItems, isBrowserFormat };
+  return { rawItems: acc.rawItems, isBrowserFormat };
 }
 
 /** Group saved message timestamps by the channel they live in, preserving order. */

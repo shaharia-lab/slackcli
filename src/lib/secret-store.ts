@@ -295,7 +295,8 @@ function quoteSecurityArg(arg: string, what: string): string {
   if (/[\0\n\r]/.test(arg)) {
     throw new Error(`Cannot store ${what} in the Keychain: it contains a line break or NUL character`);
   }
-  return `"${arg.replace(/[\\"]/g, (ch) => `\\${ch}`)}"`;
+  const escaped = arg.replace(/[\\"]/g, String.raw`\$&`);
+  return `"${escaped}"`;
 }
 
 // `security find-generic-password -w` prints a value as hex as soon as it holds

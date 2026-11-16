@@ -62,6 +62,8 @@ const SLACK_WRITES = new Set([
   'slackcli usergroups remove',
   'slackcli usergroups enable',
   'slackcli usergroups disable',
+  'slackcli users set-status',
+  'slackcli users clear-status',
   'slackcli emoji add',
   'slackcli emoji remove',
   'slackcli saved add',

@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import ora from 'ora';
+import ora, { type Ora } from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
 import { writeJson, writeText } from '../lib/formatter.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
@@ -9,14 +9,24 @@ import { statusOf, listUsersByStatus, type UserStatusFilter } from '../lib/users
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError, NotFoundError } from '../lib/cli-errors.ts';
 import { resolveIdentifier } from '../lib/name-resolver.ts';
+import { buildPreview, DRY_RUN_DESCRIPTION, DRY_RUN_FLAG, emitDryRun } from '../lib/dry-run.ts';
+import { checkStatusText, profileStatusFields, type ProfileStatus } from '../lib/slack-client.ts';
+import { confirmWrite } from './usergroups.ts';
+
+// Repeated by set-status and clear-status. A bot token is standard auth, so
+// this is a note rather than browserOnly or standardOnly.
+const PROFILE_STATUS_BOT_NOTE =
+  'A bot token (xoxb) cannot change a person\'s status and fails with unsupported_auth_type before any ' +
+  'Slack call. A user token (xoxp) or a browser session works.';
 
 // --help content, kept apart from the command chains below (#324).
 const HELP = {
   group: {
-    summary: 'Look up users and their account status',
+    summary: 'Look up users or set your profile status',
     description:
-      'Look up one user by ID, or list the workspace\'s users with their account status. To find ' +
-      'someone by name or email, use "slackcli search people".',
+      'Look up one user by ID, list the workspace\'s users with their account status, or set and clear ' +
+      'your own profile status. To find someone by name or email, use "slackcli search people". ' +
+      '"users list --status" filters account state. It does not read or change your profile status.',
   },
   info: {
     summary: 'Show one user by ID, @handle or email',
@@ -62,6 +72,47 @@ const HELP = {
       '--limit counts matching users returned, not users scanned.',
       '--status active means not deactivated, so it includes bots and guests; each row\'s status ' +
         'says active, bot, guest (single-channel), guest (multi-channel) or DEACTIVATED.',
+      'This --status flag is account state. Your profile status (the text and emoji beside your name) ' +
+        'is "users set-status" and "users clear-status".',
+    ],
+  },
+  setStatus: {
+    summary: 'Set your own profile status',
+    description:
+      'Set the signed-in user\'s profile status, the text and emoji beside their name, through ' +
+      'users.profile.set. To read a status, use "users info <id> --json" and look at profile.status_text ' +
+      'and profile.status_emoji.',
+    examples: [
+      'slackcli users set-status --text "Out of office" --emoji ":palm_tree:"',
+      'slackcli users set-status --text "Out of office" --emoji ":palm_tree:" --dry-run',
+      'slackcli users set-status --text "Out of office" --emoji ":palm_tree:" --yes --json',
+    ],
+    json: '{ status_text, status_emoji, status_expiration }. status_expiration is 0, so the status does not expire.',
+    dryRun: true,
+    confirms: true,
+    notes: [
+      'Both --text and --emoji are required. Pass an empty string to clear one of them. Slack keeps a field you leave out, so this command always sends both.',
+      'Status text is at most 100 characters. The status does not expire.',
+      PROFILE_STATUS_BOT_NOTE,
+      'This sets only your own status. It does not take a user id.',
+    ],
+  },
+  clearStatus: {
+    summary: 'Clear your own profile status',
+    description:
+      'Clear the signed-in user\'s profile status by setting the text and emoji to empty. To read a ' +
+      'status, use "users info <id> --json".',
+    examples: [
+      'slackcli users clear-status',
+      'slackcli users clear-status --dry-run',
+      'slackcli users clear-status --yes --json',
+    ],
+    json: '{ status_text, status_emoji, status_expiration }. Both strings are empty, and status_expiration is 0.',
+    dryRun: true,
+    confirms: true,
+    notes: [
+      PROFILE_STATUS_BOT_NOTE,
+      'Clearing removes the text, the emoji, and any expiry.',
     ],
   },
 } satisfies Record<string, CommandHelp>;
@@ -74,6 +125,49 @@ const HELP = {
 const RESOLVE_FIELDS_HELP =
   'Resolve custom profile-field IDs to their labels (labels only; ' +
   'user-typed values such as Manager stay as IDs)';
+
+type StatusCommandOptions = {
+  workspace?: string;
+  json?: boolean;
+  yes?: boolean;
+  dryRun?: boolean;
+};
+
+// set-status and clear-status share one write. Validation, the bot-token
+// refusal, and the dry-run preview all happen before the confirm prompt.
+async function commitOwnStatus(
+  status: ProfileStatus,
+  options: StatusCommandOptions,
+  copy: { action: string; confirm: string; doing: string; done: string; failed: string },
+): Promise<void> {
+  const spinner: Ora = ora(copy.doing).start();
+  try {
+    checkStatusText(status.status_text);
+    const client = await getAuthenticatedClient(options.workspace);
+    client.requireOwnProfileWrite();
+    spinner.stop();
+
+    if (options.dryRun) {
+      const fields: Record<string, unknown> = { ...profileStatusFields(status) };
+      emitDryRun(
+        await buildPreview(client, copy.action, { kind: 'profile', name: 'your profile' }, fields),
+        options.json,
+      );
+      return;
+    }
+
+    if (!(await confirmWrite(copy.confirm, options.yes === true, options.json))) {
+      return;
+    }
+
+    spinner.start(copy.doing);
+    const result = await client.setOwnStatus(status);
+    spinner.succeed(copy.done);
+    if (options.json) writeJson(result);
+  } catch (err: any) {
+    failCommand(err, { json: options.json, spinner, context: copy.failed });
+  }
+}
 
 export function createUsersCommand(): Command {
   const users = describeCommand(new Command('users'), HELP.group);
@@ -211,6 +305,44 @@ export function createUsersCommand(): Command {
       } catch (err: any) {
         failCommand(err, { json: options.json, spinner, context: 'Failed to list users' });
       }
+    });
+
+  describeCommand(users.command('set-status'), HELP.setStatus)
+    .requiredOption('--text <text>', 'Status text (100 characters at most; empty clears it)')
+    .requiredOption('--emoji <emoji>', 'Status emoji, such as :palm_tree: (empty clears it)')
+    .option('--yes', 'Set the status without a prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (options: StatusCommandOptions & { text: string; emoji: string }) => {
+      const status = { status_text: options.text, status_emoji: options.emoji };
+      const shown = `${status.status_emoji} ${status.status_text}`.trim();
+      await commitOwnStatus(status, options, {
+        action: 'set status',
+        confirm: shown ? `Set your profile status to ${shown}?` : 'Set your profile status to empty?',
+        doing: 'Setting profile status...',
+        done: shown ? `Status set to ${shown}` : 'Status set to empty',
+        failed: 'Failed to set profile status',
+      });
+    });
+
+  describeCommand(users.command('clear-status'), HELP.clearStatus)
+    .option('--yes', 'Clear the status without a prompt', false)
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .option(DRY_RUN_FLAG, DRY_RUN_DESCRIPTION, false)
+    .action(async (options: StatusCommandOptions) => {
+      await commitOwnStatus(
+        { status_text: '', status_emoji: '' },
+        options,
+        {
+          action: 'clear status',
+          confirm: 'Clear your profile status?',
+          doing: 'Clearing profile status...',
+          done: 'Status cleared',
+          failed: 'Failed to clear profile status',
+        },
+      );
     });
 
   return users;

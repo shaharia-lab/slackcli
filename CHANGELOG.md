@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`users set-status` and `users clear-status`**: set or clear your own profile status (the text and emoji beside your name) through Slack's `users.profile.set`. `set-status` takes `--text` and `--emoji` (both required; an empty string clears that one field). `clear-status` sets both to empty. The status does not expire. Both take `--dry-run`, `--yes`, `--json` and `--workspace`. A user token (`xoxp`) or a browser session works. A bot token (`xoxb`) fails with `unsupported_auth_type` before any call. Read a status with `users info <id> --json` (`profile.status_text` and `profile.status_emoji`). `users list --status` is unchanged and still means account state (#502)
+
 ## [0.19.2] - 2026-11-14
 
 ### Fixed

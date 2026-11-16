@@ -162,6 +162,7 @@ slackcli messages send --permalink="$LINK" --message="On it 👀"
 | Send, reply, edit, delete, react, or unreact | `slackcli messages send --permalink="$LINK" --message="…"` | [messages](docs/user-guide/messages.md) |
 | Search the workspace | `slackcli search messages "release notes"` | [search](docs/user-guide/search.md) |
 | Find a channel or a person | `slackcli search people "ada"` | [search](docs/user-guide/search.md) |
+| Set or clear your status | `slackcli users set-status --text "Out of office" --emoji ":palm_tree:"` | [users](docs/user-guide/users.md) |
 | Work through "saved for later" | `slackcli saved list --state=to_do` | [saved items](docs/user-guide/saved.md) |
 | Read a Canvas as Markdown | `slackcli canvas read F123` | [canvas](docs/user-guide/canvas.md) |
 | Inspect or download a Slack file | `slackcli files info F123` | [files](docs/user-guide/files.md) |

@@ -1,8 +1,9 @@
 # Users
 
-`slackcli users` looks up people by ID, handle or email and lists workspace users with their
-account status. Every subcommand accepts `--workspace <id|name>` and `--json`;
-with `--json`, [`--fields`](scripting.md#keeping-output-small---fields-and---limit) keeps only the fields you name
+`slackcli users` looks up people by ID, handle or email, lists workspace users with their
+account status, and sets or clears your own profile status. Every subcommand accepts
+`--workspace <id|name>` and `--json`. The lookup commands also take
+[`--fields`](scripting.md#keeping-output-small---fields-and---limit)
 (`users list --json --fields id,name,email`, `users info U012HH99H63 --json --fields id,profile.email`).
 
 `search people` finds users by name or email; `users` is for looking one up by
@@ -89,3 +90,50 @@ slackcli users list --status active --limit 50 --json | jq -r '.users[].email'
 `users info --json` emits the raw user object (plus a `resolved_fields` object
 when `--resolve-fields` is set). `users list --json` emits
 `{ total, status, users: [...] }`.
+
+`users info --json` is also how you read a profile status. The text is
+`profile.status_text` and the emoji is `profile.status_emoji`. There is no
+separate get command.
+
+## `users set-status`
+
+```bash
+slackcli users set-status --text "Out of office" --emoji ":palm_tree:"
+slackcli users set-status --text "Out of office" --emoji ":palm_tree:" --dry-run
+slackcli users set-status --text "Out of office" --emoji ":palm_tree:" --yes --json
+```
+
+Sets the signed-in user's profile status, the text and emoji beside their name,
+through Slack's `users.profile.set`. Both `--text` and `--emoji` are required.
+Pass an empty string to clear one of them. Slack keeps a field you leave out,
+so the command always sends both.
+
+The text is at most 100 characters. The status does not expire. This command
+does not take a user id, and it only changes your own status.
+
+`--dry-run` prints the profile it would send and does not ask you to confirm.
+Without `--dry-run`, a terminal asks `y/N`. Without a terminal, pass `--yes`
+or the command refuses and changes nothing.
+
+`--json` prints `{ status_text, status_emoji, status_expiration }` with
+`status_expiration` set to `0`.
+
+A user token (`xoxp`) or a browser session can set the status. A bot token
+(`xoxb`) cannot. It fails with `unsupported_auth_type` before any Slack call.
+Sign in with `slackcli auth login` (a user token) or `slackcli auth login-auto`.
+
+`users list --status` is a different thing. It filters account state (`active`,
+`deactivated`) and does not read or change this status.
+
+## `users clear-status`
+
+```bash
+slackcli users clear-status
+slackcli users clear-status --dry-run
+slackcli users clear-status --yes --json
+```
+
+Clears your profile status. It sends empty text and an empty emoji, and it
+does not leave an expiry. The same auth rule, confirmation, and `--dry-run`
+behavior as `users set-status` apply. `--json` prints the same object with
+both strings empty.

@@ -369,7 +369,7 @@ Each is dependency-free and pure, so each is directly testable:
 
 | Module | Job |
 |---|---|
-| `curl-parser.ts` | Pull `xoxd`/`xoxc`, and the browser's `User-Agent`, out of a DevTools cURL command. Handles URL-encoded tokens, `-b` / `--cookie` / `-H 'Cookie:'`, and enterprise Slack URLs. The most thoroughly tested file in the repo — use it as the model for new tests. |
+| `curl-parser.ts` | Pull `xoxd`/`xoxc`, and the browser's `User-Agent`, out of a DevTools cURL command. Handles URL-encoded tokens, `-b` / `--cookie` / `-H 'Cookie:'`, `--data` / `--data-raw` / `--data-binary` bodies, `\` line continuations (Firefox puts the body on its own line), and enterprise Slack URLs. The most thoroughly tested file in the repo — use it as the model for new tests. |
 | `slack-url-parser.ts` | Normalise Slack URLs, permalinks, and timestamps into IDs. Also produces the workspace-mismatch warning. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks, for drafts. |
 | `canvas-parser.ts` | Slack canvas (Quip-based) HTML → Markdown, zero dependencies. |

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`auth parse-curl` reads Firefox's "Copy as cURL"**: Firefox sends the request body with `--data-binary` and puts it on its own line after a `\` line continuation, so parsing failed with "Could not find xoxc token in request data". Both forms are now accepted, and a flag's value may follow it on a continuation line (#549)
+
 ## [0.19.2] - 2026-11-14
 
 ### Fixed

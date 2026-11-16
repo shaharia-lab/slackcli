@@ -129,7 +129,7 @@ If you would rather not let SlackCLI drive a browser, copy one Slack API request
 out of DevTools and let it read the tokens from that.
 
 In DevTools → Network, right-click any Slack API request → **Copy** → **Copy as
-cURL**, then:
+cURL** (in Firefox: **Copy Value** → **Copy as cURL**), then:
 
 ```bash
 # Interactive: paste, then press Enter twice (or Ctrl-D)

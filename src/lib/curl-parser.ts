@@ -29,13 +29,27 @@ export function extractSlackWorkspaceName(url: string): string {
 }
 
 /**
- * Request body of a cURL command: `--data-raw` or `--data`, followed by a
- * single-quoted ('…', $'…') or double-quoted ("…", $"…") value. Group 1 holds a
- * single-quoted body, group 2 a double-quoted one. `--data\s` cannot match
- * inside `--data-raw`, `--data-binary` or `--data-urlencode`, and a single scan
- * means the leftmost flag in the command wins.
+ * Request body of a cURL command: `--data-raw`, `--data-binary` (Firefox) or
+ * `--data`, followed by a single-quoted ('…', $'…') or double-quoted ("…", $"…")
+ * value. Group 1 holds a single-quoted body, group 2 a double-quoted one.
+ * `--data\s` cannot match inside `--data-raw`, `--data-binary` or
+ * `--data-urlencode`, and a single scan means the leftmost flag in the command
+ * wins.
  */
-const DATA_BODY_PATTERN = /--data(?:-raw)?\s+\$?(?:'([^']+)'|"([^"]+)")/;
+const DATA_BODY_PATTERN = /--data(?:-raw|-binary)?\s+\$?(?:'([^']+)'|"([^"]+)")/;
+
+/** A shell line continuation: a backslash ending the line, LF or CRLF. */
+const LINE_CONTINUATION = /\\\r?\n/g;
+
+/**
+ * Join shell line continuations into one line, so a flag and its value may sit
+ * on separate lines. Firefox's "Copy as cURL" puts the request body on its own
+ * line after `--data-binary \`. Body newlines are escaped inside `$'…'`, so no
+ * continuation is joined inside a quoted value.
+ */
+export function joinLineContinuations(curlInput: string): string {
+  return curlInput.replace(LINE_CONTINUATION, ' ');
+}
 
 /** `-H`/`--header` and the whitespace after it. */
 const HEADER_FLAG = /(?:-H|--header)\s+/;
@@ -77,7 +91,9 @@ export function extractUserAgent(curlInput: string): string | undefined {
 /**
  * Parse a cURL command and extract Slack authentication tokens
  */
-export function parseCurlCommand(curlInput: string): ParsedCurlResult {
+export function parseCurlCommand(rawCurlInput: string): ParsedCurlResult {
+  const curlInput = joinLineContinuations(rawCurlInput);
+
   // Extract workspace URL — domain can be myorg.slack.com or myorg.enterprise.slack.com
   // The URL is either positional (curl 'https://...') or behind the --url flag
   // (curl --url 'https://...'), which Chrome 151+ DevTools emits for "Copy as cURL".

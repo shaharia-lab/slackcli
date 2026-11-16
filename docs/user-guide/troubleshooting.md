@@ -167,8 +167,8 @@ Clipboard access uses `pbpaste` (macOS), PowerShell (Windows), and
 
 ## `Clipboard content does not appear to be a cURL command`
 
-Copy the request from DevTools with **Copy → Copy as cURL** (not "Copy link" or
-"Copy response"). "Copy as cURL (bash)" and "(cmd)" both work.
+Copy the request from DevTools with **Copy → Copy as cURL** (Firefox: **Copy
+Value → Copy as cURL**), not "Copy link" or "Copy response". "Copy as cURL (bash)" and "(cmd)" both work.
 
 ## Canvas read says authentication expired
 

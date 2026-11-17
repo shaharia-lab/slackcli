@@ -22,6 +22,7 @@ function client(overrides: Record<string, (...args: any[]) => Promise<unknown>> 
     stub: {
       authType: 'browser',
       workspaceHost: 'acme.slack.com',
+      workspaceIdentity: { id: 'T0123456789', name: 'Acme', profile: 'acme' },
       requireBrowserAuth: () => {},
       addSavedItem: record('addSavedItem', async (channel: string, ts: string, dateDue: number) => ({
         ok: true, item: { item_id: channel, item_type: 'message', ts, todo_state: 'to_do', date_due: dateDue },
@@ -30,6 +31,8 @@ function client(overrides: Record<string, (...args: any[]) => Promise<unknown>> 
         ok: true, item: { item_id: channel, item_type: 'message', ts, todo_state: update.todo_state ?? 'to_do', ...update },
       })),
       deleteSavedItem: record('deleteSavedItem', async () => ({ ok: true })),
+      deleteSavedReminder: record('deleteSavedReminder', async () => ({ ok: true })),
+      listSavedItems: record('listSavedItems', async () => ({ saved_items: [] })),
     },
   };
 }
@@ -172,6 +175,115 @@ describe('saved writes (command)', () => {
     expect(process.exitCode).toBe(1);
     expect(calls).toEqual([]);
     expect(stderr).toContain('Saved item was not removed');
+  });
+
+  it('removes a reminder with --item-id and passes through the selected workspace', async () => {
+    const { stub, calls } = client();
+
+    await run(stub, ['remove', '--item-id', 'Sa0ABC123', '--workspace', 'acme', '--yes', '--json']);
+
+    expect(authLib.getAuthenticatedClient).toHaveBeenCalledWith('acme');
+    expect(calls).toEqual([['deleteSavedReminder', ['Sa0ABC123']]]);
+    expect(JSON.parse(stdout)).toEqual({ item_id: 'Sa0ABC123', item_type: 'reminder', removed: true });
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('reports reminder removal in text mode', async () => {
+    const { stub } = client();
+
+    await run(stub, ['remove', '--item-id', 'Sa0ABC123', '--yes']);
+
+    expect(stdout).toContain('Reminder item: Sa0ABC123');
+  });
+
+  it('refuses unattended reminder removal without --yes and keeps stdout empty', async () => {
+    const { stub, calls } = client();
+
+    await run(stub, ['remove', '--item-id', 'Sa0ABC123', '--json']);
+
+    expect(process.exitCode).toBe(1);
+    expect(calls).toEqual([]);
+    expect(stdout).toBe('');
+    expect(lastError()).toMatchObject({ code: 'confirmation_required', retryable: false });
+  });
+
+  it('previews a reminder removal without --yes, prompting, name lookups or writes', async () => {
+    const { stub, calls } = client();
+
+    await run(stub, ['remove', '--item-id', 'Sa0ABC123', '--dry-run', '--json']);
+
+    expect(process.exitCode).toBe(0);
+    expect(calls).toEqual([]);
+    expect(JSON.parse(stdout)).toEqual({
+      dry_run: true, action: 'remove saved item', workspace: stub.workspaceIdentity,
+      target: { kind: 'reminder', id: 'Sa0ABC123' }, payload: {},
+    });
+    expect(stderr).not.toContain('[y/N]');
+  });
+
+  it.each([
+    ['--channel-id', 'C0123456789'], ['--timestamp', TS], ['--permalink', PERMALINK],
+  ])('rejects --item-id combined with %s before authentication', async (flag, value) => {
+    const { stub, calls } = client();
+
+    await run(stub, ['remove', '--item-id', 'Sa0ABC123', flag, value, '--yes', '--json']);
+
+    expect(process.exitCode).toBe(1);
+    expect(authLib.getAuthenticatedClient).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+    expect(stdout).toBe('');
+    expect(lastError()).toMatchObject({ code: 'invalid_input' });
+  });
+
+  it.each(['', 'Rm0ABC123', 'C0123456789', 'Sa0ABC123,Sa0DEF456'])
+    ('rejects reminder target %j even for a dry run', async (id) => {
+      const { stub, calls } = client();
+
+      await run(stub, ['remove', '--item-id', id, '--dry-run', '--json']);
+
+      expect(process.exitCode).toBe(1);
+      expect(authLib.getAuthenticatedClient).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
+      expect(lastError()).toMatchObject({ code: 'invalid_input' });
+    });
+
+  it('refuses a reminder dry run on app tokens before any call', async () => {
+    const { stub, calls } = client();
+    stub.requireBrowserAuth = () => { throw new UnsupportedAuthTypeError(SAVED_WRITE_AUTH_MESSAGE); };
+
+    await run(stub, ['remove', '--item-id', 'Sa0ABC123', '--dry-run', '--json']);
+
+    expect(process.exitCode).toBe(1);
+    expect(calls).toEqual([]);
+    expect(lastError()).toMatchObject({ code: 'unsupported_auth_type' });
+  });
+
+  it('reports a missing reminder as not_found without claiming removal', async () => {
+    const { stub } = client({ deleteSavedReminder: async () => {
+      throw Object.assign(new Error('Slack API error: not_found'), { slackData: { error: 'not_found' } });
+    } });
+
+    await run(stub, ['remove', '--item-id', 'Sa0ABC123', '--yes', '--json']);
+
+    expect(process.exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(lastError()).toMatchObject({ code: 'not_found', slack_error: 'not_found', retryable: false });
+  });
+
+  it('keeps an in-progress reminder in saved list --state to_do and supports --fields', async () => {
+    const { stub } = client({ listSavedItems: async () => ({ saved_items: [{
+      item_type: 'reminder', item_id: 'Sa0ABC123', date_created: 1700000000,
+      date_due: 1700000060, todo_state: 'to_do', description: [{ type: 'rich_text', elements: [
+        { type: 'rich_text_section', elements: [{ type: 'text', text: 'Call the vendor' }] },
+      ] }],
+    }] }) });
+
+    await run(stub, ['list', '--state', 'to_do', '--json', '--fields', 'item_id,text,todo_state,date_due']);
+
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ item_count: 1, items: [{
+      item_id: 'Sa0ABC123', text: 'Call the vendor', todo_state: 'to_do', date_due: 1700000060,
+    }] });
   });
 
   it('fails a Slack refusal with exit 1 and the Slack code', async () => {

@@ -445,6 +445,8 @@ export function logUsageError(
 }
 
 export interface UsageErrorLoggingOptions {
+  /** Optional command-specific error output, after logging and before exit. */
+  report?: (command: Command, error: CommanderError) => void;
   /** Whether `-v/--verbose` was given; read when the error happens. */
   verbose: () => boolean;
   /** Whether `startLogging()` already ran for this process. */
@@ -468,6 +470,7 @@ export function installUsageErrorLogging(root: Command, options: UsageErrorLoggi
       try {
         if (isUsageError(err.code)) {
           logUsageError(cmd, err, { verbose: options.verbose(), loggingStarted: options.loggingStarted() });
+          options.report?.(cmd, err);
         }
       } finally {
         exit(err.exitCode);

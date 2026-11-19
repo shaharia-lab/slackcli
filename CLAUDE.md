@@ -18,6 +18,7 @@ This section is the supreme, non-negotiable contributing policy for this reposit
 - Do not open a PR for an issue that has not yet received this label.
 - This lets the maintainer decide which features belong in the CLI, and it "locks" the feature to the PR. PRs that skip this step are likely to be rejected, even if the code is good.
 - **New features must meet the feature criteria** in [CONTRIBUTING.md](CONTRIBUTING.md#feature-request-criteria): built on an official, documented, non-deprecated Slack API method; useful beyond one person's workflow; one open feature request per person at a time. A request that does not meet them is declined and closed with the reason. One that does stays open, and gets `ready-for-pr` only when the maintainer decides to take it; a request nobody engages with is closed over time by the stale workflow. A PR for a feature whose issue has no `ready-for-pr` is not reviewed: it gets a short "on hold" comment and stays open. Bugs, docs, dependency and security fixes are not features and follow the rules above.
+- **No undocumented browser-only hacks.** A feature that relies on internal web-client endpoints (such as `drafts.*`) or on driving the Slack web UI is not accepted, even if it works today: it is not reliable, maintainable or guaranteed. Such requests are closed; we revisit only if Slack ships an official API.
 
 ### 3. Issues and PRs must follow the templates
 

@@ -76,7 +76,11 @@ top to bottom. Thread replies are already chronological. `--json` also includes
 reactions, blocks, attachments, file metadata, and a resolved `users` array.
 A table in a message (a Slack `table` block, sent in `blocks` or
 `attachments` rather than in the message text) prints as aligned rows under
-the message text.
+the message text. A legacy attachment, the usual shape of bot notifications
+such as Grafana alerts, prints under the text behind a `│` bar: its `pretext`,
+`title` (with `title_link`), `text`, fields as `title: value`, and `footer`,
+or its `fallback` when it has no title and no text. `conversations get`
+renders messages the same way.
 
 `--json` also carries a polling cursor:
 

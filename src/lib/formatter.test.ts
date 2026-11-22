@@ -568,10 +568,63 @@ describe('formatMessage table display', () => {
     const msg: SlackMessage = {
       type: 'message', user: 'U1', text: 'plain', ts: '1700000000.000100',
       blocks: [{ type: 'rich_text', elements: [] }, { type: 'mystery' }],
-      attachments: [{ text: 'legacy' }],
+      attachments: [{ color: '#ff9900' }],
     };
     const plain: SlackMessage = { type: 'message', user: 'U1', text: 'plain', ts: '1700000000.000100' };
     expect(formatMessage(msg, users)).toBe(formatMessage(plain, users));
+  });
+});
+
+describe('formatMessage legacy attachment display', () => {
+  const users = new Map<string, SlackUser>();
+
+  it('renders an attachment-only bot message instead of an empty body (#555)', () => {
+    const msg: SlackMessage = {
+      type: 'message', bot_id: 'B1', text: '', ts: '1700000000.000100',
+      attachments: [{
+        color: '#ff9900', title: 'Something is firing', title_link: 'https://example.com',
+        text: 'Details line 1\nDetails line 2', fallback: 'Something is firing', footer: 'Example',
+      }],
+    };
+    const lines = formatMessage(msg, users).split('\n');
+    expect(lines.slice(1, 5)).toEqual([
+      '  │ Something is firing (https://example.com)',
+      '  │ Details line 1',
+      '  │ Details line 2',
+      '  │ Example',
+    ]);
+    expect(lines[5]).toContain('ts: 1700000000.000100');
+  });
+
+  it('keeps the message text above the attachment', () => {
+    const msg: SlackMessage = {
+      type: 'message', bot_id: 'B1', text: 'Alert update', ts: '1700000000.000100',
+      attachments: [{ title: 'CPU high' }],
+    };
+    expect(formatMessage(msg, users)).toContain('  Alert update\n  │ CPU high\n');
+  });
+
+  it('honours the indent', () => {
+    const msg: SlackMessage = {
+      type: 'message', bot_id: 'B1', text: '', ts: '1700000000.000100',
+      attachments: [{ text: 'reply body' }],
+    };
+    expect(formatMessage(msg, users, 4)).toContain('\n      │ reply body\n');
+  });
+
+  it('still prints the empty text line when nothing else carries content', () => {
+    const msg: SlackMessage = { type: 'message', bot_id: 'B1', text: '', ts: '1700000000.000100', attachments: [{}] };
+    expect(formatMessage(msg, users).split('\n')[1]).toBe('  ');
+  });
+
+  it('does not repeat a table attachment as its fallback', () => {
+    const msg: SlackMessage = {
+      type: 'message', bot_id: 'B1', text: 'table', ts: '1700000000.000100',
+      attachments: [{ fallback: '[no preview available]', blocks: [{ type: 'table', rows: [[{ type: 'raw_text', text: 'a' }]] }] }],
+    };
+    const output = formatMessage(msg, users);
+    expect(output).not.toContain('no preview');
+    expect(output).toContain('  a\n');
   });
 });
 

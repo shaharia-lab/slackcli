@@ -612,6 +612,14 @@ describe('formatMessage legacy attachment display', () => {
     expect(formatMessage(msg, users, 4)).toContain('\n      │ reply body\n');
   });
 
+  it('separates several attachments with a blank line', () => {
+    const msg: SlackMessage = {
+      type: 'message', bot_id: 'B1', text: '', ts: '1700000000.000100',
+      attachments: [{ title: 'Alert A' }, { color: '#000' }, { title: 'Alert B' }],
+    };
+    expect(formatMessage(msg, users)).toContain('  │ Alert A\n\n  │ Alert B\n');
+  });
+
   it('still prints the empty text line when nothing else carries content', () => {
     const msg: SlackMessage = { type: 'message', bot_id: 'B1', text: '', ts: '1700000000.000100', attachments: [{}] };
     expect(formatMessage(msg, users).split('\n')[1]).toBe('  ');

@@ -338,7 +338,8 @@ export function formatMessage(
   }
 
   // Legacy attachments (#555), each behind a bar like Slack's colour strip
-  attachments.forEach(lines => {
+  attachments.forEach((lines, idx) => {
+    if (idx > 0) output += '\n';
     lines.forEach(line => {
       output += `${indentStr}  ${chalk.dim('│')} ${line}\n`;
     });

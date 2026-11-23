@@ -24,23 +24,24 @@ const logger = getLogger(['slackcli', 'secret-store']);
 // ---------------------------------------------------------------------------
 
 // The kinds of secret a workspace can hold. Standard auth has one token;
-// browser auth has the xoxc token plus the xoxd session cookie.
-export type CredentialKind = 'token' | 'xoxc' | 'xoxd';
+// browser auth has the xoxc token, the xoxd session cookie, and an optional dbd cookie.
+export type CredentialKind = 'token' | 'xoxc' | 'xoxd' | 'dbd';
 
 export const CREDENTIAL_KINDS: Record<AuthType, readonly CredentialKind[]> = {
   standard: ['token'],
-  browser: ['xoxc', 'xoxd'],
+  browser: ['xoxc', 'xoxd', 'dbd'],
 };
 
 // Every kind, for cleaning up after a record whose auth_type is missing or
 // unknown (a hand-edited or damaged file) — deleting an absent kind is a no-op.
-const ALL_CREDENTIAL_KINDS: readonly CredentialKind[] = ['token', 'xoxc', 'xoxd'];
+const ALL_CREDENTIAL_KINDS: readonly CredentialKind[] = ['token', 'xoxc', 'xoxd', 'dbd'];
 
 // Where each kind lives on a WorkspaceConfig record.
-const CREDENTIAL_FIELDS: Record<CredentialKind, 'token' | 'xoxc_token' | 'xoxd_token'> = {
+const CREDENTIAL_FIELDS: Record<CredentialKind, 'token' | 'xoxc_token' | 'xoxd_token' | 'dbd_cookie'> = {
   token: 'token',
   xoxc: 'xoxc_token',
   xoxd: 'xoxd_token',
+  dbd: 'dbd_cookie',
 };
 
 // A backend stores opaque string secrets under string keys.
@@ -106,7 +107,9 @@ export function parseSecretKey(key: string): { ref: string; kind: CredentialKind
 // Split a full config into the secrets it carries, keyed by kind.
 function credentialsOf(config: WorkspaceConfig): Array<[CredentialKind, string]> {
   if (config.auth_type === 'standard') return [['token', config.token]];
-  return [['xoxc', config.xoxc_token], ['xoxd', config.xoxd_token]];
+  const credentials: Array<[CredentialKind, string]> = [['xoxc', config.xoxc_token], ['xoxd', config.xoxd_token]];
+  if (config.dbd_cookie !== undefined) credentials.push(['dbd', config.dbd_cookie]);
+  return credentials;
 }
 
 // The config with its secrets removed — what is safe to keep as metadata.
@@ -115,7 +118,7 @@ export function metadataOf(config: WorkspaceConfig): WorkspaceMetadata {
     const { token: _token, ...metadata } = config;
     return metadata;
   }
-  const { xoxc_token: _xoxc, xoxd_token: _xoxd, ...metadata } = config;
+  const { xoxc_token: _xoxc, xoxd_token: _xoxd, dbd_cookie: _dbd, ...metadata } = config;
   return metadata;
 }
 
@@ -124,9 +127,36 @@ export async function storeCredentials(
   store: SecretStore,
   ref: string,
   config: WorkspaceConfig,
+  restoreOnError = false,
 ): Promise<void> {
-  for (const [kind, value] of credentialsOf(config)) {
-    await store.set(secretKey(ref, kind), value);
+  const entries: Array<[string, string | null]> = credentialsOf(config).map(
+    ([kind, value]) => [secretKey(ref, kind), value],
+  );
+  if (config.auth_type === 'browser' && config.dbd_cookie === undefined) {
+    entries.push([secretKey(ref, 'dbd'), null]);
+  }
+  const previous = new Map<string, string | null>();
+  if (restoreOnError) {
+    for (const [key] of entries) {
+      previous.set(key, await store.get(key));
+    }
+  }
+  const written: string[] = [];
+  try {
+    for (const [key, value] of entries) {
+      if (value === null) await store.delete(key);
+      else await store.set(key, value);
+      written.push(key);
+    }
+  } catch (err) {
+    const restored = await Promise.allSettled(written.filter((key) => previous.has(key)).map((key) => {
+      const value = previous.get(key);
+      return value == null ? store.delete(key) : store.set(key, value);
+    }));
+    if (restored.some((result) => result.status === 'rejected')) {
+      throw new Error('Could not restore all previous browser credentials after a storage failure.', { cause: err });
+    }
+    throw err;
   }
 }
 
@@ -148,6 +178,7 @@ export async function loadCredentials(
   const secrets: Partial<Record<CredentialKind, string>> = {};
   for (const kind of kinds) {
     const value = await store.get(secretKey(ref, kind));
+    if (value === null && kind === 'dbd') continue;
     if (value === null) throw new MissingCredentialError(ref, kind);
     secrets[kind] = value;
   }
@@ -159,6 +190,7 @@ export async function loadCredentials(
     ...metadata,
     xoxc_token: secrets.xoxc as string,
     xoxd_token: secrets.xoxd as string,
+    ...(secrets.dbd !== undefined ? { dbd_cookie: secrets.dbd } : {}),
   };
 }
 
@@ -178,7 +210,7 @@ export async function deleteCredentials(
 // ---------------------------------------------------------------------------
 // FileSecretStore: the legacy backend. Secrets live inline on the profile's
 // record in the loaded workspaces.json document, under the same field names as
-// always (`token`, `xoxc_token`, `xoxd_token`). It mutates the in-memory
+// always (`token`, `xoxc_token`, `xoxd_token`), plus `dbd_cookie` when captured. It mutates the in-memory
 // document only; the caller persists it with saveWorkspaces(), which keeps the
 // file's 0600 mode and the one-write-per-command behaviour.
 // ---------------------------------------------------------------------------
@@ -235,7 +267,7 @@ export class FileSecretStore implements SecretStore {
 // `add-generic-password` command line from stdin instead, so `ps` sees only
 // `security -i`. Reads and deletes carry no secret and pass plain argv. Every
 // item is stored under service "slackcli", account
-// `<profile key>:<token|xoxc|xoxd>` (secretKey()).
+// `<profile key>:<token|xoxc|xoxd|dbd>` (secretKey()).
 // ---------------------------------------------------------------------------
 
 const KEYCHAIN_SERVICE = 'slackcli';
@@ -452,5 +484,6 @@ export function credentialsMatch(a: WorkspaceConfig, b: WorkspaceConfig): boolea
   if (a.auth_type === 'standard') {
     return b.auth_type === 'standard' && a.token === b.token;
   }
-  return b.auth_type === 'browser' && a.xoxc_token === b.xoxc_token && a.xoxd_token === b.xoxd_token;
+  return b.auth_type === 'browser'
+    && a.xoxc_token === b.xoxc_token && a.xoxd_token === b.xoxd_token && a.dbd_cookie === b.dbd_cookie;
 }

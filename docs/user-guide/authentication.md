@@ -112,6 +112,9 @@ SlackCLI also records the browser's User-Agent and sends it with every request
 on these workspaces, so Slack sees the session used by the browser it belongs to
 (see [why the User-Agent matters](#why-slackcli-reuses-your-browsers-user-agent)).
 
+If the browser has a `dbd` cookie for the workspace's API requests, SlackCLI
+saves it with the other browser credentials.
+
 Partial success is still success: if one captured workspace has a stale token,
 the others are still saved and the failure is reported.
 
@@ -145,9 +148,10 @@ cat curl-command.txt | slackcli auth parse-curl --login
 
 This extracts the workspace URL and name, the `xoxd` token from the cookie
 header, the `xoxc` token from the request body, and the browser's `User-Agent`
-header, which SlackCLI then sends with every request on that workspace. Drop `--login` to print what
-was found without saving it: the workspace, and whether each token was found and
-how long it is. Token values are never printed, not even in part.
+header. SlackCLI accepts multipart, JSON, and URL-encoded request bodies.
+If the request includes a `dbd` cookie, SlackCLI saves it with the other
+credentials and sends it with browser API requests to that workspace.
+Drop `--login` to see which credentials SlackCLI found, without saving them.
 
 A copied cURL carries your full session credentials. Pipe it or read it from the
 clipboard rather than pasting it at the prompt, where it stays in your terminal's

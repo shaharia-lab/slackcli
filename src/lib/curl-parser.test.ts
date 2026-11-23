@@ -172,6 +172,17 @@ describe('parseCurlCommand', () => {
     const URL = `curl 'https://test.slack.com/api/test'`;
     const DATA = `--data 'name="token" xoxc-test'`;
 
+    it('preserves the dbd wire value and reads a URL-encoded form token', () => {
+      const parsed = parseCurlCommand(
+        `${URL} -b 'd=xoxd-with%2Fpath; dbd=opaque%2F%3D; b=unused' --data-raw 'token=xoxc-abc'`,
+      );
+      expect(parsed).toMatchObject({ xoxd: 'xoxd-with/path', xoxc: 'xoxc-abc', dbd: 'opaque%2F%3D' });
+    });
+
+    it.each(['dbd=', 'dbd=duplicate; dbd=second', 'dbd=first\nsecond'])('rejects an invalid dbd field', (cookie) => {
+      expect(parseErrorField(`${URL} -b 'd=xoxd-test; ${cookie}' ${DATA}`)).toBe('dbd');
+    });
+
     it('should stay linear on a Cookie header of 50,000 spaces with no closing quote', () => {
       const curl = `${URL} -H 'Cookie:${' '.repeat(50_000)}`;
       const start = performance.now();

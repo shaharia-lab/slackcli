@@ -84,6 +84,16 @@ describe('redactFormatter', () => {
     expect(parsed.properties.user).toBe('U456');
   });
 
+  it('redacts dbd from a cookie header and a credential property', () => {
+    const line = format(record('request', {
+      header: 'Cookie: d=one; dbd=opaque%2F%3D',
+      dbd_cookie: 'different-secret',
+    }));
+    const parsed = JSON.parse(line);
+    expect(parsed.properties.header).toBe('Cookie: d=[REDACTED]; dbd=[REDACTED]');
+    expect(parsed.properties.dbd_cookie).toBe('[REDACTED]');
+  });
+
   it('redacts tokens embedded in JSON strings and error messages', () => {
     const payload = JSON.stringify({ token: TOKENS[2], cookie: `d=${TOKENS[3]}` });
     const error = new Error(`Slack API error: invalid_auth for ${TOKENS[0]}`);

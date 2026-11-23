@@ -112,8 +112,8 @@ describe('metadataOf', () => {
     expect(JSON.stringify(meta)).not.toContain('xoxb-abc');
   });
 
-  it('strips both browser credentials', () => {
-    const meta = metadataOf(browser());
+  it('strips browser credentials, including dbd', () => {
+    const meta = metadataOf(browser({ dbd_cookie: 'browser.secret' }));
     expect(meta).toEqual({
       workspace_id: 'T1',
       workspace_name: 'Acme',
@@ -143,7 +143,7 @@ describe('credential helpers over a backend', () => {
 
   it('round-trips a config through metadata plus the store', async () => {
     const store = new MemoryStore();
-    for (const config of [standard(), browser()] as WorkspaceConfig[]) {
+    for (const config of [standard(), browser({ dbd_cookie: 'browser.secret' })] as WorkspaceConfig[]) {
       await storeCredentials(store, 'p', config);
       expect(await loadCredentials(store, 'p', metadataOf(config))).toEqual(config);
     }
@@ -276,7 +276,7 @@ describe('FileSecretStore', () => {
   });
 
   it('round-trips a config through metadata plus the inline store', async () => {
-    const config = browser({ profile: 'work', user_id: 'U9' });
+    const config = browser({ profile: 'work', user_id: 'U9', dbd_cookie: 'browser.secret' });
     const data: WorkspacesData = { workspaces: { work: metadataOf(config) as WorkspaceConfig } };
     const store = new FileSecretStore(data);
     await storeCredentials(store, 'work', config);
@@ -499,6 +499,7 @@ describe('credentialsMatch', () => {
   it('checks both browser secrets, not just one', () => {
     expect(credentialsMatch(browser(), browser({ xoxc_token: 'different' }))).toBe(false);
     expect(credentialsMatch(browser(), browser({ xoxd_token: 'different' }))).toBe(false);
+    expect(credentialsMatch(browser({ dbd_cookie: 'value' }), browser({ dbd_cookie: 'other' }))).toBe(false);
   });
 });
 

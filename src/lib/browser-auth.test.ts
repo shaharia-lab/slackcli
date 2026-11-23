@@ -415,7 +415,7 @@ describe('slackOriginFromApiUrl', () => {
 // answers the three commands the capture depends on.
 interface FakeOptions {
   requests?: Array<{ url: string; postData?: string }>;
-  cookies?: Array<{ name?: string; domain?: string; value?: string }>;
+  cookies?: Parameters<typeof extractXoxdFromCookies>[0];
   localConfig?: string | null;
   /** What `navigator.userAgent` evaluates to in the page. */
   userAgent?: unknown;
@@ -535,6 +535,61 @@ describe('captureSlackTokens', () => {
     expect(result.xoxd).toBe('xoxd-session-abc');
     expect(result.workspaces).toHaveLength(1);
     expect(result.workspaces[0].workspaceUrl).toBe('https://alpha.slack.com');
+    expect(result.workspaces[0]).not.toHaveProperty('dbd');
+  });
+
+  it('captures a workspace-scoped dbd cookie only for the matching workspace', async () => {
+    const session = makeFakeSession({
+      localConfig: LOCAL_CONFIG,
+      cookies: [
+        ...SLACK_COOKIES,
+        { name: 'dbd', domain: '.alpha.slack.com', path: '/api', value: 'opaque%2F%3D' },
+        { name: 'dbd', domain: '.alpha.slack.com.example', value: 'foreign' },
+        { name: 'dbd', domain: 'beta.slack.com', path: '/client/', value: 'wrong-path' },
+        { name: 'dbd', domain: 'beta.slack.com', value: 'invalid;cookie' },
+        { name: 'dbd', domain: 'beta.slack.com', value: 'foreign-partition', partitionKey: { topLevelSite: 'https://example.com' } },
+      ],
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const alpha = result.workspaces.find((w) => w.workspaceUrl === 'https://alpha.slack.com');
+    const beta = result.workspaces.find((w) => w.workspaceUrl === 'https://beta.slack.com');
+    expect(alpha?.dbd).toBe('opaque%2F%3D');
+    expect(beta).toBeDefined();
+    expect(beta).not.toHaveProperty('dbd');
+  });
+
+  it('captures a shared dbd cookie for all matching workspaces', async () => {
+    const session = makeFakeSession({
+      localConfig: LOCAL_CONFIG,
+      cookies: [...SLACK_COOKIES, { name: 'dbd', domain: '.slack.com', path: '/', value: 'shared-cookie' }],
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces.map((w) => w.dbd)).toEqual(['shared-cookie', 'shared-cookie']);
+  });
+
+  it('omits dbd when multiple matching cookies have different values', async () => {
+    const session = makeFakeSession({
+      requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+      cookies: [
+        ...SLACK_COOKIES,
+        { name: 'dbd', domain: '.slack.com', value: 'shared-cookie' },
+        { name: 'dbd', domain: 'alpha.slack.com', value: 'workspace-cookie' },
+      ],
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workspaces[0]).not.toHaveProperty('dbd');
   });
 
   it("returns the page's User-Agent so the session's browser is replayed", async () => {

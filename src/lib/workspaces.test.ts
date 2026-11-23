@@ -488,6 +488,31 @@ describe('putWorkspace backend selection', () => {
     expect(data.workspaces.work.secret_backend).toBe('keychain');
   });
 
+  it('restores the Keychain browser session if a refresh cannot save its dbd cookie', async () => {
+    const data: WorkspacesData = { workspaces: {} };
+    const store = new MemoryStore();
+    const original = browser({ dbd_cookie: 'previous-cookie' });
+    await putWorkspace(data, store, original, 'work', 'keychain');
+    const set = store.set.bind(store);
+    const failure = new SecretStoreError('keychain', 'access_denied', 'set denied');
+    store.set = async (key, value) => {
+      if (key === 'work:dbd' && value === 'new-cookie') throw failure;
+      await set(key, value);
+    };
+
+    await expect(putWorkspace(data, store, browser({
+      xoxc_token: 'xoxc-new',
+      xoxd_token: 'xoxd-new',
+      dbd_cookie: 'new-cookie',
+    }), 'work')).rejects.toBe(failure);
+
+    expect(await readWorkspace(data, store, 'work')).toEqual({
+      ...original,
+      profile: 'work',
+      secret_backend: 'keychain',
+    });
+  });
+
   it('keeps an existing profile on its migrated backend across a token refresh, ignoring the default backend arg', async () => {
     const data: WorkspacesData = {
       workspaces: { T1: { ...metadataOf(standard()), secret_backend: 'keychain' } as WorkspaceConfig },

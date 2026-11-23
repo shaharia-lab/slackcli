@@ -23,6 +23,7 @@
  */
 
 import { getLogger } from '@logtape/logtape';
+import { isDbdCookieValue } from './curl-parser.ts';
 import { errorMessageForLog } from './tildify.ts';
 import { sanitizeUserAgent } from './user-agent.ts';
 import { connectCdpSocket, createCdpSession, type CdpSession } from './cdp-client.ts';
@@ -44,8 +45,18 @@ export type CaptureFailure =
 export interface CapturedWorkspace {
   workspaceUrl: string;
   xoxc: string;
+  dbd?: string;
   teamId?: string;
   teamName?: string;
+}
+
+interface BrowserCookie {
+  name?: string;
+  domain?: string;
+  path?: string;
+  value?: string;
+  partitionKey?: { topLevelSite: string; hasCrossSiteAncestor?: boolean };
+  partitionKeyOpaque?: boolean;
 }
 
 export type CaptureResult =
@@ -158,9 +169,7 @@ export function extractXoxcFromPostData(postData: string): string | null {
  * covered without enumerating hostnames. The stored value is percent-encoded,
  * matching what `curl-parser.ts` decodes out of a copied Cookie header.
  */
-export function extractXoxdFromCookies(
-  cookies: Array<{ name?: string; domain?: string; value?: string }>
-): string | null {
+export function extractXoxdFromCookies(cookies: BrowserCookie[]): string | null {
   const match = cookies.find(
     (c) =>
       c.name === 'd' &&
@@ -192,6 +201,25 @@ export function extractXoxdFromCookies(
 function isSlackCookieDomain(domain: string): boolean {
   const normalized = domain.toLowerCase().replace(/^\./, '');
   return normalized === 'slack.com' || normalized.endsWith('.slack.com');
+}
+
+function withWorkspaceCookie(workspace: CapturedWorkspace, cookies: BrowserCookie[]): CapturedWorkspace {
+  const host = new URL(workspace.workspaceUrl).hostname;
+  const values = new Set<string>();
+  for (const { name, domain, path, value, partitionKey, partitionKeyOpaque } of cookies) {
+    if (name !== 'dbd' || !domain || !isDbdCookieValue(value) || partitionKeyOpaque) continue;
+    if (partitionKey && (partitionKey.topLevelSite !== 'https://slack.com' || partitionKey.hasCrossSiteAncestor)) {
+      continue;
+    }
+    const normalized = domain.toLowerCase();
+    const matchesHost = normalized.startsWith('.')
+      ? host === normalized.slice(1) || host.endsWith(normalized)
+      : host === normalized;
+    if (!matchesHost || (path && path !== '/' && path !== '/api' && path !== '/api/')) continue;
+    values.add(value);
+  }
+  if (values.size !== 1) return workspace;
+  return { ...workspace, dbd: [...values][0] };
 }
 
 /**
@@ -404,8 +432,8 @@ export async function captureSlackTokens(
   });
   onProgress('Session detected — reading tokens…');
 
-  const xoxd = await readSessionCookie(session);
-  if (!xoxd) {
+  const cookieStore = await readSessionCookies(session);
+  if (!cookieStore) {
     return logFailure({
       ok: false,
       reason: 'no_cookie',
@@ -415,14 +443,15 @@ export async function captureSlackTokens(
     });
   }
 
-  const workspaces = mergeWorkspaces([...intercepted.values()], fromLocalConfig);
+  const workspaces = mergeWorkspaces([...intercepted.values()], fromLocalConfig)
+    .map((workspace) => withWorkspaceCookie(workspace, cookieStore.cookies));
   const userAgent = await readUserAgent(session);
   logger.info('Token capture succeeded: {workspaces} workspaces', {
     workspaces: workspaces.length,
     team_ids: workspaces.flatMap((w) => (w.teamId ? [w.teamId] : [])),
     user_agent_captured: Boolean(userAgent),
   });
-  return { ok: true, xoxd, workspaces, ...(userAgent ? { userAgent } : {}) };
+  return { ok: true, xoxd: cookieStore.xoxd, workspaces, ...(userAgent ? { userAgent } : {}) };
 }
 
 /** Record a capture failure's typed reason; the message is guidance, not data. */
@@ -563,17 +592,18 @@ async function settleWorkspaces(
  * Slack, and silently returns nothing when sign-in has parked it on an SSO or
  * IdP origin. It stays as a fallback for older protocol builds.
  */
-async function readSessionCookie(session: CdpSession): Promise<string | null> {
+async function readSessionCookies(session: CdpSession): Promise<{ xoxd: string; cookies: BrowserCookie[] } | null> {
   for (const method of ['Storage.getCookies', 'Network.getCookies'] as const) {
     try {
-      const result = await session.send<{ cookies?: any[] }>(method);
-      const found = extractXoxdFromCookies(result?.cookies ?? []);
+      const result = await session.send<{ cookies?: BrowserCookie[] }>(method);
+      const cookies = result?.cookies ?? [];
+      const found = extractXoxdFromCookies(cookies);
       logger.debug('Session cookie via {method}: {outcome} ({cookies} cookies)', {
         method,
         outcome: found ? 'found' : 'not found',
-        cookies: result?.cookies?.length ?? 0,
+        cookies: cookies.length,
       });
-      if (found) return found;
+      if (found) return { xoxd: found, cookies };
     } catch (err) {
       logger.debug('Session cookie via {method} failed: {error}', { method, error: errorMessageForLog(err) });
       // Try the next method; a session that is truly gone fails both and the

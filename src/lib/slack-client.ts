@@ -15,7 +15,7 @@ import type {
   WorkspaceConfig,
 } from '../types/index.ts';
 import { parseMrkdwn } from './mrkdwn.ts';
-import { extractSlackWorkspaceName } from './curl-parser.ts';
+import { extractSlackWorkspaceName, isDbdCookieValue } from './curl-parser.ts';
 import { RateLimiter, slackRateLimiter } from './rate-limiter.ts';
 import { decideRetry, parseRetryAfter, resolveRetryOptions } from './retry.ts';
 import type { RetryOptions } from './retry.ts';
@@ -576,10 +576,15 @@ export class SlackClient {
 
     const url = `${this.browserOrigin}/api/${method}`;
 
-    // URL-encode the xoxd token for the cookie
     const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
+    const { dbd_cookie: dbd } = this.config;
+    if (dbd !== undefined && !isDbdCookieValue(dbd)) {
+      throw new InvalidInputError('Invalid dbd cookie. Import the browser session again.');
+    }
+    // dbd is stored in the wire format from the original Cookie header.
+    const cookie = dbd === undefined ? `d=${encodedXoxdToken}` : `d=${encodedXoxdToken}; dbd=${dbd}`;
     const baseHeaders: Record<string, string> = {
-      'Cookie': `d=${encodedXoxdToken}`,
+      'Cookie': cookie,
       'Origin': 'https://app.slack.com',
       'User-Agent': browserUserAgent(this.config),
     };

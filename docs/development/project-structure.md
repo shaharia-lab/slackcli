@@ -58,10 +58,10 @@ They hold no Slack API knowledge.
 | `auth.ts` | Login orchestration; returns a configured `SlackClient`. The only place that decides a token is valid, and the one place the workspace selector (`--workspace`, `SLACKCLI_WORKSPACE`, token variable, stored default) is resolved, including the env-token path (`SLACKCLI_TOKEN` / `SLACK_BOT_TOKEN` → `workspaceFromEnvToken()`, an in-memory standard workspace built from `auth.test`, nothing stored). `checkIdentity()` is the `auth whoami` lookup: one `auth.test` for the selected profile, returned as a typed `ok` / `auth_failed` / `unreachable` result that keeps the profile key. `checkAllProfiles()` runs it over every stored profile for `auth list --check`, turning any per-profile failure into a result, and `buildProfileList()` shapes the `auth list --json` object. |
 | `workspaces.ts` | Multi-workspace persistence, profile-key derivation and resolution. |
 | `secret-store.ts` | Credential storage seam: the `SecretStore` interface, the inline `FileSecretStore` and macOS `MacOSKeychainSecretStore` backends, `RoutingSecretStore`, and helpers that split a config into metadata and secrets. |
-| `browser-auth.ts` | Captures `xoxd`/`xoxc` from a signed-in browser; pure extractors are exported for tests. Owns `slackWorkspaceOrigin()` / `isSlackWorkspaceUrl()`, the one check on where browser credentials may be sent. |
+| `browser-auth.ts` | Captures the `d` cookie, the `xoxc` token, and the optional workspace-scoped `dbd` cookie from a signed-in browser. Owns `slackWorkspaceOrigin()` / `isSlackWorkspaceUrl()`, which check where browser credentials may be sent. |
 | `browser-launcher.ts` | Finds and launches a local Chromium-family browser; owns the profile directory. |
 | `cdp-client.ts` | Minimal Chrome DevTools Protocol client over Bun's WebSocket. |
-| `curl-parser.ts` | Extracts tokens, and the browser's `User-Agent`, from a DevTools cURL command. |
+| `curl-parser.ts` | Extracts browser credentials and the browser's `User-Agent` from a DevTools cURL command. |
 | `user-agent.ts` | The User-Agent a browser-auth workspace sends: `sanitizeUserAgent()` (printable ASCII only, so a captured value cannot inject a header) and `browserUserAgent()` (the stored value, or the historical default). |
 | `curl-input.ts` | Resolves `auth parse-curl`'s input source (argument → `--from-clipboard` → piped stdin → interactive prompt) into a typed result; clipboard, stdin and TTY are injectable for tests. |
 | `slack-url-parser.ts` | Slack URL / permalink / timestamp normalisation. |

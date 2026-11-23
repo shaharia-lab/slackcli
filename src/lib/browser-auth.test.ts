@@ -557,7 +557,7 @@ describe('captureSlackTokens', () => {
     if (!result.ok) return;
     const alpha = result.workspaces.find((w) => w.workspaceUrl === 'https://alpha.slack.com');
     const beta = result.workspaces.find((w) => w.workspaceUrl === 'https://beta.slack.com');
-    expect(alpha?.dbd).toBe('opaque%2F%3D');
+    expect(alpha).toMatchObject({ dbd: 'opaque%2F%3D', dbdDownloadScope: 'api' });
     expect(beta).toBeDefined();
     expect(beta).not.toHaveProperty('dbd');
   });
@@ -573,6 +573,24 @@ describe('captureSlackTokens', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.workspaces.map((w) => w.dbd)).toEqual(['shared-cookie', 'shared-cookie']);
+    expect(result.workspaces.map((w) => w.dbdDownloadScope)).toEqual(['files', 'files']);
+  });
+
+  it('keeps a host-only dbd cookie scoped to downloads on that workspace', async () => {
+    const session = makeFakeSession({
+      localConfig: LOCAL_CONFIG,
+      cookies: [
+        ...SLACK_COOKIES,
+        { name: 'dbd', domain: 'alpha.slack.com', path: '/', value: 'workspace-cookie' },
+      ],
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const alpha = result.workspaces.find((w) => w.workspaceUrl === 'https://alpha.slack.com');
+    expect(alpha).toMatchObject({ dbd: 'workspace-cookie', dbdDownloadScope: 'workspace' });
   });
 
   it('omits dbd when multiple matching cookies have different values', async () => {

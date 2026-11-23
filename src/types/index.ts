@@ -44,11 +44,14 @@ export interface BrowserAuthConfig {
   xoxd_token: string;
   xoxc_token: string;
   dbd_cookie?: string;
+  dbd_download_scope?: DbdDownloadScope;
   // The User-Agent of the browser the session came from, replayed on every
   // request (src/lib/user-agent.ts). Not a secret. Absent on workspaces saved
   // before it was captured and on login-browser ones.
   user_agent?: string;
 }
+
+export type DbdDownloadScope = 'api' | 'workspace' | 'files';
 
 export type WorkspaceConfig = StandardAuthConfig | BrowserAuthConfig;
 
@@ -56,7 +59,7 @@ export type WorkspaceConfig = StandardAuthConfig | BrowserAuthConfig;
 // resolved through a SecretStore (src/lib/secret-store.ts), never through this.
 export type WorkspaceMetadata =
   | Omit<StandardAuthConfig, 'token'>
-  | Omit<BrowserAuthConfig, 'xoxc_token' | 'xoxd_token' | 'dbd_cookie'>;
+  | Omit<BrowserAuthConfig, 'xoxc_token' | 'xoxd_token' | 'dbd_cookie' | 'dbd_download_scope'>;
 
 export interface WorkspacesData {
   default_workspace?: string;

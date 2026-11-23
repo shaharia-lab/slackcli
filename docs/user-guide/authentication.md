@@ -113,7 +113,8 @@ on these workspaces, so Slack sees the session used by the browser it belongs to
 (see [why the User-Agent matters](#why-slackcli-reuses-your-browsers-user-agent)).
 
 If the browser has a `dbd` cookie for the workspace's API requests, SlackCLI
-saves it with the other browser credentials.
+saves it with the other browser credentials. For downloads, SlackCLI uses it
+only on the workspace or `files.slack.com`, within the captured cookie's scope.
 
 Partial success is still success: if one captured workspace has a stale token,
 the others are still saved and the failure is reported.
@@ -150,7 +151,9 @@ This extracts the workspace URL and name, the `xoxd` token from the cookie
 header, the `xoxc` token from the request body, and the browser's `User-Agent`
 header. SlackCLI accepts multipart, JSON, and URL-encoded request bodies.
 If the request includes a `dbd` cookie, SlackCLI saves it with the other
-credentials and sends it with browser API requests to that workspace.
+credentials and sends it with browser API requests. A copied cURL does not
+include cookie scope. For downloads, SlackCLI uses the cookie on that
+workspace's origin or `files.slack.com`.
 Drop `--login` to see which credentials SlackCLI found, without saving them.
 
 A copied cURL carries your full session credentials. Pipe it or read it from the

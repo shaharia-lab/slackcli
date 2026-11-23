@@ -1953,14 +1953,25 @@ describe('browser login User-Agent', () => {
       ok: true,
       xoxd: 'xoxd-DUMMYAUDIT',
       userAgent: CHROME_UA,
-      workspaces: [{ workspaceUrl: 'https://acme.slack.com', xoxc: 'xoxc-DUMMYAUDIT', dbd: 'test-cookie', teamId: 'T1', teamName: 'Acme Corp' }],
+      workspaces: [{
+        workspaceUrl: 'https://acme.slack.com',
+        xoxc: 'xoxc-DUMMYAUDIT',
+        dbd: 'test-cookie',
+        dbdDownloadScope: 'api',
+        teamId: 'T1',
+        teamName: 'Acme Corp',
+      }],
     });
 
     try {
       const result = await authenticateAuto({ headless: true });
 
       expect(result.saved).toHaveLength(1);
-      expect(result.saved[0]).toMatchObject({ user_agent: CHROME_UA, dbd_cookie: 'test-cookie' });
+      expect(result.saved[0]).toMatchObject({
+        user_agent: CHROME_UA,
+        dbd_cookie: 'test-cookie',
+        dbd_download_scope: 'api',
+      });
       expect(sentUserAgents).toEqual([CHROME_UA]);
       expect(sentCookies).toEqual(['d=xoxd-DUMMYAUDIT; dbd=test-cookie']);
     } finally {

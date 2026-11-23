@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { getLogger } from '@logtape/logtape';
 import type {
   AuthType,
+  DbdDownloadScope,
   SecretBackend,
   WorkspaceConfig,
   WorkspaceMetadata,
@@ -108,7 +109,9 @@ export function parseSecretKey(key: string): { ref: string; kind: CredentialKind
 function credentialsOf(config: WorkspaceConfig): Array<[CredentialKind, string]> {
   if (config.auth_type === 'standard') return [['token', config.token]];
   const credentials: Array<[CredentialKind, string]> = [['xoxc', config.xoxc_token], ['xoxd', config.xoxd_token]];
-  if (config.dbd_cookie !== undefined) credentials.push(['dbd', config.dbd_cookie]);
+  const { dbd_cookie: dbd, dbd_download_scope: scope } = config;
+  // Keep the scope and cookie in one item so a Keychain refresh updates them together.
+  if (dbd !== undefined) credentials.push(['dbd', scope === undefined ? dbd : `${scope} ${dbd}`]);
   return credentials;
 }
 
@@ -118,7 +121,13 @@ export function metadataOf(config: WorkspaceConfig): WorkspaceMetadata {
     const { token: _token, ...metadata } = config;
     return metadata;
   }
-  const { xoxc_token: _xoxc, xoxd_token: _xoxd, dbd_cookie: _dbd, ...metadata } = config;
+  const {
+    xoxc_token: _xoxc,
+    xoxd_token: _xoxd,
+    dbd_cookie: _dbd,
+    dbd_download_scope: _scope,
+    ...metadata
+  } = config;
   return metadata;
 }
 
@@ -186,11 +195,14 @@ export async function loadCredentials(
   if (metadata.auth_type === 'standard') {
     return { ...metadata, token: secrets.token as string };
   }
+  const scopedDbd = secrets.dbd?.match(/^(api|workspace|files) (.+)$/);
+  const dbd = scopedDbd?.[2] ?? secrets.dbd;
   return {
     ...metadata,
     xoxc_token: secrets.xoxc as string,
     xoxd_token: secrets.xoxd as string,
-    ...(secrets.dbd !== undefined ? { dbd_cookie: secrets.dbd } : {}),
+    ...(dbd !== undefined ? { dbd_cookie: dbd } : {}),
+    ...(scopedDbd ? { dbd_download_scope: scopedDbd[1] as DbdDownloadScope } : {}),
   };
 }
 
@@ -485,5 +497,8 @@ export function credentialsMatch(a: WorkspaceConfig, b: WorkspaceConfig): boolea
     return b.auth_type === 'standard' && a.token === b.token;
   }
   return b.auth_type === 'browser'
-    && a.xoxc_token === b.xoxc_token && a.xoxd_token === b.xoxd_token && a.dbd_cookie === b.dbd_cookie;
+    && a.xoxc_token === b.xoxc_token
+    && a.xoxd_token === b.xoxd_token
+    && a.dbd_cookie === b.dbd_cookie
+    && a.dbd_download_scope === b.dbd_download_scope;
 }

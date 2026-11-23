@@ -23,6 +23,7 @@
  */
 
 import { getLogger } from '@logtape/logtape';
+import type { DbdDownloadScope } from '../types/index.ts';
 import { isDbdCookieValue } from './curl-parser.ts';
 import { errorMessageForLog } from './tildify.ts';
 import { sanitizeUserAgent } from './user-agent.ts';
@@ -46,6 +47,7 @@ export interface CapturedWorkspace {
   workspaceUrl: string;
   xoxc: string;
   dbd?: string;
+  dbdDownloadScope?: DbdDownloadScope;
   teamId?: string;
   teamName?: string;
 }
@@ -206,6 +208,7 @@ function isSlackCookieDomain(domain: string): boolean {
 function withWorkspaceCookie(workspace: CapturedWorkspace, cookies: BrowserCookie[]): CapturedWorkspace {
   const host = new URL(workspace.workspaceUrl).hostname;
   const values = new Set<string>();
+  let dbdDownloadScope: DbdDownloadScope = 'api';
   for (const { name, domain, path, value, partitionKey, partitionKeyOpaque } of cookies) {
     if (name !== 'dbd' || !domain || !isDbdCookieValue(value) || partitionKeyOpaque) continue;
     if (partitionKey && (partitionKey.topLevelSite !== 'https://slack.com' || partitionKey.hasCrossSiteAncestor)) {
@@ -217,9 +220,13 @@ function withWorkspaceCookie(workspace: CapturedWorkspace, cookies: BrowserCooki
       : host === normalized;
     if (!matchesHost || (path && path !== '/' && path !== '/api' && path !== '/api/')) continue;
     values.add(value);
+    if (!path || path === '/') {
+      if (normalized === '.slack.com') dbdDownloadScope = 'files';
+      else if (dbdDownloadScope === 'api') dbdDownloadScope = 'workspace';
+    }
   }
   if (values.size !== 1) return workspace;
-  return { ...workspace, dbd: [...values][0] };
+  return { ...workspace, dbd: [...values][0], dbdDownloadScope };
 }
 
 /**

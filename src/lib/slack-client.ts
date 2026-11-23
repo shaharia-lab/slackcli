@@ -251,12 +251,27 @@ function assertSlackFileUrl(url: string): URL {
   return parsedUrl;
 }
 
-function buildFileAuthHeaders(config: WorkspaceConfig): Record<string, string> {
+function buildBrowserCookieHeader(config: BrowserAuthConfig, includeDbd = true): string {
+  const session = `d=${encodeURIComponent(config.xoxd_token)}`;
+  const { dbd_cookie: dbd } = config;
+  if (!includeDbd || dbd === undefined) return session;
+  if (!isDbdCookieValue(dbd)) {
+    throw new InvalidInputError('Invalid dbd cookie. Import the browser session again.');
+  }
+  return `${session}; dbd=${dbd}`;
+}
+
+function buildFileAuthHeaders(config: WorkspaceConfig, url: URL): Record<string, string> {
   if (config.auth_type === 'standard') {
     return { Authorization: `Bearer ${config.token}` };
   }
+  // A copied Cookie header has no domain or path attributes.
+  const scope = config.dbd_download_scope ?? 'files';
+  const includeDbd =
+    (scope === 'files' && url.origin === 'https://files.slack.com') ||
+    ((scope === 'files' || scope === 'workspace') && url.origin === slackWorkspaceOrigin(config.workspace_url));
   return {
-    Cookie: `d=${encodeURIComponent(config.xoxd_token)}`,
+    Cookie: buildBrowserCookieHeader(config, includeDbd),
     Origin: 'https://app.slack.com',
     'User-Agent': browserUserAgent(config),
   };
@@ -576,15 +591,8 @@ export class SlackClient {
 
     const url = `${this.browserOrigin}/api/${method}`;
 
-    const encodedXoxdToken = encodeURIComponent(this.config.xoxd_token);
-    const { dbd_cookie: dbd } = this.config;
-    if (dbd !== undefined && !isDbdCookieValue(dbd)) {
-      throw new InvalidInputError('Invalid dbd cookie. Import the browser session again.');
-    }
-    // dbd is stored in the wire format from the original Cookie header.
-    const cookie = dbd === undefined ? `d=${encodedXoxdToken}` : `d=${encodedXoxdToken}; dbd=${dbd}`;
     const baseHeaders: Record<string, string> = {
-      'Cookie': cookie,
+      'Cookie': buildBrowserCookieHeader(this.config),
       'Origin': 'https://app.slack.com',
       'User-Agent': browserUserAgent(this.config),
     };
@@ -1312,13 +1320,11 @@ export class SlackClient {
   // response lets callers either buffer textual content or stream binary bytes.
   async fetchFile(url: string): Promise<Response> {
     let currentUrl = assertSlackFileUrl(url);
-    const authHeaders = buildFileAuthHeaders(this.config);
-
     for (let redirects = 0; redirects <= MAX_FILE_REDIRECTS; redirects += 1) {
       // Decided per hop: credentials go only to Slack hosts, never to a
       // redirected download host, and come back if a later hop returns to Slack.
       const response = await fetch(currentUrl, {
-        headers: isSlackHost(currentUrl) ? authHeaders : {},
+        headers: isSlackHost(currentUrl) ? buildFileAuthHeaders(this.config, currentUrl) : {},
         redirect: 'manual',
       });
       // Host only: file paths can carry file names.

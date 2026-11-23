@@ -13,6 +13,7 @@ import {
 import type {
   StandardAuthConfig,
   BrowserAuthConfig,
+  DbdDownloadScope,
   WorkspaceConfig,
   SecretBackend,
   IdentityResult,
@@ -120,6 +121,7 @@ export async function authenticateBrowser(
   secretBackend: SecretBackend = 'file',
   userAgent?: string,
   dbdCookie?: string,
+  dbdDownloadScope?: DbdDownloadScope,
 ): Promise<AuthResult> {
   // Refused before the tokens go anywhere (#513); the canonical origin is what
   // gets stored, so a trailing slash never reaches the API base.
@@ -142,6 +144,7 @@ export async function authenticateBrowser(
     xoxd_token: xoxdToken,
     xoxc_token: xoxcToken,
     ...(dbdCookie !== undefined ? { dbd_cookie: dbdCookie } : {}),
+    ...(dbdDownloadScope !== undefined ? { dbd_download_scope: dbdDownloadScope } : {}),
   };
   // Stored only when usable, so the client never replays a bad header and the
   // verifying call below already looks like the session's own browser.
@@ -329,6 +332,7 @@ async function enrolCapturedWorkspaces(
         secretBackend,
         capture.userAgent,
         workspace.dbd,
+        workspace.dbdDownloadScope,
       );
       saved.push(config);
     } catch (err: any) {

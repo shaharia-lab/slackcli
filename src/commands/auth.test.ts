@@ -418,7 +418,8 @@ describe('auth parse-curl never prints a token (#514)', () => {
   const SECRET = 'Q9leakMARKER514';
   const xoxd = `xoxd-${SECRET}cookie`;
   const xoxc = `xoxc-${SECRET}token`;
-  const curl = `curl 'https://acme.slack.com/api/auth.test' -b 'd=${xoxd}' --data-raw '{"token":"${xoxc}"}'`;
+  const dbd = 'browser-cookie-secret%2F%3D';
+  const curl = `curl --url 'https://acme.slack.com/api/auth.test' -b 'd=${xoxd}; dbd=${dbd}' --data-raw 'token=${xoxc}'`;
 
   let stdout: string;
   let stderr: string;
@@ -447,6 +448,7 @@ describe('auth parse-curl never prints a token (#514)', () => {
     // The shortest prefix the old preview leaked beyond the type tag.
     expect(output).not.toContain(SECRET.slice(0, 2));
     expect(output).not.toContain('MARKER514');
+    expect(output).not.toContain(dbd);
   }
 
   it('reports presence and length, and a placeholder-only hint, without --login', async () => {
@@ -457,6 +459,7 @@ describe('auth parse-curl never prints a token (#514)', () => {
     expect(authenticate).not.toHaveBeenCalled();
     expect(stdout).toContain(`xoxd: found (${xoxd.length} chars)`);
     expect(stdout).toContain(`xoxc: found (${xoxc.length} chars)`);
+    expect(stdout).toContain('dbd cookie found');
     expect(stdout).toContain('slackcli auth parse-curl --login');
     expect(stdout).toContain('--xoxd="<xoxd-token>"');
     expect(stdout).toContain('--xoxc="<xoxc-token>"');
@@ -472,6 +475,7 @@ describe('auth parse-curl never prints a token (#514)', () => {
 
     expect(authenticate).toHaveBeenCalledTimes(1);
     expect(authenticate.mock.calls[0].slice(0, 3)).toEqual([xoxd, xoxc, 'https://acme.slack.com']);
+    expect(authenticate.mock.calls[0][7]).toBe(dbd);
     expect(stdout).toContain('Authenticated as workspace: acme');
     expect(stdout).not.toContain('<xoxd-token>');
     expectNoTokenMaterial();

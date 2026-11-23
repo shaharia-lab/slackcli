@@ -9,12 +9,13 @@ export interface ParsedCurlResult {
   workspaceUrl: string;
   xoxd: string;
   xoxc: string;
+  dbd?: string;
   /** The browser's User-Agent, when the command carries a usable one. */
   userAgent?: string;
 }
 
 export interface ParseError {
-  field: 'workspace' | 'xoxd' | 'xoxc';
+  field: 'workspace' | 'xoxd' | 'xoxc' | 'dbd';
   message: string;
 }
 
@@ -88,6 +89,11 @@ export function extractUserAgent(curlInput: string): string | undefined {
   return sanitizeUserAgent(match[1] ?? match[2] ?? match[3] ?? match[4]);
 }
 
+export function isDbdCookieValue(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+    && !/[^\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]/.test(value);
+}
+
 /**
  * Parse a cURL command and extract Slack authentication tokens
  */
@@ -123,6 +129,12 @@ export function parseCurlCommand(rawCurlInput: string): ParsedCurlResult {
   const xoxdEncoded = xoxdMatch[1];
   const xoxd = decodeURIComponent(xoxdEncoded);
 
+  const dbdMatches = [...cookieHeader.matchAll(/(?:^|;\s*)dbd=([^;]*)/g)];
+  const dbd = dbdMatches[0]?.[1];
+  if (dbdMatches.length > 1 || (dbd !== undefined && !isDbdCookieValue(dbd))) {
+    throw new CurlParseError('dbd', 'Expected one valid dbd cookie in the cURL command');
+  }
+
   // Extract xoxc token from data
   const dataMatch = DATA_BODY_PATTERN.exec(curlInput);
   const dataContent = dataMatch ? (dataMatch[1] ?? dataMatch[2] ?? '') : '';
@@ -130,10 +142,10 @@ export function parseCurlCommand(rawCurlInput: string): ParsedCurlResult {
   const xoxcMatch =
     /name="token".*?(xoxc-[a-zA-Z0-9-]+)/.exec(dataContent) ||
     /"token"\s*:\s*"(xoxc-[a-zA-Z0-9-]+)"/.exec(dataContent);
-  if (!xoxcMatch) {
+  const xoxc = xoxcMatch?.[1] ?? new URLSearchParams(dataContent).get('token');
+  if (!xoxc || !/^xoxc-[a-zA-Z0-9-]+$/.test(xoxc)) {
     throw new CurlParseError('xoxc', 'Could not find xoxc token in request data');
   }
-  const xoxc = xoxcMatch[1];
   const userAgent = extractUserAgent(curlInput);
 
   return {
@@ -141,6 +153,7 @@ export function parseCurlCommand(rawCurlInput: string): ParsedCurlResult {
     workspaceUrl,
     xoxd,
     xoxc,
+    ...(dbd !== undefined ? { dbd } : {}),
     ...(userAgent ? { userAgent } : {}),
   };
 }

@@ -325,7 +325,13 @@ export async function putWorkspace(
   // The record holds metadata only until the store attaches the secrets; the
   // document is not persisted in between.
   data.workspaces[key] = stored as WorkspaceConfig;
-  await storeCredentials(store, key, config);
+  try {
+    await storeCredentials(store, key, config, effectiveBackend === 'keychain' && config.auth_type === 'browser');
+  } catch (err) {
+    if (previous) data.workspaces[key] = previous;
+    else delete data.workspaces[key];
+    throw err;
+  }
 
   // Re-keying a profile to a different auth type leaves the old type's secrets
   // unreachable. Drop them only once the new ones are stored, so a failing

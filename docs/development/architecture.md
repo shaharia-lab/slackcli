@@ -54,9 +54,9 @@ important thing to understand about this codebase.
 
 | | Standard | Browser |
 |---|---|---|
-| Tokens | `xoxb-*` / `xoxp-*` | `xoxd-*` cookie + `xoxc-*` token |
+| Credentials | `xoxb-*` / `xoxp-*` | `d` cookie with an `xoxd-*` value, `xoxc-*` token, and optional `dbd` cookie |
 | Transport | `@slack/web-api` `WebClient` | raw `fetch` to `<workspace_url>/api/<method>` |
-| Auth carried by | SDK bearer token | `Cookie: d=<urlencoded xoxd>` + `token` form field |
+| Auth carried by | SDK bearer token | `Cookie` header with `d` and optional `dbd`, plus the `token` form field |
 | Discriminated by | `config.auth_type === 'standard'` | `config.auth_type === 'browser'` |
 
 `SlackClient.request()` in `src/lib/slack-client.ts` is the fork:
@@ -335,10 +335,11 @@ Three modules, in order:
    all. The transport edge (`connectCdpSocket`) is kept a few lines long;
    everything decidable lives in `createCdpSession`, behind a `CdpSocket` seam so
    it unit-tests without a browser.
-3. **`browser-auth.ts`** — captures the pair. The `xoxc-*` token comes from
-   intercepted API requests (which proves it is live); the `xoxd-*` value comes
-   from the browser's cookie store, because the `d` cookie is `HttpOnly` and page
-   JavaScript cannot read it. It also reads `localConfig_v2` from localStorage to
+3. **`browser-auth.ts`** — captures the browser credentials. It reads the
+   `xoxc-*` token from intercepted API requests. It reads the `d` cookie and
+   optional `dbd` cookie from the browser's cookie store. It associates `dbd`
+   with workspaces whose API requests match the cookie's scope.
+   It also reads `localConfig_v2` from localStorage to
    enumerate workspaces the user is signed into but has not opened — that union
    is why one sign-in enrols every workspace. localStorage is Slack client
    internals and may change shape without notice, so a failure to read it
@@ -369,7 +370,7 @@ Each is dependency-free and pure, so each is directly testable:
 
 | Module | Job |
 |---|---|
-| `curl-parser.ts` | Pull `xoxd`/`xoxc`, and the browser's `User-Agent`, out of a DevTools cURL command. Handles URL-encoded tokens, `-b` / `--cookie` / `-H 'Cookie:'`, `--data` / `--data-raw` / `--data-binary` bodies, `\` line continuations (Firefox puts the body on its own line), and enterprise Slack URLs. The most thoroughly tested file in the repo — use it as the model for new tests. |
+| `curl-parser.ts` | Extract the `d` and optional `dbd` cookies, the `xoxc` token, and the browser's `User-Agent` from a DevTools cURL command. Handles URL-encoded tokens and form bodies, `-b` / `--cookie` / `-H 'Cookie:'`, `--data` / `--data-raw` / `--data-binary` bodies, `\` line continuations (Firefox puts the body on its own line), and enterprise Slack URLs. |
 | `slack-url-parser.ts` | Normalise Slack URLs, permalinks, and timestamps into IDs. Also produces the workspace-mismatch warning. |
 | `mrkdwn.ts` | Slack mrkdwn → `rich_text` blocks, for drafts. |
 | `canvas-parser.ts` | Slack canvas (Quip-based) HTML → Markdown, zero dependencies. |

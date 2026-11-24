@@ -277,11 +277,12 @@ async function loginWithParsedTokens(parsed: ParsedCurlResult, secretBackend: Se
       parsed.xoxd,
       parsed.xoxc,
       parsed.workspaceUrl,
-      parsed.workspaceName,
-      undefined,
-      secretBackend,
-      parsed.userAgent,
-      parsed.dbd,
+      {
+        workspaceName: parsed.workspaceName,
+        secretBackend,
+        userAgent: parsed.userAgent,
+        dbdCookie: parsed.dbd,
+      },
     );
     spinner.succeed('Authentication successful!');
     success(`Authenticated as workspace: ${config.workspace_name}`);
@@ -378,9 +379,11 @@ export function createAuthCommand(): Command {
           options.xoxd,
           options.xoxc,
           options.workspaceUrl,
-          options.workspaceName,
-          options.profile,
-          secretBackend
+          {
+            workspaceName: options.workspaceName,
+            profile: options.profile,
+            secretBackend,
+          },
         );
 
         spinner.succeed('Authentication successful!');

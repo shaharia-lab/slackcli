@@ -224,7 +224,7 @@ describe('login with rejected credentials', () => {
   }
 
   const loginBrowser = () =>
-    authenticateBrowser('xoxd-secretcookie', 'xoxc-secrettoken', 'https://acme.slack.com', 'Acme Corp')
+    authenticateBrowser('xoxd-secretcookie', 'xoxc-secrettoken', 'https://acme.slack.com', { workspaceName: 'Acme Corp' })
       .catch((err) => err);
 
   // The standard path goes through `@slack/web-api`, which has no fetch seam;
@@ -1907,7 +1907,7 @@ describe('browser login User-Agent', () => {
 
   it('verifies with and stores the given User-Agent', async () => {
     const { config } = await authenticateBrowser(
-      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', undefined, undefined, 'file', CHROME_UA,
+      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', { secretBackend: 'file', userAgent: CHROME_UA },
     );
 
     expect(sentUserAgents).toEqual([CHROME_UA]);
@@ -1919,7 +1919,7 @@ describe('browser login User-Agent', () => {
   it('verifies with and saves the imported dbd cookie', async () => {
     const dbd = 'test-cookie%2F%3D';
     await authenticateBrowser(
-      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', undefined, undefined, 'file', CHROME_UA, dbd,
+      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', { secretBackend: 'file', userAgent: CHROME_UA, dbdCookie: dbd },
     );
 
     expect(sentCookies).toEqual([`d=xoxd-DUMMYAUDIT; dbd=${dbd}`]);
@@ -1936,7 +1936,7 @@ describe('browser login User-Agent', () => {
 
   it('drops an unusable User-Agent rather than storing it', async () => {
     await authenticateBrowser(
-      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', undefined, undefined, 'file', 'bad\r\nX-Injected: 1',
+      'xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', { secretBackend: 'file', userAgent: 'bad\r\nX-Injected: 1' },
     );
 
     expect(sentUserAgents).toEqual(['Mozilla/5.0 (compatible; SlackCLI/0.1.0)']);
@@ -1978,5 +1978,54 @@ describe('browser login User-Agent', () => {
       open.mockRestore();
       capture.mockRestore();
     }
+  });
+});
+
+// The optional inputs travel as one named options object (#562), so each one
+// must still reach the stored config and `addWorkspace()` unchanged.
+describe('authenticateBrowser options', () => {
+  const originalFetch = globalThis.fetch;
+  let add: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    globalThis.fetch = (async () =>
+      Response.json({ ok: true, team_id: 'T1', team: 'Acme Corp', user_id: 'U1' })) as unknown as typeof fetch;
+    add = spyOn(workspaces, 'addWorkspace').mockImplementation(async (config: WorkspaceConfig) => config.workspace_id);
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    add.mockRestore();
+  });
+
+  it('defaults secretBackend to file and keys by team when the options are omitted', async () => {
+    const { config } = await authenticateBrowser('xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com');
+
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add.mock.calls[0].slice(1)).toEqual([undefined, 'file']);
+    expect(config.workspace_name).toBe('Acme Corp');
+    expect(config).not.toHaveProperty('dbd_cookie');
+    expect(config).not.toHaveProperty('dbd_download_scope');
+  });
+
+  it('passes workspaceName, profile and secretBackend through', async () => {
+    const { config } = await authenticateBrowser('xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', {
+      workspaceName: 'Acme Ops',
+      profile: 'work',
+      secretBackend: 'keychain',
+    });
+
+    expect(add.mock.calls[0].slice(1)).toEqual(['work', 'keychain']);
+    expect(config.workspace_name).toBe('Acme Ops');
+  });
+
+  it('stores the dbd cookie and its download scope given in the options', async () => {
+    const { config } = await authenticateBrowser('xoxd-DUMMYAUDIT', 'xoxc-DUMMYAUDIT', 'https://acme.slack.com', {
+      dbdCookie: 'test-cookie',
+      dbdDownloadScope: 'api',
+    });
+
+    expect(config).toMatchObject({ dbd_cookie: 'test-cookie', dbd_download_scope: 'api' });
+    expect(add.mock.calls[0][0]).toMatchObject({ dbd_cookie: 'test-cookie', dbd_download_scope: 'api' });
   });
 });

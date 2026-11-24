@@ -475,7 +475,7 @@ describe('auth parse-curl never prints a token (#514)', () => {
 
     expect(authenticate).toHaveBeenCalledTimes(1);
     expect(authenticate.mock.calls[0].slice(0, 3)).toEqual([xoxd, xoxc, 'https://acme.slack.com']);
-    expect(authenticate.mock.calls[0][7]).toBe(dbd);
+    expect(authenticate.mock.calls[0][3]).toMatchObject({ dbdCookie: dbd });
     expect(stdout).toContain('Authenticated as workspace: acme');
     expect(stdout).not.toContain('<xoxd-token>');
     expectNoTokenMaterial();

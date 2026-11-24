@@ -42,7 +42,7 @@ where the terminal is not known to show Unicode.
 | `search` | Search messages, channels, and people |
 | `team` | Read the workspace's own name, domain, and ID |
 | `usergroups` | List, read, and manage user groups ("subteams") |
-| `users` | Look up a user by ID and list users by account status |
+| `users` | Look up a user, list users by account status, set or clear your profile status |
 | `saved` | Read your "saved for later" list; add, update, complete, reopen and remove items |
 | `canvas` | List canvases, read them as Markdown, look up section IDs, create and edit them |
 | `files` | Inspect, read, and download Slack-hosted files |

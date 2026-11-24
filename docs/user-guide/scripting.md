@@ -245,7 +245,7 @@ failure line is left out, so that last line parses on its own:
 | `invalid_input` | A flag, argument, link or file the command cannot use (`--limit 0`, an ambiguous `--workspace`, a channel name or handle that matches more than one ID, bad `--blocks` JSON, a missing `--file`, a draft `send-draft` cannot send, a `--at` or `--in` that is unreadable, in the past or more than 120 days ahead (also Slack's `time_in_past`, `time_too_far`), a non-text file for `files read`, `invalid_ts`, …) | Fix the input |
 | `network` | Slack could not be reached, or answered with a 5xx | Retry |
 | `confirmation_required` | A write needs `--yes` when stdin is not a terminal, or the prompt was declined | Pass `--yes` once the write is confirmed |
-| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages and the canvas sections, create and edit commands need an app token; Slack's `not_allowed_token_type` | Use a profile of the other type |
+| `unsupported_auth_type` | The command needs the other auth type: drafts need browser auth, scheduled messages and the canvas sections, create and edit commands need an app token; `users set-status` and `users clear-status` reject a bot token (`xoxb`) because it cannot set a person's status; Slack's `not_allowed_token_type` | Use a profile of the other type. For profile status, use a user token (`xoxp`) or a browser session |
 | `unknown` | Anything else | Read `message` |
 
 ```bash

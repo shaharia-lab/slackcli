@@ -356,6 +356,47 @@ export const CANVAS_AUTH_MESSAGE =
   'This canvas command requires a standard Slack app token (xoxb or xoxp); ' +
   'browser session tokens cannot use Slack\'s canvases API';
 
+// Slack's limit on profile status text. Counted in code points, as Slack
+// counts characters, not UTF-16 units.
+export const PROFILE_STATUS_TEXT_MAX = 100;
+
+// users.profile.set refuses a bot token with not_allowed_token_type. A user
+// token and a browser session can set the caller's own status.
+export const PROFILE_STATUS_AUTH_MESSAGE =
+  'Setting your profile status requires a user token (xoxp) or a browser session; ' +
+  'a bot token (xoxb) cannot set a person\'s status. ' +
+  'Sign in with slackcli auth login (a user token) or slackcli auth login-auto';
+
+export const PROFILE_STATUS_AUTH_HINT =
+  'Use a user token (slackcli auth login) or a browser session (slackcli auth login-auto).';
+
+export interface ProfileStatus {
+  status_text: string;
+  status_emoji: string;
+}
+
+// status_expiration 0 means the status does not expire. Omitting it would keep
+// a previous expiry, which would clear the new status on its own.
+export interface ProfileStatusFields extends ProfileStatus {
+  status_expiration: 0;
+}
+
+export function checkStatusText(text: string): void {
+  if (text.length > PROFILE_STATUS_TEXT_MAX && [...text].length > PROFILE_STATUS_TEXT_MAX) {
+    throw new InvalidInputError(
+      `Status text is longer than Slack's limit of ${PROFILE_STATUS_TEXT_MAX} characters`,
+    );
+  }
+}
+
+export function profileStatusFields(status: ProfileStatus): ProfileStatusFields {
+  return {
+    status_text: status.status_text,
+    status_emoji: status.status_emoji,
+    status_expiration: 0,
+  };
+}
+
 // The item a saved.* write acts on. Both parts are required: some saved.*
 // methods act on the whole list when the item is left out.
 function savedItemParams(channel: string, ts: string): Record<string, string> {
@@ -887,6 +928,23 @@ export class SlackClient {
   // Get user info
   async getUserInfo(userId: string): Promise<any> {
     return this.request('users.info', { user: userId });
+  }
+
+  // Throw what users.profile.set throws for a bot token, without calling Slack.
+  // Dry runs use it so they fail the way the real write would.
+  requireOwnProfileWrite(): void {
+    if (this.isBotToken) {
+      throw new UnsupportedAuthTypeError(PROFILE_STATUS_AUTH_MESSAGE, PROFILE_STATUS_AUTH_HINT);
+    }
+  }
+
+  // Set the signed-in user's own profile status. Never sends a user id, so an
+  // admin token cannot retarget someone else.
+  async setOwnStatus(status: ProfileStatus): Promise<ProfileStatusFields> {
+    this.requireOwnProfileWrite();
+    const fields = profileStatusFields(status);
+    await this.request('users.profile.set', { profile: JSON.stringify(fields) });
+    return fields;
   }
 
   // Get multiple users info

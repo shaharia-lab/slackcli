@@ -13,10 +13,12 @@ function longs(cmd: any): string[] {
 }
 
 describe('users command wiring', () => {
-  it('exposes info and list subcommands', () => {
+  it('exposes info, list, set-status and clear-status', () => {
     const names = createUsersCommand().commands.map((c) => c.name());
     expect(names).toContain('info');
     expect(names).toContain('list');
+    expect(names).toContain('set-status');
+    expect(names).toContain('clear-status');
   });
 
   it('users info carries --resolve-fields, --workspace and --json', () => {

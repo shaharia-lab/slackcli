@@ -65,6 +65,7 @@ describe('isReadMethod', () => {
       'files.getUploadURLExternal',
       'files.completeUploadExternal',
       'usergroups.users.update',
+      'users.profile.set',
       'some.future.method',
       '',
     ]) {

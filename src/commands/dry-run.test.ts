@@ -18,6 +18,7 @@ import { createEmojiCommand } from './emoji.ts';
 import { createMessagesCommand } from './messages.ts';
 import { createSavedCommand } from './saved.ts';
 import { createUsergroupsCommand } from './usergroups.ts';
+import { createUsersCommand } from './users.ts';
 
 const BROWSER: WorkspaceConfig = {
   workspace_id: 'T0123456789',
@@ -37,6 +38,15 @@ const STANDARD: WorkspaceConfig = {
   token_type: 'bot',
 };
 
+const USER: WorkspaceConfig = {
+  workspace_id: 'T0123456789',
+  workspace_name: 'Acme Corp',
+  profile: 'acme',
+  auth_type: 'standard',
+  token: 'xoxp-fake',
+  token_type: 'user',
+};
+
 const DRAFT = {
   id: 'Dr0123456789',
   destinations: [{ channel_id: 'C0123456789', thread_ts: '1712345678.000100' }],
@@ -50,6 +60,7 @@ const factories: Record<string, () => Command> = {
   messages: createMessagesCommand,
   saved: createSavedCommand,
   usergroups: createUsergroupsCommand,
+  users: createUsersCommand,
 };
 
 let methods: string[];
@@ -147,7 +158,7 @@ describe('--dry-run', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  // The 25 writes that work on browser tokens: a preview, exit 0, no prompt, reads only.
+  // The 27 writes that work on browser tokens: a preview, exit 0, no prompt, reads only.
   it.each([
     [['messages', 'send', '--recipient-id', 'C0123456789', '--message', 'Deploy done'], 'send message'],
     [['messages', 'edit', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100', '--message', 'Fixed'], 'edit message'],
@@ -174,6 +185,8 @@ describe('--dry-run', () => {
     [['saved', 'complete', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100'], 'complete saved item'],
     [['saved', 'reopen', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100'], 'reopen saved item'],
     [['saved', 'remove', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100'], 'remove saved item'],
+    [['users', 'set-status', '--text', 'Out of office', '--emoji', ':palm_tree:'], 'set status'],
+    [['users', 'clear-status'], 'clear status'],
   ])('%j previews without writing', async (argv, action) => {
     const preview = await runJson(argv);
     expect(preview).toMatchObject({
@@ -430,6 +443,7 @@ describe('--dry-run', () => {
     [['saved', 'update', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100'], 'invalid_input'],
     [['saved', 'update', '--channel-id', 'C0123456789', '--timestamp', '1712345678.000100', '--state', 'completed'], 'invalid_input'],
     [['saved', 'remove', '--timestamp', '1712345678.000100'], 'invalid_input'],
+    [['users', 'set-status', '--text', 'x'.repeat(101), '--emoji', ':palm_tree:'], 'invalid_input'],
   ])('%j fails the dry run like the real command', async (argv, code) => {
     const error = await failJson(argv);
     expect(error.code).toBe(code);
@@ -459,6 +473,45 @@ describe('--dry-run', () => {
     expect(process.exitCode).toBe(1);
     expect(stdout).not.toContain('Dry run');
     expect(stderr).toContain('Invalid blocks JSON');
+  });
+
+  it('previews the profile fields set-status would send', async () => {
+    const preview = await runJson(['users', 'set-status', '--text', 'Out of office', '--emoji', ':palm_tree:']);
+    expect(preview).toMatchObject({
+      action: 'set status',
+      target: { kind: 'profile', name: 'your profile' },
+      payload: { status_text: 'Out of office', status_emoji: ':palm_tree:', status_expiration: 0 },
+    });
+    expect(methods).toEqual([]);
+  });
+
+  it('previews a cleared status as empty text and emoji', async () => {
+    const preview = await runJson(['users', 'clear-status']);
+    expect(preview.payload).toEqual({ status_text: '', status_emoji: '', status_expiration: 0 });
+    expect(methods).toEqual([]);
+  });
+
+  it('previews set-status on a user token without writing', async () => {
+    const preview = await runJson(
+      ['users', 'set-status', '--text', 'Out of office', '--emoji', ':palm_tree:'],
+      USER,
+    );
+    expect(preview.payload).toEqual({
+      status_text: 'Out of office',
+      status_emoji: ':palm_tree:',
+      status_expiration: 0,
+    });
+    expect(methods).toEqual([]);
+  });
+
+  it.each([
+    [['users', 'set-status', '--text', 'Out of office', '--emoji', ':palm_tree:']],
+    [['users', 'clear-status']],
+  ])('%j on a bot token fails before any call', async (argv) => {
+    const error = await failJson(argv, STANDARD);
+    expect(error.code).toBe('unsupported_auth_type');
+    expect(error.message).toContain('bot token');
+    expect(methods).toEqual([]);
   });
 
   it('still refuses the real write unattended without --yes', async () => {

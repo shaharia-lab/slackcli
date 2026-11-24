@@ -499,3 +499,40 @@ describe('auth parse-curl never prints a token (#514)', () => {
     expectNoTokenMaterial();
   });
 });
+
+// login-browser hands its optional flags to authenticateBrowser() by name (#562).
+describe('auth login-browser', () => {
+  beforeEach(() => {
+    spyOn(console, 'log').mockImplementation(() => {});
+    spyOn(console, 'error').mockImplementation(() => {});
+    spyOn(process.stderr, 'write').mockImplementation((() => true) as typeof process.stderr.write);
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  it('passes --workspace-name, --profile and the secret backend as options', async () => {
+    const authenticate = spyOn(authLib, 'authenticateBrowser').mockResolvedValue({
+      config: { workspace_id: 'T01234567', workspace_name: 'Acme Ops', auth_type: 'browser', workspace_url: 'https://acme.slack.com' },
+      profileKey: 'work',
+    } as Awaited<ReturnType<typeof authLib.authenticateBrowser>>);
+
+    await createAuthCommand().parseAsync([
+      'login-browser',
+      '--xoxd', 'xoxd-DUMMYAUDIT',
+      '--xoxc', 'xoxc-DUMMYAUDIT',
+      '--workspace-url', 'https://acme.slack.com',
+      '--workspace-name', 'Acme Ops',
+      '--profile', 'work',
+    ], { from: 'user' });
+
+    expect(authenticate).toHaveBeenCalledTimes(1);
+    expect(authenticate.mock.calls[0]).toEqual([
+      'xoxd-DUMMYAUDIT',
+      'xoxc-DUMMYAUDIT',
+      'https://acme.slack.com',
+      { workspaceName: 'Acme Ops', profile: 'work', secretBackend: 'file' },
+    ]);
+  });
+});

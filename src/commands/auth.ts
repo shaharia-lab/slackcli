@@ -277,10 +277,12 @@ async function loginWithParsedTokens(parsed: ParsedCurlResult, secretBackend: Se
       parsed.xoxd,
       parsed.xoxc,
       parsed.workspaceUrl,
-      parsed.workspaceName,
-      undefined,
-      secretBackend,
-      parsed.userAgent
+      {
+        workspaceName: parsed.workspaceName,
+        secretBackend,
+        userAgent: parsed.userAgent,
+        dbdCookie: parsed.dbd,
+      },
     );
     spinner.succeed('Authentication successful!');
     success(`Authenticated as workspace: ${config.workspace_name}`);
@@ -377,9 +379,11 @@ export function createAuthCommand(): Command {
           options.xoxd,
           options.xoxc,
           options.workspaceUrl,
-          options.workspaceName,
-          options.profile,
-          secretBackend
+          {
+            workspaceName: options.workspaceName,
+            profile: options.profile,
+            secretBackend,
+          },
         );
 
         spinner.succeed('Authentication successful!');
@@ -688,6 +692,7 @@ export function createAuthCommand(): Command {
         writeText(chalk.bold('Tokens:'));
         writeText(`  xoxd: ${tokenFound(parsed.xoxd)}`);
         writeText(`  xoxc: ${tokenFound(parsed.xoxc)}\n`);
+        if (parsed.dbd !== undefined) info('dbd cookie found');
 
         // If --login flag is set, authenticate directly
         if (options.login) {

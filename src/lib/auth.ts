@@ -13,6 +13,7 @@ import {
 import type {
   StandardAuthConfig,
   BrowserAuthConfig,
+  DbdDownloadScope,
   WorkspaceConfig,
   SecretBackend,
   IdentityResult,
@@ -110,15 +111,31 @@ export async function authenticateStandard(
   }
 }
 
+/** Optional inputs of `authenticateBrowser`, named so that same-typed strings
+ *  cannot be passed in the wrong order. */
+export interface BrowserAuthOptions {
+  workspaceName?: string;
+  profile?: string;
+  /** Defaults to `'file'`. */
+  secretBackend?: SecretBackend;
+  userAgent?: string;
+  dbdCookie?: string;
+  dbdDownloadScope?: DbdDownloadScope;
+}
+
 // Authenticate with browser tokens
 export async function authenticateBrowser(
   xoxdToken: string,
   xoxcToken: string,
   workspaceUrl: string,
-  workspaceName?: string,
-  profile?: string,
-  secretBackend: SecretBackend = 'file',
-  userAgent?: string
+  {
+    workspaceName,
+    profile,
+    secretBackend = 'file',
+    userAgent,
+    dbdCookie,
+    dbdDownloadScope,
+  }: BrowserAuthOptions = {},
 ): Promise<AuthResult> {
   // Refused before the tokens go anywhere (#513); the canonical origin is what
   // gets stored, so a trailing slash never reaches the API base.
@@ -140,6 +157,8 @@ export async function authenticateBrowser(
     auth_type: 'browser',
     xoxd_token: xoxdToken,
     xoxc_token: xoxcToken,
+    ...(dbdCookie !== undefined ? { dbd_cookie: dbdCookie } : {}),
+    ...(dbdDownloadScope !== undefined ? { dbd_download_scope: dbdDownloadScope } : {}),
   };
   // Stored only when usable, so the client never replays a bad header and the
   // verifying call below already looks like the session's own browser.
@@ -322,10 +341,13 @@ async function enrolCapturedWorkspaces(
         capture.xoxd,
         workspace.xoxc,
         workspace.workspaceUrl,
-        workspace.teamName,
-        undefined,
-        secretBackend,
-        capture.userAgent
+        {
+          workspaceName: workspace.teamName,
+          secretBackend,
+          userAgent: capture.userAgent,
+          dbdCookie: workspace.dbd,
+          dbdDownloadScope: workspace.dbdDownloadScope,
+        },
       );
       saved.push(config);
     } catch (err: any) {

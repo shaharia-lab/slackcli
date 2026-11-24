@@ -27,6 +27,7 @@ Opening an issue first gives the community the opportunity to discuss the proble
 A feature request (a new command, flag, option, output format or behaviour) is accepted only if it meets all of these:
 
 - **It is built on an official Slack API.** The feature uses a documented, non-deprecated method from the [Slack API reference](https://docs.slack.dev/reference/methods). Internal web-client endpoints, deprecated APIs (for example RTM) and driving the Slack web UI are not accepted: they tend to work only with browser logins and break without notice, so they cannot be maintained.
+- **No undocumented browser-only hacks.** This is a strict rule: a request that relies on internal web-client endpoints (such as `drafts.*`) or on driving the web UI is closed, even if it works today. We revisit only if Slack ships an official API.
 - **It states the API and auth types.** The request names the Slack method(s) it needs and whether it works with app tokens (`xoxb`/`xoxp`), browser sessions (`xoxc`/`xoxd`) or both. The feature request template asks for both.
 - **It is useful beyond one workflow.** It solves a problem a broad set of SlackCLI users have and fits what the CLI is for, not one person's particular setup.
 - **One at a time.** Keep at most one open feature request per person. Further requests may be closed until the first one is settled.

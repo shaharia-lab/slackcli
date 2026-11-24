@@ -5,6 +5,7 @@ import {
   looksLikeCurlCommand,
   extractSlackWorkspaceName,
   extractUserAgent,
+  joinLineContinuations,
 } from './curl-parser';
 
 // Sample cURL command with anonymized tokens (based on real Slack API request format)
@@ -58,6 +59,18 @@ const CURL_CHROME_151_URL_FLAG = `curl --url 'https://chrometeam.slack.com/api/c
 const CURL_URL_FLAG_EQUALS = `curl --url="https://chromeorg.enterprise.slack.com/api/users.list" \\
   -b 'd=xoxd-url-equals-token' \\
   --data-raw $'------Boundary\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-url-equals-test\\r\\n------Boundary--\\r\\n'`;
+
+// Firefox "Copy as cURL" (Network → Copy Value): --data-binary, with the body
+// on its own line after a `\` continuation. Redacted, short synthetic tokens.
+const CURL_FIREFOX = `curl 'https://foxteam.slack.com/api/conversations.history?_x_id=abc123' \\
+  -X POST \\
+  -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0' \\
+  -H 'Accept: */*' \\
+  -H 'Content-Type: multipart/form-data; boundary=----geckoformboundary1a2b3c' \\
+  -H 'Origin: https://app.slack.com' \\
+  -H 'Cookie: b=abc; d=xoxd-firefox-test-token; lc=1770041685' \\
+  --data-binary \\
+  $'------geckoformboundary1a2b3c\\r\\nContent-Disposition: form-data; name="token"\\r\\n\\r\\nxoxc-firefox-test-111\\r\\n------geckoformboundary1a2b3c--\\r\\n'`;
 
 describe('parseCurlCommand', () => {
   /** The `field` of the CurlParseError thrown for `curl`, or undefined if it parses. */
@@ -159,6 +172,17 @@ describe('parseCurlCommand', () => {
     const URL = `curl 'https://test.slack.com/api/test'`;
     const DATA = `--data 'name="token" xoxc-test'`;
 
+    it('preserves the dbd wire value and reads a URL-encoded form token', () => {
+      const parsed = parseCurlCommand(
+        `${URL} -b 'd=xoxd-with%2Fpath; dbd=opaque%2F%3D; b=unused' --data-raw 'token=xoxc-abc'`,
+      );
+      expect(parsed).toMatchObject({ xoxd: 'xoxd-with/path', xoxc: 'xoxc-abc', dbd: 'opaque%2F%3D' });
+    });
+
+    it.each(['dbd=', 'dbd=duplicate; dbd=second', 'dbd=first\nsecond'])('rejects an invalid dbd field', (cookie) => {
+      expect(parseErrorField(`${URL} -b 'd=xoxd-test; ${cookie}' ${DATA}`)).toBe('dbd');
+    });
+
     it('should stay linear on a Cookie header of 50,000 spaces with no closing quote', () => {
       const curl = `${URL} -H 'Cookie:${' '.repeat(50_000)}`;
       const start = performance.now();
@@ -253,11 +277,64 @@ describe('parseCurlCommand', () => {
       expect(parseCurlCommand(rawFirst).xoxc).toBe('xoxc-from-raw');
     });
 
-    it.each([
-      ['--data-binary'],
-      ['--data-urlencode'],
-    ])('should not read the body of unsupported flag %s', (flag) => {
-      expect(parseErrorField(`${URL} ${flag} '{"token":"xoxc-unsupported"}'`)).toBe('xoxc');
+    it('should extract xoxc token from --data-binary on one line', () => {
+      const result = parseCurlCommand(`${URL} --data-binary '{"token":"xoxc-binary"}'`);
+      expect(result.xoxc).toBe('xoxc-binary');
+    });
+
+    it('should use the leftmost body flag when --data-binary comes first', () => {
+      const binaryFirst = `${URL} --data-binary '{"token":"xoxc-from-binary"}' ${LATER_BODY}`;
+      expect(parseCurlCommand(binaryFirst).xoxc).toBe('xoxc-from-binary');
+    });
+
+    it('should not read the body of unsupported flag --data-urlencode', () => {
+      expect(parseErrorField(`${URL} --data-urlencode '{"token":"xoxc-unsupported"}'`)).toBe(
+        'xoxc'
+      );
+    });
+
+    it('should not read a --data-urlencode body on a continuation line', () => {
+      expect(
+        parseErrorField(`${URL} --data-urlencode \\\n  '{"token":"xoxc-unsupported"}'`)
+      ).toBe('xoxc');
+    });
+  });
+
+  describe('Firefox "Copy as cURL" (#549)', () => {
+    it('should parse every field from the Firefox format', () => {
+      expect(parseCurlCommand(CURL_FIREFOX)).toEqual({
+        workspaceName: 'foxteam',
+        workspaceUrl: 'https://foxteam.slack.com',
+        xoxd: 'xoxd-firefox-test-token',
+        xoxc: 'xoxc-firefox-test-111',
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0',
+      });
+    });
+
+    it('should parse the Firefox format with CRLF line endings', () => {
+      const crlf = CURL_FIREFOX.replaceAll('\n', '\r\n');
+      const result = parseCurlCommand(crlf);
+      expect(result.xoxd).toBe('xoxd-firefox-test-token');
+      expect(result.xoxc).toBe('xoxc-firefox-test-111');
+    });
+
+    it('should read a body after several continuation lines', () => {
+      const curl = `curl 'https://test.slack.com/api/test' -b 'd=xoxd-test' --data-raw \\\n \\\n  '{"token":"xoxc-multi"}'`;
+      expect(parseCurlCommand(curl).xoxc).toBe('xoxc-multi');
+    });
+
+    it('should read cookie and User-Agent values that follow their flag on a continuation line', () => {
+      const curl = [
+        `curl 'https://test.slack.com/api/test'`,
+        `-H \\\n  'Cookie: d=xoxd-next-line'`,
+        `-H \\\n  'User-Agent: Mozilla/5.0 Test'`,
+        `--data-binary '{"token":"xoxc-next-line"}'`,
+      ].join(' ');
+      const result = parseCurlCommand(curl);
+      expect(result.xoxd).toBe('xoxd-next-line');
+      expect(result.userAgent).toBe('Mozilla/5.0 Test');
+      expect(result.xoxc).toBe('xoxc-next-line');
     });
   });
 
@@ -286,6 +363,7 @@ describe('parseCurlCommand', () => {
         CURL_ENTERPRISE,
         CURL_CHROME_151_URL_FLAG,
         CURL_URL_FLAG_EQUALS,
+        CURL_FIREFOX,
       ];
 
       for (const curl of formats) {
@@ -381,6 +459,20 @@ describe('parseCurlCommand user agent', () => {
 
   it('leaves the field out when the command has none', () => {
     expect('userAgent' in parseCurlCommand(CURL_WITH_COOKIE_HEADER)).toBe(false);
+  });
+});
+
+describe('joinLineContinuations', () => {
+  it.each([
+    ['a \\\nb', 'a  b'],
+    ['a \\\r\nb', 'a  b'],
+    ['a \\\n\\\nb', 'a   b'],
+    ['a\nb', 'a\nb'],
+    ['a \\ b', 'a \\ b'],
+    ['a \\r\\n b', 'a \\r\\n b'],
+    ['', ''],
+  ])('joins %j to %j', (input, expected) => {
+    expect(joinLineContinuations(input)).toBe(expected);
   });
 });
 

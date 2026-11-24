@@ -9,12 +9,13 @@ export interface ParsedCurlResult {
   workspaceUrl: string;
   xoxd: string;
   xoxc: string;
+  dbd?: string;
   /** The browser's User-Agent, when the command carries a usable one. */
   userAgent?: string;
 }
 
 export interface ParseError {
-  field: 'workspace' | 'xoxd' | 'xoxc';
+  field: 'workspace' | 'xoxd' | 'xoxc' | 'dbd';
   message: string;
 }
 
@@ -29,13 +30,27 @@ export function extractSlackWorkspaceName(url: string): string {
 }
 
 /**
- * Request body of a cURL command: `--data-raw` or `--data`, followed by a
- * single-quoted ('…', $'…') or double-quoted ("…", $"…") value. Group 1 holds a
- * single-quoted body, group 2 a double-quoted one. `--data\s` cannot match
- * inside `--data-raw`, `--data-binary` or `--data-urlencode`, and a single scan
- * means the leftmost flag in the command wins.
+ * Request body of a cURL command: `--data-raw`, `--data-binary` (Firefox) or
+ * `--data`, followed by a single-quoted ('…', $'…') or double-quoted ("…", $"…")
+ * value. Group 1 holds a single-quoted body, group 2 a double-quoted one.
+ * `--data\s` cannot match inside `--data-raw`, `--data-binary` or
+ * `--data-urlencode`, and a single scan means the leftmost flag in the command
+ * wins.
  */
-const DATA_BODY_PATTERN = /--data(?:-raw)?\s+\$?(?:'([^']+)'|"([^"]+)")/;
+const DATA_BODY_PATTERN = /--data(?:-raw|-binary)?\s+\$?(?:'([^']+)'|"([^"]+)")/;
+
+/** A shell line continuation: a backslash ending the line, LF or CRLF. */
+const LINE_CONTINUATION = /\\\r?\n/g;
+
+/**
+ * Join shell line continuations into one line, so a flag and its value may sit
+ * on separate lines. Firefox's "Copy as cURL" puts the request body on its own
+ * line after `--data-binary \`. Body newlines are escaped inside `$'…'`, so no
+ * continuation is joined inside a quoted value.
+ */
+export function joinLineContinuations(curlInput: string): string {
+  return curlInput.replace(LINE_CONTINUATION, ' ');
+}
 
 /** `-H`/`--header` and the whitespace after it. */
 const HEADER_FLAG = /(?:-H|--header)\s+/;
@@ -74,10 +89,17 @@ export function extractUserAgent(curlInput: string): string | undefined {
   return sanitizeUserAgent(match[1] ?? match[2] ?? match[3] ?? match[4]);
 }
 
+export function isDbdCookieValue(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+    && !/[^\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]/.test(value);
+}
+
 /**
  * Parse a cURL command and extract Slack authentication tokens
  */
-export function parseCurlCommand(curlInput: string): ParsedCurlResult {
+export function parseCurlCommand(rawCurlInput: string): ParsedCurlResult {
+  const curlInput = joinLineContinuations(rawCurlInput);
+
   // Extract workspace URL — domain can be myorg.slack.com or myorg.enterprise.slack.com
   // The URL is either positional (curl 'https://...') or behind the --url flag
   // (curl --url 'https://...'), which Chrome 151+ DevTools emits for "Copy as cURL".
@@ -107,6 +129,12 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   const xoxdEncoded = xoxdMatch[1];
   const xoxd = decodeURIComponent(xoxdEncoded);
 
+  const dbdMatches = [...cookieHeader.matchAll(/(?:^|;\s*)dbd=([^;]*)/g)];
+  const dbd = dbdMatches[0]?.[1];
+  if (dbdMatches.length > 1 || (dbd !== undefined && !isDbdCookieValue(dbd))) {
+    throw new CurlParseError('dbd', 'Expected one valid dbd cookie in the cURL command');
+  }
+
   // Extract xoxc token from data
   const dataMatch = DATA_BODY_PATTERN.exec(curlInput);
   const dataContent = dataMatch ? (dataMatch[1] ?? dataMatch[2] ?? '') : '';
@@ -114,10 +142,10 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
   const xoxcMatch =
     /name="token".*?(xoxc-[a-zA-Z0-9-]+)/.exec(dataContent) ||
     /"token"\s*:\s*"(xoxc-[a-zA-Z0-9-]+)"/.exec(dataContent);
-  if (!xoxcMatch) {
+  const xoxc = xoxcMatch?.[1] ?? new URLSearchParams(dataContent).get('token');
+  if (!xoxc || !/^xoxc-[a-zA-Z0-9-]+$/.test(xoxc)) {
     throw new CurlParseError('xoxc', 'Could not find xoxc token in request data');
   }
-  const xoxc = xoxcMatch[1];
   const userAgent = extractUserAgent(curlInput);
 
   return {
@@ -125,6 +153,7 @@ export function parseCurlCommand(curlInput: string): ParsedCurlResult {
     workspaceUrl,
     xoxd,
     xoxc,
+    ...(dbd !== undefined ? { dbd } : {}),
     ...(userAgent ? { userAgent } : {}),
   };
 }

@@ -24,17 +24,18 @@ export const SLACK_TOKEN_PATTERN: RedactionPattern = {
 };
 
 /**
- * The `d` session cookie (`Cookie: d=<xoxd…>`). `\b` keeps names such as `id=`
+ * The `d` and `dbd` session cookies. `\b` keeps names such as `id=`
  * or `channel_id=` out of it. Stops at `;`, whitespace, `"` and `\`.
  */
 export const SLACK_COOKIE_PATTERN: RedactionPattern = {
-  pattern: /\bd=[^;\s"\\]+/g,
-  replacement: 'd=[REDACTED]',
+  pattern: /\b(d|dbd)=[^;\s"\\]+/g,
+  replacement: '$1=[REDACTED]',
 };
 
 export const SLACK_REDACTION_PATTERNS: RedactionPatterns = [
   SLACK_TOKEN_PATTERN,
   SLACK_COOKIE_PATTERN,
+  { pattern: /("dbd_cookie"\s*:\s*")[^"\\]*/g, replacement: '$1[REDACTED]' },
   JWT_PATTERN,
 ];
 

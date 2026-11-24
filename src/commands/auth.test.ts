@@ -418,7 +418,8 @@ describe('auth parse-curl never prints a token (#514)', () => {
   const SECRET = 'Q9leakMARKER514';
   const xoxd = `xoxd-${SECRET}cookie`;
   const xoxc = `xoxc-${SECRET}token`;
-  const curl = `curl 'https://acme.slack.com/api/auth.test' -b 'd=${xoxd}' --data-raw '{"token":"${xoxc}"}'`;
+  const dbd = 'browser-cookie-secret%2F%3D';
+  const curl = `curl --url 'https://acme.slack.com/api/auth.test' -b 'd=${xoxd}; dbd=${dbd}' --data-raw 'token=${xoxc}'`;
 
   let stdout: string;
   let stderr: string;
@@ -447,6 +448,7 @@ describe('auth parse-curl never prints a token (#514)', () => {
     // The shortest prefix the old preview leaked beyond the type tag.
     expect(output).not.toContain(SECRET.slice(0, 2));
     expect(output).not.toContain('MARKER514');
+    expect(output).not.toContain(dbd);
   }
 
   it('reports presence and length, and a placeholder-only hint, without --login', async () => {
@@ -457,6 +459,7 @@ describe('auth parse-curl never prints a token (#514)', () => {
     expect(authenticate).not.toHaveBeenCalled();
     expect(stdout).toContain(`xoxd: found (${xoxd.length} chars)`);
     expect(stdout).toContain(`xoxc: found (${xoxc.length} chars)`);
+    expect(stdout).toContain('dbd cookie found');
     expect(stdout).toContain('slackcli auth parse-curl --login');
     expect(stdout).toContain('--xoxd="<xoxd-token>"');
     expect(stdout).toContain('--xoxc="<xoxc-token>"');
@@ -472,6 +475,7 @@ describe('auth parse-curl never prints a token (#514)', () => {
 
     expect(authenticate).toHaveBeenCalledTimes(1);
     expect(authenticate.mock.calls[0].slice(0, 3)).toEqual([xoxd, xoxc, 'https://acme.slack.com']);
+    expect(authenticate.mock.calls[0][3]).toMatchObject({ dbdCookie: dbd });
     expect(stdout).toContain('Authenticated as workspace: acme');
     expect(stdout).not.toContain('<xoxd-token>');
     expectNoTokenMaterial();
@@ -493,5 +497,42 @@ describe('auth parse-curl never prints a token (#514)', () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(stdout + stderr).toContain('invalid_auth');
     expectNoTokenMaterial();
+  });
+});
+
+// login-browser hands its optional flags to authenticateBrowser() by name (#562).
+describe('auth login-browser', () => {
+  beforeEach(() => {
+    spyOn(console, 'log').mockImplementation(() => {});
+    spyOn(console, 'error').mockImplementation(() => {});
+    spyOn(process.stderr, 'write').mockImplementation((() => true) as typeof process.stderr.write);
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  it('passes --workspace-name, --profile and the secret backend as options', async () => {
+    const authenticate = spyOn(authLib, 'authenticateBrowser').mockResolvedValue({
+      config: { workspace_id: 'T01234567', workspace_name: 'Acme Ops', auth_type: 'browser', workspace_url: 'https://acme.slack.com' },
+      profileKey: 'work',
+    } as Awaited<ReturnType<typeof authLib.authenticateBrowser>>);
+
+    await createAuthCommand().parseAsync([
+      'login-browser',
+      '--xoxd', 'xoxd-DUMMYAUDIT',
+      '--xoxc', 'xoxc-DUMMYAUDIT',
+      '--workspace-url', 'https://acme.slack.com',
+      '--workspace-name', 'Acme Ops',
+      '--profile', 'work',
+    ], { from: 'user' });
+
+    expect(authenticate).toHaveBeenCalledTimes(1);
+    expect(authenticate.mock.calls[0]).toEqual([
+      'xoxd-DUMMYAUDIT',
+      'xoxc-DUMMYAUDIT',
+      'https://acme.slack.com',
+      { workspaceName: 'Acme Ops', profile: 'work', secretBackend: 'file' },
+    ]);
   });
 });

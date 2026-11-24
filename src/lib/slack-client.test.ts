@@ -418,7 +418,7 @@ describe('SlackClient.fetchFile', () => {
     expect(fetched).toBe(false);
   });
 
-  it('does not forward browser credentials to a redirected download host', async () => {
+  it('sends both session cookies to Slack and neither to a redirected external download host', async () => {
     const requests: Array<{ url: string; headers: Headers }> = [];
     globalThis.fetch = (async (input, init) => {
       requests.push({ url: String(input), headers: new Headers(init?.headers) });
@@ -431,12 +431,19 @@ describe('SlackClient.fetchFile', () => {
       return new Response('report', { status: 200 });
     }) as typeof fetch;
 
-    const client = new TestSlackClient();
-    const response = await client.fetchFile('https://files.slack.com/files-pri/T123-F123/report.txt');
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      dbd_cookie: 'opaque%2F%3D',
+      workspace_url: 'https://example.slack.com',
+    });
 
-    expect(await response.text()).toBe('report');
+    expect(await client.downloadFile('https://files.slack.com/files-pri/T123-F123/report.txt')).toBe('report');
     expect(requests).toHaveLength(2);
-    expect(requests[0]!.headers.get('Cookie')).toBe('d=xoxd-test');
+    expect(requests[0]!.headers.get('Cookie')).toBe('d=xoxd-test; dbd=opaque%2F%3D');
     expect(requests[1]!.url).toBe('https://downloads.example.com/signed/file.txt');
     expect(requests[1]!.headers.has('Cookie')).toBe(false);
     expect(requests[1]!.headers.has('Origin')).toBe(false);
@@ -472,6 +479,36 @@ describe('SlackClient.fetchFile', () => {
   }
 
   const ok = (body = 'report') => () => new Response(body, { status: 200 });
+
+  it.each([
+    ['api', false, false],
+    ['workspace', true, false],
+    ['files', true, true],
+  ] as const)('honors %s dbd scope on each download hop', async (scope, workspaceDbd, filesDbd) => {
+    const requests = scriptFetch([
+      redirectTo('https://example.slack.com/report.txt'),
+      redirectTo('https://other.slack.com/report.txt'),
+      ok(),
+    ]);
+    const client = new SlackClient({
+      workspace_id: 'T123',
+      workspace_name: 'Test Workspace',
+      auth_type: 'browser',
+      xoxd_token: 'xoxd-test',
+      xoxc_token: 'xoxc-test',
+      dbd_cookie: 'opaque%2F%3D',
+      dbd_download_scope: scope,
+      workspace_url: 'https://example.slack.com',
+    });
+
+    expect(await client.downloadFile(FILE_URL)).toBe('report');
+    const expectedCookie = (includesDbd: boolean) => includesDbd ? 'd=xoxd-test; dbd=opaque%2F%3D' : 'd=xoxd-test';
+    expect(requests.map(({ headers }) => headers.get('Cookie'))).toEqual([
+      expectedCookie(filesDbd),
+      expectedCookie(workspaceDbd),
+      'd=xoxd-test',
+    ]);
+  });
 
   it.each([
     ['a non-HTTPS URL', 'http://files.slack.com/files-pri/T123-F123/report.txt', 'Download failed: URL is not hosted by Slack'],

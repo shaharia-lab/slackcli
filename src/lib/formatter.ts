@@ -8,6 +8,7 @@ import type {
 } from '../types/index.ts';
 import { isUsergroupEnabled } from './usergroups.ts';
 import { extractTables, formatTableRows } from './table-blocks.ts';
+import { extractAttachments } from './legacy-attachments.ts';
 
 // Serialise a value as JSON and write it to stdout.
 //
@@ -328,10 +329,20 @@ export function formatMessage(
   const author = chalk.bold(`@${userName}`);
   let output = `${indentStr}${when} ${author}${threadIndicator}\n`;
 
-  // Message text
-  const textLines = msg.text.split('\n');
-  textLines.forEach(line => {
-    output += `${indentStr}  ${line}\n`;
+  // Message text; an empty one is skipped when attachments carry the content
+  const attachments = extractAttachments(msg);
+  if (msg.text || attachments.length === 0) {
+    msg.text.split('\n').forEach(line => {
+      output += `${indentStr}  ${line}\n`;
+    });
+  }
+
+  // Legacy attachments (#555), each behind a bar like Slack's colour strip
+  attachments.forEach((lines, idx) => {
+    if (idx > 0) output += '\n';
+    lines.forEach(line => {
+      output += `${indentStr}  ${chalk.dim('│')} ${line}\n`;
+    });
   });
 
   // Tables (Slack sends them as blocks, not in the message text)

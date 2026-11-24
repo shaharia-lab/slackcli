@@ -610,6 +610,48 @@ describe('captureSlackTokens', () => {
     expect(result.workspaces[0]).not.toHaveProperty('dbd');
   });
 
+  type DbdCookie = Record<string, unknown>;
+  const dbd = (extra: DbdCookie): DbdCookie => ({ name: 'dbd', domain: 'alpha.slack.com', path: '/', value: 'v1', ...extra });
+
+  it.each<[string, DbdCookie[], string | null, string | null]>([
+    ['opaque partition key', [dbd({ partitionKeyOpaque: true })], null, null],
+    ['first-party partition key', [dbd({ partitionKey: { topLevelSite: 'https://slack.com' } })], 'v1', 'workspace'],
+    ['foreign top-level site', [dbd({ partitionKey: { topLevelSite: 'https://app.slack.com' } })], null, null],
+    ['cross-site ancestor', [dbd({ partitionKey: { topLevelSite: 'https://slack.com', hasCrossSiteAncestor: true } })], null, null],
+    ['no domain', [dbd({ domain: undefined })], null, null],
+    ['another cookie name', [dbd({ name: 'DBD' })], null, null],
+    ['host-only cookie for another host', [dbd({ domain: 'slack.com' })], null, null],
+    ['host-only cookie for a subdomain', [dbd({ domain: 'x.alpha.slack.com' })], null, null],
+    ['domain cookie for the exact host', [dbd({ domain: '.alpha.slack.com' })], 'v1', 'workspace'],
+    ['domain cookie on a non-dot boundary', [dbd({ domain: '.lpha.slack.com' })], null, null],
+    ['.slack.com on the root path', [dbd({ domain: '.slack.com' })], 'v1', 'files'],
+    ['.slack.com in upper case', [dbd({ domain: '.SLACK.COM' })], 'v1', 'files'],
+    ['.slack.com without a path', [dbd({ domain: '.slack.com', path: undefined })], 'v1', 'files'],
+    ['.slack.com on /api', [dbd({ domain: '.slack.com', path: '/api' })], 'v1', 'api'],
+    ['host-only cookie without a path', [dbd({ path: undefined })], 'v1', 'workspace'],
+    ['host-only cookie on /api', [dbd({ path: '/api' })], 'v1', 'api'],
+    ['host-only cookie on /api/', [dbd({ path: '/api/' })], 'v1', 'api'],
+    ['another path', [dbd({ path: '/client' })], null, null],
+    ['root then /api, same value', [dbd({}), dbd({ path: '/api' })], 'v1', 'workspace'],
+    ['/api then root, same value', [dbd({ path: '/api' }), dbd({})], 'v1', 'workspace'],
+    ['.slack.com then host-only, same value', [dbd({ domain: '.slack.com' }), dbd({})], 'v1', 'files'],
+    ['host-only then .slack.com, same value', [dbd({}), dbd({ domain: '.slack.com' })], 'v1', 'files'],
+    ['two conflicting values', [dbd({}), dbd({ path: '/api', value: 'v2' })], null, null],
+    ['an ineligible cookie beside an eligible one', [dbd({}), dbd({ value: 'bad;value' })], 'v1', 'workspace'],
+  ])('dbd cookie selection: %s', async (_label, cookies, expectedDbd, expectedScope) => {
+    const session = makeFakeSession({
+      requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],
+      cookies: [...SLACK_COOKIES, ...cookies],
+    });
+
+    const result = await captureSlackTokens(session, { ...captureDeps, now: advancingClock() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const [workspace] = result.workspaces;
+    expect([workspace.dbd ?? null, workspace.dbdDownloadScope ?? null]).toEqual([expectedDbd, expectedScope]);
+  });
+
   it("returns the page's User-Agent so the session's browser is replayed", async () => {
     const session = makeFakeSession({
       requests: [{ url: 'https://alpha.slack.com/api/x', postData: JSON_BODY }],

@@ -205,25 +205,38 @@ function isSlackCookieDomain(domain: string): boolean {
   return normalized === 'slack.com' || normalized.endsWith('.slack.com');
 }
 
+/** A `dbd` cookie with a usable value, set by Slack itself rather than inside a third-party frame. */
+function isEligibleDbdCookie(cookie: BrowserCookie): cookie is BrowserCookie & { domain: string; value: string } {
+  const { name, domain, value, partitionKey, partitionKeyOpaque } = cookie;
+  if (name !== 'dbd' || !domain || !isDbdCookieValue(value) || partitionKeyOpaque) return false;
+  return !partitionKey || (partitionKey.topLevelSite === 'https://slack.com' && !partitionKey.hasCrossSiteAncestor);
+}
+
+/** The cookie is sent to `host` on the root or the `/api` path. */
+function dbdCookieMatches(domain: string, path: string | undefined, host: string): boolean {
+  const matchesHost = domain.startsWith('.')
+    ? host === domain.slice(1) || host.endsWith(domain)
+    : host === domain;
+  return matchesHost && (!path || path === '/' || path === '/api' || path === '/api/');
+}
+
+/** A root-path cookie widens the download scope: `.slack.com` to `files`, anything else to at least `workspace`. */
+function promoteDbdScope(current: DbdDownloadScope, domain: string, path: string | undefined): DbdDownloadScope {
+  if (path && path !== '/') return current;
+  if (domain === '.slack.com') return 'files';
+  return current === 'api' ? 'workspace' : current;
+}
+
 function withWorkspaceCookie(workspace: CapturedWorkspace, cookies: BrowserCookie[]): CapturedWorkspace {
   const host = new URL(workspace.workspaceUrl).hostname;
   const values = new Set<string>();
   let dbdDownloadScope: DbdDownloadScope = 'api';
-  for (const { name, domain, path, value, partitionKey, partitionKeyOpaque } of cookies) {
-    if (name !== 'dbd' || !domain || !isDbdCookieValue(value) || partitionKeyOpaque) continue;
-    if (partitionKey && (partitionKey.topLevelSite !== 'https://slack.com' || partitionKey.hasCrossSiteAncestor)) {
-      continue;
-    }
-    const normalized = domain.toLowerCase();
-    const matchesHost = normalized.startsWith('.')
-      ? host === normalized.slice(1) || host.endsWith(normalized)
-      : host === normalized;
-    if (!matchesHost || (path && path !== '/' && path !== '/api' && path !== '/api/')) continue;
-    values.add(value);
-    if (!path || path === '/') {
-      if (normalized === '.slack.com') dbdDownloadScope = 'files';
-      else if (dbdDownloadScope === 'api') dbdDownloadScope = 'workspace';
-    }
+  for (const cookie of cookies) {
+    if (!isEligibleDbdCookie(cookie)) continue;
+    const normalized = cookie.domain.toLowerCase();
+    if (!dbdCookieMatches(normalized, cookie.path, host)) continue;
+    values.add(cookie.value);
+    dbdDownloadScope = promoteDbdScope(dbdDownloadScope, normalized, cookie.path);
   }
   if (values.size !== 1) return workspace;
   return { ...workspace, dbd: [...values][0], dbdDownloadScope };

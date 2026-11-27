@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { createAuthCommand } from './commands/auth.ts';
 import { createConversationsCommand } from './commands/conversations.ts';
 import { createMessagesCommand } from './commands/messages.ts';
+import { createRemindersCommand } from './commands/reminders.ts';
 import { createCanvasCommand } from './commands/canvas.ts';
 import { createEmojiCommand } from './commands/emoji.ts';
 import { createFilesCommand } from './commands/files.ts';
@@ -12,10 +13,11 @@ import { createSearchCommand } from './commands/search.ts';
 import { createTeamCommand } from './commands/team.ts';
 import { createUsergroupsCommand } from './commands/usergroups.ts';
 import { createUsersCommand } from './commands/users.ts';
-import { installRootHelp, installUsageErrorHint } from './lib/help.ts';
+import { commandPath, installRootHelp, installUsageErrorHint, USAGE_ERROR_HINT } from './lib/help.ts';
 import { installUsageErrorLogging, startLogging } from './lib/logger.ts';
 import { installProcessErrorHandlers } from './lib/process-errors.ts';
-import { setJsonErrorMode } from './lib/command-errors.ts';
+import { failCommand, setJsonErrorMode } from './lib/command-errors.ts';
+import { InvalidInputError } from './lib/cli-errors.ts';
 import { getAppVersion } from './version.ts';
 
 /**
@@ -24,6 +26,8 @@ import { getAppVersion } from './version.ts';
  */
 export function createProgram(): Command {
   const program = new Command();
+  const reminderJsonRequested = (command: Command) =>
+    commandPath(command).startsWith('slackcli reminders') && process.argv.includes('--json');
 
   program
     .name('slackcli')
@@ -36,6 +40,9 @@ export function createProgram(): Command {
   // --version stay side-effect free. Libraries log through LogTape categories.
   let loggingStarted = false;
   program.hook('preAction', (_thisCommand, actionCommand) => {
+    // A missing option value can consume --json as that value before Commander
+    // sees the flag. Reminder failures still honor the requested JSON contract.
+    if (reminderJsonRequested(actionCommand)) actionCommand.setOptionValue('json', true);
     loggingStarted = true;
     startLogging({ verbose: Boolean(program.opts().verbose), actionCommand });
     // Before the action, so even an error no command caught is reported as JSON.
@@ -52,6 +59,7 @@ export function createProgram(): Command {
   program.addCommand(createFilesCommand());
   program.addCommand(createLogsCommand());
   program.addCommand(createMessagesCommand());
+  program.addCommand(createRemindersCommand());
   program.addCommand(createSavedCommand());
   program.addCommand(createSearchCommand());
   program.addCommand(createTeamCommand());
@@ -67,6 +75,11 @@ export function createProgram(): Command {
   installUsageErrorLogging(program, {
     verbose: () => Boolean(program.opts().verbose),
     loggingStarted: () => loggingStarted,
+    report: (command, error) => {
+      if (reminderJsonRequested(command)) {
+        failCommand(new InvalidInputError(error.message, USAGE_ERROR_HINT(commandPath(command))), { json: true });
+      }
+    },
   });
 
   return program;

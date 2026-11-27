@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Full `reminders` command group**: `add --text --time [--recurrence]`, `list`, `info <id>`, `update <id> --text/--time`, `complete <id>` and `delete <id>`. Creation uses `reminders.add`; browser-auth one-time reminders return a usable saved To-do ID and use `saved.*` for the full lifecycle. Recurring and standard-user-token reminders use legacy `reminders.*`; editing legacy recurring reminders is unsupported. All writes support `--dry-run`; update/complete/delete require confirmation or `--yes`; every command supports `--json` and `--workspace`, and reads support `--fields` (#523)
+- **Standalone reminder To-dos keep their content and state in `saved list`**: reminder rows now return `item_id`, `text`, `date_due` and `todo_state`, so an in-progress reminder survives `--state to_do` and its content and saved-item ID are visible in text output. For reminder rows, the incorrectly named `channel_id` field is replaced by `item_id`; message and other item output is unchanged (#523)
+- **Clear a standalone reminder To-do** with `saved remove --item-id Sa0ABC123`, using the saved-item ID from `saved list --json`. Browser authentication only; uses the existing web-client `saved.delete` endpoint with `item_type=reminder`. Supports `--yes`, `--dry-run`, `--json` and `--workspace`, and refuses legacy `Rm…` reminder IDs or mixed message/reminder targets (#523)
+
 ### Fixed
 - **Browser login preserves the optional `dbd` cookie**: `auth parse-curl` and `auth login-auto` save the cookie when available and send it with browser API requests and Slack-hosted downloads. `auth parse-curl` also reads URL-encoded token bodies. This fixes an observed HTTP 403 during session verification (#558)
 - **`conversations read`, `get` and `unread --messages` show legacy attachments**: a message whose content is all in `attachments` (`title`, `text`, `fallback`) with an empty `text`, the usual shape of bot notifications such as Grafana alerts, printed as a blank line. Each attachment now prints under the message: `pretext`, `title` with its link, `text`, fields and `footer`, or `fallback` when there is no title or text. `--json` is unchanged (#555)

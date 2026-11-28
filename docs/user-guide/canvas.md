@@ -1,7 +1,8 @@
 # Read and edit Slack canvases
 
 `slackcli canvas` lists Slack canvases and reads them as Markdown, which makes
-them usable in a terminal, a diff, or an AI agent's context. `canvas sections`
+them usable in a terminal, a diff, or an AI agent's context. `canvas comments`
+reads the comment threads on a canvas. `canvas sections`
 finds the IDs of a canvas's sections by section type or text, and `canvas create`
 and `canvas edit` write canvases from Markdown, so a script can keep a status
 page or a checklist current: read it, find the section, edit it.
@@ -80,6 +81,40 @@ after conversion, so you get `@Rafael` and `#engineering` rather than raw IDs.
   token produces — SlackCLI detects it and tells you to re-authenticate instead
   of printing HTML at you.
 - Reading a canvas needs file-read permission: `files:read` for standard tokens.
+
+## `canvas comments`
+
+```bash
+slackcli canvas comments F1234567890
+slackcli canvas comments https://myteam.slack.com/docs/T012AB/F1234567890 --json
+slackcli canvas comments F1234567890 --limit=20 --json --fields=ts,user,text,replies
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--limit <number>` | `100` | How many comments to return (1–1000) |
+| `--workspace <id\|name>` | — | Workspace to use |
+| `--json` | off | JSON output |
+| `--fields <list>` | all | With `--json`, only these comma-separated fields of each comment |
+
+Comments come oldest first, each with its replies (up to 1000 per comment).
+`has_more` in the JSON says there are more comments than `--limit` returned.
+
+```json
+{ "canvas_id": "F1234567890", "channel_id": "C1234567890", "comment_count": 1, "has_more": false,
+  "comments": [{ "ts": "1712345678.000100", "user": "U012AB", "text": "Looks good", "reply_count": 1,
+                 "replies": [{ "ts": "1712345678.000200", "user": "U034CD", "text": "Thanks" }] }],
+  "users": [{ "id": "U012AB", "name": "alice", "real_name": "Alice" }] }
+```
+
+- Slack has no API for canvas comments. They live in a hidden conversation
+  whose ID is the canvas ID with the leading `F` swapped for `C`
+  (`F1234567890` → `C1234567890`), and this command reads that conversation.
+  The mapping is undocumented and may stop working if Slack changes it. It is
+  known to work with a browser session; an app token may not see the
+  conversation.
+- A canvas with no comments yet has no such conversation, so the command exits
+  1 with `not_found`.
 
 ## `canvas sections`
 

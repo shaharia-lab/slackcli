@@ -150,6 +150,7 @@ saved complete|reopen (--channel-id=C --timestamp=TS | --permalink=URL) [--json]
 saved remove (--channel-id=C --timestamp=TS | --permalink=URL) [--yes] [--json]    # off the Later list; message untouched
 canvas list [--limit=20] [--channel=C] [--json]
 canvas read <F…|url> | --channel=C [--raw] [--json]     # Markdown; --json has `markdown`
+canvas comments <F…|url> [--limit=100] [--json]   # comments + replies; undocumented F→C conversation, browser session
 canvas sections <F…|url> (--type=h1,h2,any_header,list,… | --contains=T) [--json]   # app token only; section IDs
 canvas create (--title=T | --markdown-file=F|-) [--channel=C] [--json]          # app token only; {canvas_id}
 canvas edit <F…|url> --operation=OP [--section=ID] [--markdown-file=F|-] [--title=T] [--yes] [--json]   # app token only; replace/delete need --yes

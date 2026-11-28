@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import ora, { type Ora } from 'ora';
 import { getAuthenticatedClient } from '../lib/auth.ts';
-import { error, formatCanvasList, formatCanvasContent, warning, writeJson, writeText } from '../lib/formatter.ts';
+import { error, formatCanvasList, formatCanvasContent, formatMessage, warning, writeJson, writeText } from '../lib/formatter.ts';
+import { checkCanvasId, fetchCanvasComments, type CanvasComment } from '../lib/canvas-comments.ts';
 import { applyFields, fieldsOption, FIELDS_DESCRIPTION, FIELDS_FLAG } from '../lib/json-fields.ts';
 import { canvasHtmlToMarkdown } from '../lib/canvas-parser.ts';
 import { buildSectionCriteria, sectionsOf } from '../lib/canvas-sections.ts';
@@ -25,7 +26,7 @@ import {
 import { normalizeIdentifier, workspaceMismatchWarning, workspaceOf } from '../lib/slack-url-parser.ts';
 import { CANVAS_AUTH_MESSAGE, type SlackClient } from '../lib/slack-client.ts';
 import { resolveIdentifier } from '../lib/name-resolver.ts';
-import type { SlackCanvas } from '../types/index.ts';
+import type { SlackCanvas, SlackMessage, SlackUser } from '../types/index.ts';
 import { CHANNEL_NAME_NOTE, describeCommand, type CommandHelp } from '../lib/help.ts';
 import { failCommand } from '../lib/command-errors.ts';
 import { InvalidInputError } from '../lib/cli-errors.ts';
@@ -36,7 +37,7 @@ const HELP = {
     summary: 'List, read, create and edit Slack canvases',
     description:
       'List canvas documents in the workspace or a channel, read one as Markdown, with ' +
-      'user and channel mentions resolved to names, look up the IDs of its sections, ' +
+      'user and channel mentions resolved to names, read its comments and their replies, look up the IDs of its sections, ' +
       'create a canvas from Markdown, and change one part of a canvas.',
   },
   list: {
@@ -78,6 +79,27 @@ const HELP = {
       'Give [canvas-id] or --channel; when both are given the canvas ID wins.',
       '--raw prints the source HTML and takes precedence over --json (stdout is then HTML, not JSON).',
       'A channel without a canvas is reported on stderr with exit 0 and no stdout. An unknown canvas ID exits 1 with Slack\'s error.',
+    ],
+  },
+  comments: {
+    summary: 'Read the comments on a canvas',
+    fields: 'each item of comments',
+    description:
+      'Read the comment threads on one canvas, oldest first, each with its replies, by canvas ID or URL.',
+    examples: [
+      'slackcli canvas comments F0123456789',
+      'slackcli canvas comments https://acme.slack.com/docs/T0123456789/F0123456789 --json',
+      'slackcli canvas comments F0123456789 --limit 20 --json --fields ts,user,text,replies',
+    ],
+    json:
+      '{ canvas_id, channel_id, comment_count, has_more, comments: [{ ts, user, text, reply_count, reactions, ' +
+      'replies: [{ ts, user, text, reactions }] }], users: [{ id, name, real_name }] }.',
+    notes: [
+      '<canvas-id> takes a canvas file ID (F...) or a Slack URL.',
+      'Slack has no API for canvas comments: they are read from the hidden conversation that holds them ' +
+        '(the canvas ID with F swapped for C), which is undocumented and may stop working if Slack changes it.',
+      'A canvas with no comments yet exits 1 with not_found.',
+      '--limit caps the comments (1-1000, default 100); has_more says when there are more. Each comment returns up to 1000 replies.',
     ],
   },
   sections: {
@@ -226,6 +248,33 @@ function definedOnly(record: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
+// Users who wrote a comment or a reply, for names in the output.
+async function commentAuthors(client: SlackClient, comments: CanvasComment[]): Promise<Map<string, SlackUser>> {
+  const ids = new Set<string>();
+  for (const comment of comments) {
+    for (const msg of [comment, ...comment.replies]) if (msg.user) ids.add(msg.user);
+  }
+  const users = new Map<string, SlackUser>();
+  if (ids.size === 0) return users;
+  const response = await client.getUsersInfo(Array.from(ids));
+  response.users?.forEach((user: SlackUser) => users.set(user.id, user));
+  return users;
+}
+
+function commentJson(msg: SlackMessage): Record<string, unknown> {
+  return { ts: msg.ts, user: msg.user, text: msg.text, reactions: msg.reactions };
+}
+
+function formatComments(canvasId: string, comments: CanvasComment[], users: Map<string, SlackUser>): string {
+  let output = `💬 Canvas ${canvasId} (${comments.length} comments)\n\n`;
+  comments.forEach((comment, idx) => {
+    output += formatMessage(comment, users);
+    for (const reply of comment.replies) output += formatMessage(reply, users, 4);
+    if (idx < comments.length - 1) output += '\n';
+  });
+  return output;
+}
+
 export function createCanvasCommand(): Command {
   const canvas = describeCommand(new Command('canvas'), HELP.group);
 
@@ -357,6 +406,56 @@ export function createCanvasCommand(): Command {
         writeText('\n' + formatCanvasContent(file, markdown));
       } catch (err: any) {
         reportCanvasReadFailure(spinner, err, options.json);
+      }
+    });
+
+  // Read canvas comments
+  describeCommand(canvas.command('comments'), HELP.comments)
+    .argument('<canvas-id>', 'Canvas file ID or URL (e.g., F1234567890)')
+    .option('--limit <number>', 'Number of comments to return', '100')
+    .option('--workspace <id|name>', 'Workspace to use')
+    .option('--json', 'Output in JSON format', false)
+    .option(FIELDS_FLAG, FIELDS_DESCRIPTION)
+    .action(async (canvasIdArg, options) => {
+      const spinner = ora('Fetching canvas comments...').start();
+
+      try {
+        const fields = fieldsOption(options);
+        const limit = Number(options.limit);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+          throw new InvalidInputError('Limit must be a number between 1 and 1000');
+        }
+        const canvasId = checkCanvasId(normalizeIdentifier(canvasIdArg, 'file', '<canvas-id>'));
+
+        const client = await getAuthenticatedClient(options.workspace);
+        warnOnWorkspaceMismatch(client, workspaceOf(canvasIdArg));
+        const result = await fetchCanvasComments(client, canvasId, {
+          limit,
+          onProgress: (text) => { spinner.text = text; },
+        });
+        spinner.text = 'Fetching user information...';
+        const users = await commentAuthors(client, result.comments);
+        spinner.succeed(`Found ${result.comments.length} comments`);
+
+        if (options.json) {
+          writeJson(applyFields('canvas comments', {
+            canvas_id: canvasId,
+            channel_id: result.channel_id,
+            comment_count: result.comments.length,
+            has_more: result.has_more,
+            comments: result.comments.map((comment) => ({
+              ...commentJson(comment),
+              reply_count: comment.reply_count ?? 0,
+              replies: comment.replies.map(commentJson),
+            })),
+            users: Array.from(users.values()).map((u) => ({ id: u.id, name: u.name, real_name: u.real_name })),
+          }, fields));
+          return;
+        }
+
+        writeText('\n' + formatComments(canvasId, result.comments, users));
+      } catch (err: any) {
+        failCommand(err, { json: options.json, spinner, context: 'Failed to read canvas comments' });
       }
     });
 

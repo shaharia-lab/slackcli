@@ -248,6 +248,7 @@ describe('--fields, in process', () => {
   // Every --fields command, with the argument it needs.
   const COMMAND_ARGS: Record<string, string[]> = {
     'canvas read': ['F0123456789'],
+    'canvas comments': ['F0123456789'],
     'canvas sections': ['F0123456789', '--type', 'h2'],
     'conversations get': ['C0123456789', '1712345678.000100'],
     'conversations read': ['C0123456789'],
@@ -268,6 +269,7 @@ describe('--fields, in process', () => {
   const PROBE: Record<keyof typeof FIELDS_LIST_KEYS, string> = {
     'canvas list': 'id',
     'canvas read': 'markdown',
+    'canvas comments': 'text',
     'canvas sections': 'id',
     'conversations get': 'ts',
     'conversations list': 'id',

@@ -370,6 +370,7 @@ slackcli saved add --permalink="$LINK" --due "2026-10-12 09:50"   # browser auth
 slackcli saved complete --permalink="$LINK"
 slackcli canvas list --channel=C1234567890
 slackcli canvas read F1234567890             # Canvas -> Markdown
+slackcli canvas comments F1234567890         # comments and replies
 slackcli canvas sections F1234567890 --type h2   # section IDs (app token)
 slackcli canvas create --title Notes --markdown-file ./notes.md   # app token
 slackcli canvas edit F1234567890 --operation insert_at_end --markdown-file ./more.md

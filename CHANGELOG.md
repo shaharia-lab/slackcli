@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`canvas comments` reads the comments on a canvas**: `slackcli canvas comments <canvas-id|url>` prints a canvas's comment threads, oldest first, each with its replies, and supports `--limit`, `--json` and `--fields`. Slack has no API for canvas comments, so it reads the hidden conversation that holds them, whose ID is the canvas ID with `F` swapped for `C`; this is undocumented Slack behaviour (#501)
+
 ### Fixed
 - **Browser login preserves the optional `dbd` cookie**: `auth parse-curl` and `auth login-auto` save the cookie when available and send it with browser API requests and Slack-hosted downloads. `auth parse-curl` also reads URL-encoded token bodies. This fixes an observed HTTP 403 during session verification (#558)
 - **`conversations read`, `get` and `unread --messages` show legacy attachments**: a message whose content is all in `attachments` (`title`, `text`, `fallback`) with an empty `text`, the usual shape of bot notifications such as Grafana alerts, printed as a blank line. Each attachment now prints under the message: `pretext`, `title` with its link, `text`, fields and `footer`, or `fallback` when there is no title or text. `--json` is unchanged (#555)
